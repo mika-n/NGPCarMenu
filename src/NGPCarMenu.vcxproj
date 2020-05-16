@@ -112,6 +112,7 @@
     <ClCompile Include="RBRAPI.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\ReadMe.md" />
     <None Include="NGPCarMenu.def" />
   </ItemGroup>
   <ItemGroup>
@@ -129,11 +130,14 @@
     <ClInclude Include="NGPCarMenu.h" />
   </ItemGroup>
   <ItemGroup>
-    <Text Include="LicenseText.txt" />
-    <Text Include="ReadMe.txt" />
+    <Text Include="..\LicenseText.txt" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="NGPCarMenu.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="..\misc\NGPCarMenu_PluginMenu.png" />
+    <Image Include="..\misc\NGPCarMenu_SelectCarMenu.png" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

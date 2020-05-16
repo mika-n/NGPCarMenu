@@ -38,7 +38,11 @@
 //#include <assert.h>
 #include "stdafx.h"
 
+#include <filesystem>
+
 #include "RBRAPI.h"
+
+namespace fs = std::filesystem;
 
 //----------------------------------------------------------------------------------------------------------------------------
 LPDIRECT3DDEVICE9 g_pRBRIDirect3DDevice9 = nullptr;  // RBR D3D device
@@ -232,11 +236,22 @@ BOOL RBRAPI_Replay(LPCSTR szReplayFileName)
 	void** objRBRThis = (void**)0x893634;			  // "Master" RBR object pointer
 	tRBRReplay func_RBRReplay = (tRBRReplay)0x4999B0; // RBR replay func entry address
 
-	// TODO: 245760; TODO. Get filesize from the actual file
-	size_t iReplayFileSizeInBytes = 245764; 
+	try
+	{
+		if (fs::exists(szReplayFileName))
+		{
+			size_t iReplayFileSizeInBytes = (size_t) std::filesystem::file_size(szReplayFileName);
+			func_RBRReplay(*objRBRThis, szReplayFileName, &iNotUsed, &iNotUsed, iReplayFileSizeInBytes);
 
-	func_RBRReplay(*objRBRThis, szReplayFileName, &iNotUsed, &iNotUsed, iReplayFileSizeInBytes);
-	
-	// TODO. Check error status if replay loading failed
-	return TRUE;
+			// TODO. Check error status if replay loading failed
+			return TRUE;
+		}
+		else
+			// The replay file doesn't exist.
+			return FALSE;
+	}
+	catch (...)
+	{
+		return FALSE;
+	}
 }

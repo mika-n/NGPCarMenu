@@ -13,6 +13,9 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx</Extensions>
     </Filter>
+    <Filter Include="Misc">
+      <UniqueIdentifier>{ba50cf03-b98a-4d32-85de-7c8187b3ad7e}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="PluginHelpers.cpp">
@@ -41,6 +44,7 @@
     <None Include="NGPCarMenu.def">
       <Filter>Source Files</Filter>
     </None>
+    <None Include="..\ReadMe.md" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="PluginHelpers.h">
@@ -81,12 +85,19 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="ReadMe.txt" />
-    <Text Include="LicenseText.txt" />
+    <Text Include="..\LicenseText.txt" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="NGPCarMenu.rc">
       <Filter>Resource Files</Filter>
     </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="..\misc\NGPCarMenu_PluginMenu.png">
+      <Filter>Misc</Filter>
+    </Image>
+    <Image Include="..\misc\NGPCarMenu_SelectCarMenu.png">
+      <Filter>Misc</Filter>
+    </Image>
   </ItemGroup>
 </Project>
