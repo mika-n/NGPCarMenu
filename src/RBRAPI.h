@@ -27,7 +27,7 @@
 // - https://vauhtimurot.blogspot.com/p/in-english.html  (in most part the web page is in Finnish)
 // - http://rbr.onlineracing.cz/?setlng=eng
 //
-// Also, various forum posts by WorkerBee, Kegetys, Racer_S, Mandosukai (and I'm sure many others) here and there have been useful.
+// Also, various forum posts by WorkerBee, Kegetys, black f./jharron, Racer_S, Mandosukai (and I'm sure many others) here and there have been useful.
 // Thank you all for the good work with the RBR game engine (RBR still has the best rally racing physics engine and WorkeBeer's NGP plugin makes it even greater).
 //
 

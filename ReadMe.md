@@ -73,7 +73,11 @@ Also, some Windows OS setups limit writing new files under c:\program files\ or 
 - FixUp RBR plugin. (author: WorkerBee). [FixUp Home page](http://www.ly-racing.de/viewtopic.php?t=7878)
 - Pacenote RBR plugin. (author: WorkerBee). [Pacenote Home page](http://www.ly-racing.de/viewtopic.php?t=6848)
 - RBR Car Installation Tool, RBRCIT. (author: Zissakos). [RBRCIT Home page](https://github.com/zissakos/RBRCIT)
- 
-This NGPCarMenu plugin has been tested with these magnificent RBR plugins/tools and works great with those. In fact, this plugin should be compatible with any plugin because the plugin doesn't change how the RBR game handles racing and the actual car models.
 
-Copyright (c) 2020 by MIKA-N. All rights reserved. See LicenseText.txt file for more information. https://github.com/mika-n/NGPCarMenu
+This plugin has been tested by NGPCarMenu author with these magnificent RBR plugins/tools and the plugin works great with those. In fact, this plugin should be compatible with any plugin because the plugin doesn't change how the RBR game handles racing and the actual car models.
+
+Users have reported that the customized "Select Car" menu works also with following plugins:
+- RX RBR plugin and BTB tracks. (author: black f./jharron). [Info page for RX plugin and BTB tracks. Not the offical RX page](https://www.racedepartment.com/threads/virtualmotorsports-rally-finland-rx-track-archive.35080/) Is there an official home page for RX plugin?
+ 
+
+NGPCarMenu. Copyright (c) 2020 by MIKA-N. All rights reserved. See LicenseText.txt file for more information. https://github.com/mika-n/NGPCarMenu
