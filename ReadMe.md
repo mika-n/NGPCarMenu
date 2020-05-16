@@ -20,8 +20,7 @@ This **NGPCarMenu RBR plugin solves these problems** by doing following enhancem
 
 Note! This plugin supports only the latest RichardBurnsRally_SSE.exe v1.02 version for Windows OS (haven't tested this under Wine/Linux, but the plugin probably works there also).
 
-[](misc/NGPCarMenu_SelectCarMenu.png){:height="50%" width="50%"}
-[](misc/NGPCarMenu_PluginMenu.png){:height="50%" width="50%"}
+| ![](misc/NGPCarMenu_SelectCarMenu.png){:height="50%" width="50%"} | ![](misc/NGPCarMenu_PluginMenu.png){:height="50%" width="50%"} |
 
 ## Download
 - **[The latest build of NGPCarMenu](https://github.com/mika-n/NGPCarMenu/releases)**
