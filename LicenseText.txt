@@ -1,0 +1,45 @@
+
+NGPCarMenu - Custom plugin for Richard Burns Rally (RBR) game. Shows advanced and improved "Select Car" menu within the RBR game menus.
+
+Copyright (c) 2020 by MIKA-N. All rights reserved. https://github.com/mika-n
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated 
+documentation files (the "Software"), to deal in the Software without restriction, including without limitation 
+the rights to use, copy, modify, merge, publish, distribute, sublicense, and to permit persons to whom the Software 
+is furnished to do so, subject to the following conditions:
+
+ - The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+ - The derived work or derived parts are also "open sourced" and the source code or part of the work using components 
+   from this project is made publicly available with modifications to this base work.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO 
+THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS 
+OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR 
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+-----------------------------------------------------------------------------
+
+This work includes some code snippets from a "public domain" where the code example was published freely available without
+any explicit licenses. Here are references to those code snippets:
+
+ - (Jacob Roman) Drawing 2D images on D3D9. Code ideas borrowed from Jacob's forum post and the modified derived work is part of this project:
+   http://www.vbforums.com/showthread.php?856957-RESOLVED-DirectX-9-on-C-how-draw-an-image-transparent
+
+ - (Ivan Aksamentov) Code snippets and ideas about creating an empty D3D9 surface and then populating it with a data in bitmap buffer. The modified derived work is part of this project.
+   https://stackoverflow.com/questions/16172508/how-can-i-create-texture-in-directx-9-without-d3dx9
+
+ - (Simon Mourier) DX9 compatible "bitmap to PNG/GIF/DDP file saving" logic without using the legacy DX9 SDK library (which is no longer available in new WinOS SDKs). The modified derived work is part of this project
+   https://stackoverflow.com/questions/30021274/capture-screen-using-directx
+
+ - (Sasha / Suxin) RBR replay function call entry point to call it programmatically.
+   https://suxin.space/notes/rbr-play-replay/
+
+Thank you Jacob, Ivan, Simon, Sasha for sharing the information.
+
+This work contains components with own licence texts. Please refer to those components for more details.
+ - DetourXS, Dominic Tobias. Re-routing function pointers. https://dominictobias.com
+ - SharedFont, Agrippa1994. D3D9 compatible font class. https://github.com/agrippa1994/DX9-Overlay-API
+ - SimpleINI, Brodie Thiesfield. Ascii and UTF8 INI file reading. https://github.com/brofield/simpleini
+ - The plugin interface files published by the original Richard Burns Rally author. Warthog Games and/or SCi Games
+
+Thank you for making and publishing such great components for open source community.

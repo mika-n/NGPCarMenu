@@ -1,0 +1,3 @@
+LIBRARY	NGPCarMenu
+EXPORTS 
+	RBR_CreatePlugin
