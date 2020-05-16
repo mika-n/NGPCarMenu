@@ -90,7 +90,7 @@ extern BOOL WriteOpCodeBuffer(const LPVOID writeAddr, const BYTE* buffer, const 
 extern BOOL WriteOpCodePtr(const LPVOID writeAddr, const LPVOID ptrValue);
 
 extern int  RBRAPI_MapCarIDToMenuIdx(int carID);     // 00..07 carID is not the same as order of car selection items
-extern BOOL RBRAPI_Replay(LPCSTR szReplayFileName);
+extern BOOL RBRAPI_Replay(const std::string rbrAppFolder, LPCSTR szReplayFileName);
 extern void RBRAPI_MapRBRPointToScreenPoint(const float srcX, const float srcY, int* trgX, int* trgY);
 extern void RBRAPI_MapRBRPointToScreenPoint(const float srcX, const float srcY, float* trgX, float* trgY);
 

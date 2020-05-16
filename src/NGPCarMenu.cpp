@@ -116,115 +116,6 @@ char* g_RBRPluginMenu_CreateOptions[2] = {
 };
 
 
-#if USE_DEBUG == 1
-
-//-----------------------------------------------------------------------------------------------------------------------------
-// Debug printout functions. Not used in release build.
-//
-
-FILE* g_fpDebugLogFile = nullptr;
-void DebugPrintCloseFile();
-
-void DebugPrintFunc(LPCSTR lpszFormat, ...)
-{
-	va_list args;
-	va_start(args, lpszFormat);
-
-	SYSTEMTIME t;
-	char szTxtTimeStampBuf[32];
-	char szTxtBuf[1024]; 
-
-	try
-	{
-		GetLocalTime(&t);
-		if (GetTimeFormat(LOCALE_USER_DEFAULT, 0, &t, "hh:mm:ss ", (LPSTR)szTxtTimeStampBuf, sizeof(szTxtTimeStampBuf) - 1) <= 0)
-			szTxtTimeStampBuf[0] = '\0';
-
-		if (_vsnprintf_s(szTxtBuf, sizeof(szTxtBuf) - 1, lpszFormat, args) <= 0)
-			szTxtBuf[0] = '\0';
-
-		if (g_fpDebugLogFile == nullptr)
-			fopen_s(&g_fpDebugLogFile, "NGPCarMenu.log", "a+t");
-
-		if (g_fpDebugLogFile)
-		{
-			fprintf(g_fpDebugLogFile, szTxtTimeStampBuf);
-			fprintf(g_fpDebugLogFile, szTxtBuf);
-			fprintf(g_fpDebugLogFile, "\n");
-		}
-	}
-	catch (...)
-	{
-		// Do nothing
-	}
-
-	va_end(args);
-}
-
-void DebugPrintEmptyFile()
-{
-	FILE* fpDebugLogFile = nullptr;
-	DebugPrintCloseFile();
-	fopen_s(&fpDebugLogFile, "NGPCarMenu.log", "w");
-	if (fpDebugLogFile != nullptr) fclose(fpDebugLogFile);
-}
-
-void DebugPrintCloseFile()
-{
-	FILE* fpDebugLogFile = g_fpDebugLogFile;
-	g_fpDebugLogFile = nullptr;
-	if (fpDebugLogFile != nullptr) fclose(fpDebugLogFile);
-}
-
-void DebugDumpBuffer(byte* pBuffer, int iPreOffset = 0, int iBytesToDump = 64)
-{
-	char txtBuffer[64];
-
-	byte* pBuffer2 = pBuffer - iPreOffset;
-	for (int idx = 0; idx < iBytesToDump; idx += 8)
-	{
-		int iAppendPos = 0;
-		for (int idx2 = 0; idx2 < 8; idx2++)
-			iAppendPos += sprintf_s(txtBuffer + iAppendPos, sizeof(txtBuffer), "%02x ", (byte)pBuffer2[idx + idx2]);
-
-		iAppendPos += sprintf_s(txtBuffer + iAppendPos, sizeof(txtBuffer), " | ");
-
-		for (int idx2 = 0; idx2 < 8; idx2++)
-			iAppendPos += sprintf_s(txtBuffer + iAppendPos, sizeof(txtBuffer), "%c", (pBuffer2[idx + idx2] < 32 || pBuffer2[idx + idx2] > 126) ? '.' : pBuffer2[idx + idx2]);
-
-		DebugPrint(txtBuffer);
-	}
-}
-
-void DebugDumpBufferToScreen(byte* pBuffer, int iPreOffset = 0, int iBytesToDump = 64, int posX = 850, int posY = 1)
-{
-	WCHAR txtBuffer[64];
-
-	D3DRECT rec = { posX, posY, posX + 440, posY + ((iBytesToDump / 8) * 20) };
-	g_pRBRIDirect3DDevice9->Clear(1, &rec, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 50, 50, 50), 0, 0);
-
-	byte* pBuffer2 = pBuffer - iPreOffset;
-	for (int idx = 0; idx < iBytesToDump; idx += 8)
-	{
-		int iAppendPos = 0;
-
-		iAppendPos += swprintf_s(txtBuffer + iAppendPos, COUNT_OF_ITEMS(txtBuffer) - iAppendPos, L"%04x ", idx);
-		for (int idx2 = 0; idx2 < 8; idx2++)
-			iAppendPos += swprintf_s(txtBuffer + iAppendPos, COUNT_OF_ITEMS(txtBuffer) - iAppendPos, L"%02x ", (byte)pBuffer2[idx + idx2]);
-
-		iAppendPos += swprintf_s(txtBuffer + iAppendPos, COUNT_OF_ITEMS(txtBuffer) - iAppendPos, L" | ");
-
-		for (int idx2 = 0; idx2 < 8; idx2++)
-			iAppendPos += swprintf_s(txtBuffer + iAppendPos, COUNT_OF_ITEMS(txtBuffer) - iAppendPos, L"%c", (pBuffer2[idx + idx2] < 32 || pBuffer2[idx + idx2] > 126) ? L'.' : pBuffer2[idx + idx2]);
-
-		pFontDebug->DrawText(posX, (idx / 8) * 20 + posY, D3DCOLOR_ARGB(255, 240, 250, 0), txtBuffer, 0);	
-		//pFontDebug->DrawText(posX, (idx / 8) * 20 + posY, D3DCOLOR_ARGB(255, 240, 250, 0), txtBuffer, 0);
-	}
-}
-
-#endif // USE_DEBUG
-
-
 //-----------------------------------------------------------------------------------------------------------------------------
 BOOL APIENTRY DllMain( HANDLE hModule,  DWORD  ul_reason_for_call, LPVOID lpReserved)
 {
@@ -1003,7 +894,7 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 
 				// Set a flag that custom replay generation is active during replays. If this is zero then replay plays the file normally
 				m_iCustomReplayState = 1;
-				::RBRAPI_Replay(C_REPLAYFILENAME_SCREENSHOT);
+				::RBRAPI_Replay(this->m_sRBRRootDir, C_REPLAYFILENAME_SCREENSHOT);
 			}
 			else
 				m_sMenuStatusText1 = "All cars already have a preview image. Did not create any new images.";
@@ -1255,7 +1146,7 @@ HRESULT __fastcall CustomRBRDirectXBeginScene(void* objPointer)
 						g_pRBRPlugin->m_iCustomReplayState = 1;
 				}
 
-				RBRAPI_Replay(C_REPLAYFILENAME_SCREENSHOT);
+				RBRAPI_Replay(g_pRBRPlugin->m_sRBRRootDir, C_REPLAYFILENAME_SCREENSHOT);
 			}
 		}
 	}

@@ -42,6 +42,11 @@
 
 #include "RBRAPI.h"
 
+#ifdef _DEBUG
+#include "D3D9Helpers.h"
+#endif
+
+
 namespace fs = std::filesystem;
 
 //----------------------------------------------------------------------------------------------------------------------------
@@ -227,7 +232,7 @@ void RBRAPI_MapRBRPointToScreenPoint(const float srcX, const float srcY, float* 
 		*trgY = static_cast<float>(srcY * (g_rectRBRWndClient.bottom / 480.0f  /*g_pRBRGameConfig->resolutionY*/));
 }
 
-BOOL RBRAPI_Replay(LPCSTR szReplayFileName)
+BOOL RBRAPI_Replay(const std::string rbrAppFolder, LPCSTR szReplayFileName)
 {
 	// https://suxin.space/notes/rbr-play-replay/ (Sasha / Suxin)
 	// RBR replay function call entry point to call it programmatically. Thanks Sasha for documenting this trick.
@@ -238,9 +243,11 @@ BOOL RBRAPI_Replay(LPCSTR szReplayFileName)
 
 	try
 	{
-		if (fs::exists(szReplayFileName))
+		std::string fullReplayFilePath = rbrAppFolder + "\\Replays\\" + szReplayFileName;
+
+		if (fs::exists(fullReplayFilePath))
 		{
-			size_t iReplayFileSizeInBytes = (size_t) std::filesystem::file_size(szReplayFileName);
+			size_t iReplayFileSizeInBytes = (size_t) std::filesystem::file_size(fullReplayFilePath);
 			func_RBRReplay(*objRBRThis, szReplayFileName, &iNotUsed, &iNotUsed, iReplayFileSizeInBytes);
 
 			// TODO. Check error status if replay loading failed

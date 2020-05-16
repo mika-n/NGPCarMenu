@@ -25,6 +25,36 @@
 //#include <windows.h>
 //#include <string>
 
+
+//------------------------------------------------------------------------------------------------
+
+#ifdef _DEBUG
+#define USE_DEBUG 1		// 1=Custom debug outputs and calculations (spends few cycles of precious CPU time), 0=No custom debugging, run the game code without extra debug code
+#endif
+
+#ifndef _DEBUG 
+#undef USE_DEBUG
+#endif
+
+
+#if USE_DEBUG == 1
+#include "D3D9Font\D3DFont.h"
+
+#define DebugPrint DebugPrintFunc // DEBUG version to dump logfile messages
+#else
+#define DebugPrint  // RELEASE version of DebugPrint doing nothing
+#endif
+
+#if USE_DEBUG == 1
+extern CD3DFont* pFontDebug;
+
+extern void DebugPrintCloseFile();
+extern void DebugPrintEmptyFile();
+extern void DebugPrintFunc(LPCSTR lpszFormat, ...);
+#endif
+
+//------------------------------------------------------------------------------------------------
+
 #ifndef SAFE_RELEASE
 #define SAFE_RELEASE( p ) if( p ){ p->Release(); p = nullptr; }
 #endif

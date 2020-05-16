@@ -31,15 +31,6 @@
 
 //#define WIN32_LEAN_AND_MEAN			// Exclude rarely-used stuff from Windows headers
 //#include <windows.h>
-
-#ifdef _DEBUG
-#define USE_DEBUG 1		// 1=Custom debug outputs and calculations (spends few cycles of precious CPU time), 0=No custom debugging, run the game code without extra debug code
-#endif
-
-#ifndef _DEBUG 
-#undef USE_DEBUG
-#endif
-
 //#include <assert.h>
 //#include <stdio.h>
 #include <d3d9.h>
@@ -71,20 +62,6 @@ enum class T_PLUGINSTATE
 	PLUGINSTATE_INITIALIZED = 1,
 	PLUGINSTATE_CLOSING = 2
 };
-
-
-//------------------------------------------------------------------------------------------------
-
-#if USE_DEBUG == 1
-extern void DebugPrintFunc(LPCSTR lpszFormat, ...);
-#endif
-
-#if USE_DEBUG == 1
-  #define DebugPrint DebugPrintFunc // DEBUG version to dump logfile messages
-#else
-  #define DebugPrint  // RELEASE version of DebugPrint doing nothing
-#endif
-
 
 
 //------------------------------------------------------------------------------------------------
