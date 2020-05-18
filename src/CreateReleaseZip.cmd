@@ -55,6 +55,7 @@ copy "%APPNAME%.ini"         "%RELEASE_FOLDER%\Plugins\"
 copy "%APPNAME%.rpl"         "%RELEASE_FOLDER%\Replays\"
 copy "CustomCarSpecs.ini"    "%RELEASE_FOLDER%\Plugins\%APPNAME%\"
 copy "..\LicenseText.txt"    "%RELEASE_FOLDER%\Plugins\%APPNAME%\"
+copy "..\LicenseText_3rdPartyTools.txt" "%RELEASE_FOLDER%\Plugins\%APPNAME%\"
 copy "..\ReadMe.md"          "%RELEASE_FOLDER%\Plugins\%APPNAME%\"
 copy "..\ReadMe.md"          "%RELEASE_FOLDER%\Plugins\%APPNAME%\ReadMe.txt"
 
