@@ -201,7 +201,12 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_bCustomReplayShowCroppingRect = false;
 
 	m_screenshotCroppingRectVertexBuffer = nullptr;
-	memset(m_carPreviewTexture, 0, sizeof(m_carPreviewTexture));
+	ZeroMemory(m_carPreviewTexture, sizeof(m_carPreviewTexture));
+
+	ZeroMemory(&m_screenshotCroppingRect, sizeof(m_screenshotCroppingRect));
+	ZeroMemory(&m_carSelectLeftBlackBarRect, sizeof(m_carSelectLeftBlackBarRect));
+	ZeroMemory(&m_carSelectRightBlackBarRect, sizeof(m_carSelectRightBlackBarRect));
+	ZeroMemory(&m_car3DModelInfoPosition, sizeof(m_car3DModelInfoPosition));
 
 	m_pGame = pGame;
 	m_iMenuSelection = 0;
@@ -306,6 +311,12 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile()
 	sTextValue = pluginINIFile.GetValue(szResolutionText, L"CarSelectRightBlackBar", L"");
 	_StringToRect(sTextValue, &this->m_carSelectRightBlackBarRect);
 
+	// Custom location of 3D model into textbox or default location (0,0 = default)
+	sTextValue = pluginINIFile.GetValue(szResolutionText, L"Car3DModelInfoPosition", L"");
+	_StringToPoint(sTextValue, &this->m_car3DModelInfoPosition);
+
+
+	// DirectX (0) or GDI (1) screenshot logic
 	sTextValue = pluginINIFile.GetValue(L"Default", L"ScreenshotAPIType", L"0");
 	this->m_screenshotAPIType = std::stoi(sTextValue);
 
@@ -327,6 +338,10 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile()
 		}
 	}		
 
+
+	//
+	// Set status text msg
+	//
 	m_sMenuStatusText1 = _ToString(m_screenshotPath);
 	m_sMenuStatusText2 = _ToString(std::wstring(szResolutionText)) + " native resolution detected";
 
@@ -1320,32 +1335,6 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 			int posY;
 			int iFontHeight;
 
-			// X pos of additional custom car spec data scaled per resolution
-			switch (g_rectRBRWndClient.right)
-			{
-				case 640: 
-				case 800:
-				case 1024: rbrPosX = 218; break;
-								
-				case 1440:
-				case 1680: rbrPosX = 235; break;
-				
-				default:   rbrPosX = 245; break;
-			}
-
-			iFontHeight = g_pFontCarSpecCustom->GetTextHeight();
-
-			// TODO: Better re-scaler function to map game resolution to screen resolution
-			RBRAPI_MapRBRPointToScreenPoint(rbrPosX, g_pRBRMenuSystem->menuImagePosY, &posX, &posY);
-			posY -= 5 * iFontHeight;
-			
-			PRBRCarSelectionMenuEntry pCarSelectionMenuEntry = &g_RBRCarSelectionMenuEntry[selectedCarIdx];
-
-			g_pFontCarSpecCustom->DrawText(posX, 0 * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsRevision, 0);
-			g_pFontCarSpecCustom->DrawText(posX, 1 * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsSpecYear, 0);
-			g_pFontCarSpecCustom->DrawText(posX, 2 * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysics3DModel, 0);
-			g_pFontCarSpecCustom->DrawText(posX, 3 * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsCustomTxt, 0);
-
 			if (g_pRBRPlugin->m_carPreviewTexture[selectedCarIdx].pTexture == nullptr && g_pRBRPlugin->m_carPreviewTexture[selectedCarIdx].imgSize.cx >= 0 && g_RBRCarSelectionMenuEntry[selectedCarIdx].wszCarModel[0] != '\0')
 			{
 				// Car preview image is not yet read from a file and cached as D3D9 texture in this plugin. Do it now.
@@ -1387,6 +1376,49 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 				// Draw car preview image
 				D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, g_pRBRPlugin->m_carPreviewTexture[selectedCarIdx].pTexture, g_pRBRPlugin->m_carPreviewTexture[selectedCarIdx].vertexes2D);
 			}
+
+
+			//
+			// Car 3D Model info textbo
+			//
+			// X pos of additional custom car spec data scaled per resolution
+			switch (g_rectRBRWndClient.right)
+			{
+				case 640:
+				case 800:
+				case 1024: rbrPosX = 218; break;
+
+				case 1440:
+				case 1680: rbrPosX = 235; break;
+
+				case 1280:
+				case 1360:
+				case 1366:
+				case 1920: rbrPosX = 245; break;
+
+				default:   rbrPosX = -1; break; // Do not try to re-scale automatically. Use brute-force "half of RBR wnd width"
+			}
+
+			iFontHeight = g_pFontCarSpecCustom->GetTextHeight();
+
+			// TODO: Better re-scaler function to map game resolution to screen resolution
+			RBRAPI_MapRBRPointToScreenPoint(rbrPosX, g_pRBRMenuSystem->menuImagePosY, &posX, &posY);
+			posY -= 5 * iFontHeight;
+
+			if (g_pRBRPlugin->m_car3DModelInfoPosition.x != 0)
+				posX = g_pRBRPlugin->m_car3DModelInfoPosition.x;  // Custom X-position
+			else if (rbrPosX == -1)
+				posX = ((g_rectRBRWndClient.right - g_rectRBRWndClient.left) / 2) - 50; // Default brute-force "center of the horizontal screen line"
+
+			if (g_pRBRPlugin->m_car3DModelInfoPosition.y != 0)
+				posY = g_pRBRPlugin->m_car3DModelInfoPosition.y;  // Custom Y-position
+
+			PRBRCarSelectionMenuEntry pCarSelectionMenuEntry = &g_RBRCarSelectionMenuEntry[selectedCarIdx];
+
+			g_pFontCarSpecCustom->DrawText(posX, 0 * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsRevision, 0);
+			g_pFontCarSpecCustom->DrawText(posX, 1 * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsSpecYear, 0);
+			g_pFontCarSpecCustom->DrawText(posX, 2 * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysics3DModel, 0);
+			g_pFontCarSpecCustom->DrawText(posX, 3 * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsCustomTxt, 0);
 		}
 	}
 	//else if (g_pRBRPlugin->m_iCustomReplayState > 0 && g_pRBRPlugin->m_bCustomReplayShowCroppingRect && g_pRBRPlugin->m_screenshotCroppingRectVertexBuffer != nullptr)

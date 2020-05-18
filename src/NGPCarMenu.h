@@ -142,11 +142,13 @@ public:
 	std::wstring m_screenshotPath;				// Path to car preview screenshot images (by default AppPath + \plugins\NGPCarMenu\preview\XResxYRes\)
 	int m_screenshotAPIType;					// Uses DIRECTX or GDI API technique to generate a new screenshot file. 0=DirectX (default), 1=GDI. No GUI option, so tweak this in NGPCarMenu.ini file.
 	std::wstring m_screenshotReplayFileName;	// Name of the RBR replay file used when car preview images are generated
+
 	std::wstring m_rbrCITCarListFilePath;		// Path to RBRCIT carList.ini file (the file has NGP car details and specs information)
 
 	RECT m_screenshotCroppingRect;				// Cropping rect of a screenshot (in RBR window coordinates)
 	RECT m_carSelectLeftBlackBarRect;			// Black bar on the left and right side of the "Select Car" menu (used to hide the default background image)
 	RECT m_carSelectRightBlackBarRect;
+	POINT m_car3DModelInfoPosition;				// X Y position of the car 3D info textbox. If Y is 0 then the plugin uses the default Y location (few lines above the car preview image).
 
 	//CUSTOM_VERTEX_2D m_screenshotCroppingRectVertex2D[4];
 	LPDIRECT3DVERTEXBUFFER9 m_screenshotCroppingRectVertexBuffer; // Screeshot rect vertex to highlight on screen the current capture area

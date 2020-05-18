@@ -189,6 +189,41 @@ bool _StringToRect(const std::wstring& s, RECT* outRect, const wchar_t separator
 	return (items.size() >= 4);
 }
 
+//
+// Split "12 14" string as POINT x y values
+//
+bool _StringToPoint(const std::wstring& s, POINT* outPoint, const wchar_t separatorChar)
+{
+	std::vector<std::wstring> items;
+
+	if (outPoint == nullptr) return false;
+
+	try
+	{
+		std::wstring item;
+		std::wstringstream wss(s);
+		while (std::getline(wss, item, separatorChar))
+		{
+			_Trim(item);
+			if (!item.empty())
+				items.push_back(item);
+		}
+
+		if (items.size() >= 1) outPoint->x= std::stoi(items[0]);
+		else outPoint->x = 0;
+
+		if (items.size() >= 2) outPoint->y = std::stoi(items[1]);
+		else outPoint->y = 0;
+	}
+	catch (...)
+	{
+		// String to int conversion failed. Check input string value.
+		return false;
+	}
+
+	return (items.size() >= 2);
+}
+
 
 //---------------------------------------------------------------------------------------------------------------
 
