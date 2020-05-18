@@ -89,11 +89,15 @@ extern BOOL WriteOpCodeHexString(const LPVOID writeAddr, LPCSTR sHexText);
 extern BOOL WriteOpCodeBuffer(const LPVOID writeAddr, const BYTE* buffer, const int iBufLen);
 extern BOOL WriteOpCodePtr(const LPVOID writeAddr, const LPVOID ptrValue);
 
-extern int  RBRAPI_MapCarIDToMenuIdx(int carID);     // 00..07 carID is not the same as order of car selection items
+extern int RBRAPI_MapCarIDToMenuIdx(int carID);     // 00..07 carID is not the same as order of car selection items
+extern int RBRAPI_MenuIdxToCarID(int menuIdx);
+
 extern BOOL RBRAPI_Replay(const std::string rbrAppFolder, LPCSTR szReplayFileName);
+
 extern void RBRAPI_MapRBRPointToScreenPoint(const float srcX, const float srcY, int* trgX, int* trgY);
 extern void RBRAPI_MapRBRPointToScreenPoint(const float srcX, const float srcY, float* trgX, float* trgY);
 
+extern void RBRAPI_RefreshWndRect();
 
 // Overloaded RBR specific DX9 functions. These re-routed functions are used to draw custom graphics on top of RBR graphics. The custom DX9 function should call these "parent functions" to let RBR do it's own things also.
 typedef HRESULT(__fastcall* tRBRDirectXBeginScene)(void* objPointer);

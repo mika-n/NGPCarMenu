@@ -36,22 +36,18 @@
 #undef USE_DEBUG
 #endif
 
-
 #if USE_DEBUG == 1
-#include "D3D9Font\D3DFont.h"
-
 #define DebugPrint DebugPrintFunc // DEBUG version to dump logfile messages
 #else
 #define DebugPrint  // RELEASE version of DebugPrint doing nothing
 #endif
 
-#if USE_DEBUG == 1
-extern CD3DFont* pFontDebug;
+#define LogPrint DebugPrintFunc   // LogPrint prints out a txt message both in retail and debug builds
 
-extern void DebugPrintCloseFile();
-extern void DebugPrintEmptyFile();
+extern void DebugCloseFile();
+extern void DebugClearFile();
 extern void DebugPrintFunc(LPCSTR lpszFormat, ...);
-#endif
+extern void DebugPrintFunc(LPCWSTR lpszFormat, ...);
 
 //------------------------------------------------------------------------------------------------
 
@@ -71,6 +67,8 @@ extern void _Trim(std::wstring & s);  // Trim wstring (in-place, modify the s)
 
 extern std::wstring _ToWString(const std::string & s);	// Convert std::string to std::wstring
 extern std::string  _ToString(const std::wstring & s);  // Convert std::wstring to std:string
+extern inline void _ToLowerCase(std::string & s);       // Convert string to lowercase letters (in-place, so the original str in the parameter is converted)
+extern inline void _ToLowerCase(std::wstring & s);      // Convert wstring to lowercase letters (in-place)
 
 extern bool _StringToRect(const std::wstring & s, RECT * outRect, const wchar_t separatorChar = L' '); // String in "0 50 200 400" format is converted as RECT struct value 
 
@@ -114,8 +112,8 @@ typedef CUSTOM_VERTEX_3D PCUSTOM_VERTEX_3D;
 
 typedef struct
 {
-	IDirect3DTexture9* pTexture;		//   D3D9 texture (fex loaded from a PNG file)
-	CUSTOM_VERTEX_TEX_2D vertexes2D[4];		//   Rectangle vertex at specified pixel position and size
+	IDirect3DTexture9* pTexture;		//   D3D9 texture (fex loaded from a PNG or BMP file)
+	CUSTOM_VERTEX_TEX_2D vertexes2D[4];	//   Rectangle vertex at specified pixel position and size
 	SIZE imgSize;						//   The original size of the loaded PNG file image
 } IMAGE_TEXTURE;						// RBR car preview picture (texture and rect vertex)
 typedef IMAGE_TEXTURE* PIMAGE_TEXTURE;
@@ -136,7 +134,7 @@ extern void    D3D9DrawVertex2D(const LPDIRECT3DDEVICE9 pD3Device, const LPDIREC
 // https://stackoverflow.com/questions/30021274/capture-screen-using-directx (Simon Mourier)
 // Borrowed code snippets about converting DX9 surface to bitmap array and then converting and saving in PNG/DDS file format. Modified to work with RBR plugin.
 //
-// Contains also code snippets about creating an empty D3D9 surface and then populating it with bitmap data coming from, for example, external PNG file (Thanks Ivan for an idea of using empty surface at first).
+// Contains also code snippets about creating an empty D3D9 surface and then populating it with bitmap data coming from, for example, external PNG/BMP file (Thanks Ivan for an idea of using empty surface at first).
 // The code and idea borrowed from https://stackoverflow.com/questions/16172508/how-can-i-create-texture-in-directx-9-without-d3dx9 (Ivan Aksamentov).
 // Modified the code snipped to work with RBR plugin.
 //

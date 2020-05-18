@@ -213,7 +213,25 @@ int RBRAPI_MapCarIDToMenuIdx(int carID)
 	}
 }
 
-// Map RBR game point to screen point
+int RBRAPI_MenuIdxToCarID(int menuIdx)
+{
+	// Map menu order idx to carID (slot#) 0..7
+	switch (menuIdx)
+	{
+	case 6: return 0;
+	case 3: return 1;
+	case 7: return 2;
+	case 1: return 3;
+	case 4: return 4;
+	case 0: return 5;
+	case 2: return 6;
+	case 5: return 7;
+	default: return -1;
+	}
+}
+
+
+// Map RBR game point to screen point (TODO. Not perfect. Doesnt always scale correctly. Try to find better logic)
 void RBRAPI_MapRBRPointToScreenPoint(const float srcX, const float srcY, int* trgX, int* trgY)
 {
 	if(trgX != nullptr)
@@ -232,6 +250,18 @@ void RBRAPI_MapRBRPointToScreenPoint(const float srcX, const float srcY, float* 
 		*trgY = static_cast<float>(srcY * (g_rectRBRWndClient.bottom / 480.0f  /*g_pRBRGameConfig->resolutionY*/));
 }
 
+
+// Update RBR wnd rectangle values up-to-date (in windowed mode the window may have been moved around). 
+void RBRAPI_RefreshWndRect()
+{
+	GetWindowRect(g_hRBRWnd, &g_rectRBRWnd);							// Window size and position (including potential WinOS window decorations)
+	GetClientRect(g_hRBRWnd, &g_rectRBRWndClient);						// The size or the D3D9 client area (without window decorations and left-top always 0)
+	CopyRect(&g_rectRBRWndMapped, &g_rectRBRWndClient);
+	MapWindowPoints(g_hRBRWnd, NULL, (LPPOINT)&g_rectRBRWndMapped, 2);	// The client area mapped as physical screen position (left-top relative to screen)
+}
+
+
+// Replay RBR replay file
 BOOL RBRAPI_Replay(const std::string rbrAppFolder, LPCSTR szReplayFileName)
 {
 	// https://suxin.space/notes/rbr-play-replay/ (Sasha / Suxin)

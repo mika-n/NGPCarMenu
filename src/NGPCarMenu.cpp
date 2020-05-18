@@ -28,7 +28,7 @@
 
 #include <filesystem>			// fs::directory_iterator
 #include <fstream>				// std::ifstream
-
+#include <chrono>				// std::chrono::steady_clock
 #include <wincodec.h>			// GUID_ContainerFormatPng 
 
 #include "NGPCarMenu.h"
@@ -46,10 +46,10 @@ tRBRDirectXBeginScene Func_OrigRBRDirectXBeginScene = nullptr;  // Re-routed bui
 tRBRDirectXEndScene   Func_OrigRBRDirectXEndScene = nullptr;
 
 #if USE_DEBUG == 1
-CD3DFont* pFontDebug = nullptr;
+CD3DFont* g_pFontDebug = nullptr;
 #endif 
 
-CD3DFont* pFontCarSpecCustom = nullptr;
+CD3DFont* g_pFontCarSpecCustom = nullptr;
 
 CNGPCarMenu*         g_pRBRPlugin = nullptr;				// The one and only RBRPlugin instance
 
@@ -102,10 +102,18 @@ RBRCarSelectionMenuEntry g_RBRCarSelectionMenuEntry[8] = {
 };
 
 
-// Menu item names (custom plugin menu)
-char* g_RBRPluginMenu[3] = {
+//
+// Menu item command ID and names (custom plugin menu). The ID should match the g_RBRPluginMenu array index (0...n)
+//
+#define C_MENUCMD_RELOAD			0
+#define C_MENUCMD_CREATEOPTION		1
+#define C_MENUCMD_IMAGEOPTION		2
+#define C_MENUCMD_CREATE			3
+
+char* g_RBRPluginMenu[4] = {
 	 "RELOAD car images"	// Clear cached car images to force re-loading of new images
 	,"Create option"		// CreateOptions
+	,"Image option"		// CreateOptions
 	,"CREATE car images"	// Create new car images (all or only missing car iamges)
 };
 
@@ -114,6 +122,42 @@ char* g_RBRPluginMenu_CreateOptions[2] = {
 	"Only missing car images"
 	,"All car images"
 };
+
+// Image output option
+char* g_RBRPluginMenu_ImageOptions[2] = {
+	"PNG"
+	,"BMP"
+};
+
+
+//-----------------------------------------------------------------------------------------------------------------------------
+#if USE_DEBUG == 1
+void DebugDumpBufferToScreen(byte* pBuffer, int iPreOffset = 0, int iBytesToDump = 64, int posX = 850, int posY = 1)
+{
+	WCHAR txtBuffer[64];
+
+	D3DRECT rec = { posX, posY, posX + 440, posY + ((iBytesToDump / 8) * 20) };
+	g_pRBRIDirect3DDevice9->Clear(1, &rec, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 50, 50, 50), 0, 0);
+
+	byte* pBuffer2 = pBuffer - iPreOffset;
+	for (int idx = 0; idx < iBytesToDump; idx += 8)
+	{
+		int iAppendPos = 0;
+
+		iAppendPos += swprintf_s(txtBuffer + iAppendPos, COUNT_OF_ITEMS(txtBuffer) - iAppendPos, L"%04x ", idx);
+		for (int idx2 = 0; idx2 < 8; idx2++)
+			iAppendPos += swprintf_s(txtBuffer + iAppendPos, COUNT_OF_ITEMS(txtBuffer) - iAppendPos, L"%02x ", (byte)pBuffer2[idx + idx2]);
+
+		iAppendPos += swprintf_s(txtBuffer + iAppendPos, COUNT_OF_ITEMS(txtBuffer) - iAppendPos, L" | ");
+
+		for (int idx2 = 0; idx2 < 8; idx2++)
+			iAppendPos += swprintf_s(txtBuffer + iAppendPos, COUNT_OF_ITEMS(txtBuffer) - iAppendPos, L"%c", (pBuffer2[idx + idx2] < 32 || pBuffer2[idx + idx2] > 126) ? L'.' : pBuffer2[idx + idx2]);
+
+		g_pFontDebug->DrawText(posX, (idx / 8) * 20 + posY, D3DCOLOR_ARGB(255, 240, 250, 0), txtBuffer, 0);
+		//pFontDebug->DrawText(posX, (idx / 8) * 20 + posY, D3DCOLOR_ARGB(255, 240, 250, 0), txtBuffer, 0);
+	}
+}
+#endif
 
 
 //-----------------------------------------------------------------------------------------------------------------------------
@@ -125,14 +169,11 @@ BOOL APIENTRY DllMain( HANDLE hModule,  DWORD  ul_reason_for_call, LPVOID lpRese
 IPlugin* RBR_CreatePlugin( IRBRGame* pGame )
 {
 #if USE_DEBUG == 1	
-	DebugPrintEmptyFile();
+	DebugClearFile();
 #endif
-	DebugPrint("--------------------------------------------\nEnter RBR_CreatePlugin");
+	DebugPrint("--------------------------------------------\nRBR_CreatePlugin");
 
 	if (g_pRBRPlugin == nullptr) g_pRBRPlugin = new CNGPCarMenu(pGame);
-
-	DebugPrint("Exit RBR_CreatePlugin");
-
 	return g_pRBRPlugin;
 }
 
@@ -165,6 +206,9 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_pGame = pGame;
 	m_iMenuSelection = 0;
 	m_iMenuCreateOption = 0;
+	m_iMenuImageOption = 0;
+
+	m_screenshotAPIType = C_SCREENSHOTAPITYPE_DIRECTX;
 
 	RefreshSettingsFromPluginINIFile();
 	InitCarSpecData();
@@ -184,10 +228,10 @@ CNGPCarMenu::~CNGPCarMenu(void)
 	if (gtcDirect3DEndScene != nullptr) delete gtcDirect3DEndScene;
 
 #if USE_DEBUG == 1
-	if (pFontDebug != nullptr) delete pFontDebug;
+	if (g_pFontDebug != nullptr) delete g_pFontDebug;
 #endif 
 
-	if (pFontCarSpecCustom != nullptr) delete pFontCarSpecCustom;
+	if (g_pFontCarSpecCustom != nullptr) delete g_pFontCarSpecCustom;
 
 	SAFE_RELEASE(m_screenshotCroppingRectVertexBuffer);
 	ClearCachedCarPreviewImages();
@@ -195,6 +239,7 @@ CNGPCarMenu::~CNGPCarMenu(void)
 	if (g_pRBRPlugin == this) g_pRBRPlugin = nullptr;
 
 	DebugPrint("Exit CNGPCarMenu.Destructor");
+	DebugCloseFile();
 }
 
 void CNGPCarMenu::ClearCachedCarPreviewImages()
@@ -212,6 +257,8 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile()
 {
 	WCHAR szResolutionText[16];
 
+	DebugPrint("Enter CNGPCarMenu.RefreshSettingsFromPluginINIFile");
+
 	CSimpleIniW  pluginINIFile;
 	std::wstring sTextValue;
 
@@ -221,11 +268,12 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile()
 	this->m_screenshotReplayFileName = pluginINIFile.GetValue(L"Default", L"ScreenshotReplay", L"");
 	_Trim(this->m_screenshotReplayFileName);
 
+	RBRAPI_RefreshWndRect();
 	swprintf_s(szResolutionText, COUNT_OF_ITEMS(szResolutionText), L"%dx%d", g_rectRBRWndClient.right, g_rectRBRWndClient.bottom);
 
 	this->m_screenshotPath = pluginINIFile.GetValue(L"Default", L"ScreenshotPath", L"");
 	_Trim(this->m_screenshotPath);
-	if (this->m_screenshotPath.length() >= 2 && this->m_screenshotPath[0] != '\\' && this->m_screenshotPath[1] != ':')
+	if (this->m_screenshotPath.length() >= 2 && this->m_screenshotPath[0] != '\\' && this->m_screenshotPath[1] != ':' && g_rectRBRWndClient.right > 0 && g_rectRBRWndClient.bottom > 0)
 	{
 		this->m_screenshotPath = this->m_sRBRRootDirW + L"\\" + this->m_screenshotPath + L"\\" + szResolutionText;
 
@@ -237,8 +285,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile()
 		}
 		catch (...)
 		{
-			// Do nothing.
-			// TODO. Add some error logging to release build
+			LogPrint("ERROR CNGPCarMenu.RefreshSettingsFromPluginINIFile. %s folder creation failed", this->m_screenshotPath.c_str());
 		}
 	}
 
@@ -259,8 +306,56 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile()
 	sTextValue = pluginINIFile.GetValue(szResolutionText, L"CarSelectRightBlackBar", L"");
 	_StringToRect(sTextValue, &this->m_carSelectRightBlackBarRect);
 
+	sTextValue = pluginINIFile.GetValue(L"Default", L"ScreenshotAPIType", L"0");
+	this->m_screenshotAPIType = std::stoi(sTextValue);
+
+	// Screenshot image format option. One of the values in g_RBRPluginMenu_ImageOptions array (the default is the item in the first index)
+	this->m_iMenuImageOption = 0;
+	sTextValue = pluginINIFile.GetValue(L"Default", L"ScreenshotFileType", L"");
+	_Trim(sTextValue);
+	for (int idx = 0; idx < COUNT_OF_ITEMS(g_RBRPluginMenu_ImageOptions); idx++)
+	{
+		std::string  sOptionValue;
+		std::wstring wsOptionValue;
+		sOptionValue  = g_RBRPluginMenu_ImageOptions[idx];
+		wsOptionValue = _ToWString(sOptionValue);
+
+		if (_wcsnicmp(sTextValue.c_str(), wsOptionValue.c_str(), wsOptionValue.length()) == 0)
+		{
+			this->m_iMenuImageOption = idx;
+			break;
+		}
+	}		
+
 	m_sMenuStatusText1 = _ToString(m_screenshotPath);
 	m_sMenuStatusText2 = _ToString(std::wstring(szResolutionText)) + " native resolution detected";
+
+	DebugPrint("Exit CNGPCarMenu.RefreshSettingsFromPluginINIFile");
+}
+
+void CNGPCarMenu::SaveSettingsToPluginINIFile()
+{
+	// Screenshot image format option. One of the values in g_RBRPluginMenu_ImageOptions array (the default is the item in the first index)
+	std::string sIniFileName;
+	std::string  sOptionValue;
+	std::wstring wsOptionValue;
+	CSimpleIniW  pluginINIFile;
+
+	try
+	{
+		sIniFileName = CNGPCarMenu::m_sRBRRootDir + "\\Plugins\\NGPCarMenu.ini";
+		pluginINIFile.LoadFile(sIniFileName.c_str());
+
+		sOptionValue = g_RBRPluginMenu_ImageOptions[this->m_iMenuImageOption];
+		wsOptionValue = _ToWString(sOptionValue);
+
+		pluginINIFile.SetValue(L"Default", L"ScreenshotFileType", wsOptionValue.c_str());
+		pluginINIFile.SaveFile(sIniFileName.c_str());
+	}
+	catch (...)
+	{
+		LogPrint("ERROR CNGPCarMenu.SaveSettingsToPluginINIFile. %s INI writing failed", sIniFileName.c_str());
+	}
 }
 
 
@@ -275,7 +370,14 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile()
 //
 void CNGPCarMenu::InitCarSpecData()
 {
-	CSimpleIniW* ngpCarListINIFile = nullptr;
+	DebugPrint("Enter CNGPCarMenu.InitCarSpecData");
+
+	CSimpleIniW ngpCarListINIFile;
+	CSimpleIniW customCarSpecsINIFile;
+
+	CSimpleIniW stockCarListINIFile;
+	std::wstring sStockCarModelName;
+
 	static const char* szPhysicsCarFolder[8] = { "s_i2003" , "m_lancer", "t_coroll", "h_accent", "p_206", "s_i2000", "c_xsara", "mg_zr" };
 
 	std::string sPath;
@@ -283,32 +385,61 @@ void CNGPCarMenu::InitCarSpecData()
 
 	try
 	{
-		int iNumOfGears = -1;
+		int iNumOfGears;
 
-		ngpCarListINIFile = new CSimpleIniW();
 		if (fs::exists(m_rbrCITCarListFilePath))
-			ngpCarListINIFile->LoadFile(m_rbrCITCarListFilePath.c_str());
+			ngpCarListINIFile.LoadFile(m_rbrCITCarListFilePath.c_str());
 		else
 			// Add warning about missing RBRCIT carList.ini file
 			wcsncpy_s(g_RBRCarSelectionMenuEntry[0].wszCarPhysicsCustomTxt, (m_rbrCITCarListFilePath + L" missing. Cannot show car specs").c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[0].wszCarPhysicsCustomTxt));
 
+		// Load std RBR cars list and custom carSpec file (fex original car specs are set here). These are used if the phystics\<CarFolder> doesn't have NGP car description file
+		customCarSpecsINIFile.LoadFile((m_sRBRRootDirW + L"\\Plugins\\NGPCarMenu\\CustomCarSpecs.ini").c_str());
+		stockCarListINIFile.LoadFile((m_sRBRRootDirW + L"\\cars\\Cars.ini").c_str());
+
 		for (int idx = 0; idx < 8; idx++)
 		{
+			iNumOfGears = -1;
 			sPath = CNGPCarMenu::m_sRBRRootDir + "\\physics\\" + szPhysicsCarFolder[idx];
-			if (InitCarSpecDataFromPhysicsFile(sPath, &g_RBRCarSelectionMenuEntry[idx], &iNumOfGears))
-				InitCarSpecDataFromNGPFile(ngpCarListINIFile, &g_RBRCarSelectionMenuEntry[idx], iNumOfGears);
+
+			if (!InitCarSpecDataFromPhysicsFile(sPath, &g_RBRCarSelectionMenuEntry[idx], &iNumOfGears))
+			{
+				// Desc file of NGP car models missing in physics\<carName> folder. Check if this is a stock original car model (ie. those don't have NGP desc file)
+				stockCarListINIFile.LoadFile((m_sRBRRootDirW + L"\\cars\\Cars.ini").c_str());
+
+				WCHAR wszStockCarINISection[8];
+				swprintf_s(wszStockCarINISection, COUNT_OF_ITEMS(wszStockCarINISection), L"Car0%d", RBRAPI_MenuIdxToCarID(idx));
+
+				sStockCarModelName = stockCarListINIFile.GetValue(wszStockCarINISection, L"CarName", L"");
+				_Trim(sStockCarModelName);
+
+				if (sStockCarModelName.length() >= 4 && sStockCarModelName[sStockCarModelName.length() - 3] == L'(' && sStockCarModelName[sStockCarModelName.length() - 1] == L')')
+				{
+					sStockCarModelName.erase(sStockCarModelName.length() - 3);
+					_Trim(sStockCarModelName);
+				}
+
+				if(!sStockCarModelName.empty())
+					wcsncpy_s(g_RBRCarSelectionMenuEntry[idx].wszCarModel, sStockCarModelName.c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[idx].wszCarModel));
+			}
+
+			// NGP car model or stock car model lookup to RBCIT/carList/carList.ini file. If the car specs are missing then try to use NGPCarMenu custom carspec INI file
+			if (!InitCarSpecDataFromNGPFile(&ngpCarListINIFile, &g_RBRCarSelectionMenuEntry[idx], iNumOfGears))
+				if (InitCarSpecDataFromNGPFile(&customCarSpecsINIFile, &g_RBRCarSelectionMenuEntry[idx], iNumOfGears))
+					g_RBRCarSelectionMenuEntry[idx].wszCarPhysics3DModel[0] = L'\0'; // Clear warning about missing NGP car desc file
 		}
 	}
 	catch (const fs::filesystem_error& ex)
 	{
-		DebugPrint("ERROR in InitCarSpecData. %s", ex.what());
+		LogPrint("ERROR CNGPCarMenu.InitCarSpecData. %s %s", m_rbrCITCarListFilePath.c_str(), ex.what());
 	}
 	catch (...)
 	{
 		// Hmmm... Something went wrong
+		LogPrint("ERROR CNGPCarMenu.InitCarSpecData. %s reading failed", m_rbrCITCarListFilePath.c_str());
 	}
 
-	SAFE_DELETE(ngpCarListINIFile);
+	DebugPrint("Exit CNGPCarMenu.InitCarSpecData");
 }
 
 
@@ -317,6 +448,8 @@ void CNGPCarMenu::InitCarSpecData()
 //
 bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, PRBRCarSelectionMenuEntry pRBRCarSelectionMenuEntry, int* outNumOfGears)
 {
+	DebugPrint("Enter CNGPCarMenu.InitCarSpecDataFromPhysicsFile");
+
 	const fs::path fsFolderName(folderName);
 
 	std::wstring wfsFileName;
@@ -350,6 +483,8 @@ bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, 
 					try
 					{
 						*outNumOfGears = StrToIntW(sTextLine.substr(14).c_str());
+						if (*outNumOfGears > 2)
+							*outNumOfGears -= 2; // Minus reverse and neutral gears because NGP data includes those in NumberOfGears value
 					}
 					catch (...)
 					{
@@ -360,10 +495,10 @@ bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, 
 			}
 		}
 
-		// Find all files without file extensions and see it the file is the NGP car model file
+		// Find all files without file extensions and see it the file is the NGP car model file (revison/specification date/3d model keyword in the beginning of line)
 		for (const auto& entry : fs::directory_iterator(fsFolderName))
 		{
-			if (entry.is_regular_file() && entry.path().extension().compare("") == 0)
+			if (entry.is_regular_file() && entry.path().extension().compare(".lsp") != 0 )
 			{
 				fsFileName = entry.path().filename().string();
 				//DebugPrint(fsFileName.c_str());
@@ -437,19 +572,21 @@ bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, 
 		{
 			std::wstring wFolderName = _ToWString(folderName);
 			// Show warning that RBRCIT/NGP carModel file is missing
-			wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel, (wFolderName + L"\\<carModelName> NGP file missing").c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel));
+			wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel, (wFolderName + L"\\<carModelName> NGP model description file missing").c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel));
 		}
-
 	}
 	catch (const fs::filesystem_error& ex)
 	{
-		DebugPrint("ERROR in InitCarSpecDataFromPhysicsFile. %s", ex.what());
+		DebugPrint("ERROR CNGPCarMenu.InitCarSpecDataFromPhysicsFile. %s %s", folderName.c_str(), ex.what());
 		bResult = FALSE;
 	}
 	catch(...)
 	{
+		LogPrint("ERROR CNGPCarMenu.InitCarSpecDataFromPhysicsFile. %s folder doesn't have or error while reading NGP model spec file", folderName.c_str());
 		bResult = FALSE;
 	}
+
+	DebugPrint("Exit CNGPCarMenu.InitCarSpecDataFromPhysicsFile");
 
 	return bResult;
 }
@@ -461,8 +598,12 @@ bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, 
 //
 bool CNGPCarMenu::InitCarSpecDataFromNGPFile(CSimpleIniW* ngpCarListINIFile, PRBRCarSelectionMenuEntry pRBRCarSelectionMenuEntry, int numOfGears)
 {
+	bool bResult = FALSE;
+
+	DebugPrint("Enter CNGPCarMenu.InitCarSpecDataFromNGPFile");
+
 	if (ngpCarListINIFile == nullptr || pRBRCarSelectionMenuEntry->wszCarModel[0] == '\0')
-		return FALSE;
+		return bResult;
 
 	try
 	{
@@ -487,15 +628,7 @@ bool CNGPCarMenu::InitCarSpecDataFromNGPFile(CSimpleIniW* ngpCarListINIFile, PRB
 				//DebugPrint(iter->pItem);
 
 				wszIniItemValue = ngpCarListINIFile->GetValue(iter->pItem, L"cat", nullptr);
-				//int len = wcstombs(pRBRCarSelectionMenuEntry->szCarCategory, szIniItemValue, COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->szCarCategory));
-				wcstombs_s(/*&len*/ nullptr, pRBRCarSelectionMenuEntry->szCarCategory, sizeof(pRBRCarSelectionMenuEntry->szCarCategory), wszIniItemValue, _TRUNCATE);
-
-				/*if (len == COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->szCarCategory))
-					// Make sure the converted string is NULL terminated in case of truncation
-					pRBRCarSelectionMenuEntry->szCarCategory[--len] = '\0';
-				*/
-
-				//DebugPrint(szIniItemValue);
+				wcstombs_s(nullptr, pRBRCarSelectionMenuEntry->szCarCategory, sizeof(pRBRCarSelectionMenuEntry->szCarCategory), wszIniItemValue, _TRUNCATE);
 
 				wszIniItemValue = ngpCarListINIFile->GetValue(iter->pItem, L"year", nullptr);
 				wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarYear, wszIniItemValue, COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarYear));
@@ -513,6 +646,7 @@ bool CNGPCarMenu::InitCarSpecDataFromNGPFile(CSimpleIniW* ngpCarListINIFile, PRB
 				else
 					wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarTrans, wszIniItemValue, COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarTrans));
 
+				bResult = TRUE;
 				break;
 			}
 
@@ -524,10 +658,13 @@ bool CNGPCarMenu::InitCarSpecDataFromNGPFile(CSimpleIniW* ngpCarListINIFile, PRB
 	catch (...)
 	{
 		// Hmmm...Something went wrong.
-		return FALSE;
+		LogPrint("ERROR CNGPCarMenu.InitCarSpecDataFromNGPFile. carList.ini INI file reading error");
+		bResult = FALSE;
 	}
 
-	return TRUE;
+	DebugPrint("Exit CNGPCarMenu.InitCarSpecDataFromNGPFile");
+
+	return bResult;;
 }
 
 
@@ -596,10 +733,15 @@ int CNGPCarMenu::GetNextScreenshotCarID(int currentCarID)
 
 			if (!m_screenshotPath.empty() && g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(currentCarID)].wszCarModel[0] != '\0')
 			{
+				// If CreateOption is "only missing car images" then check the existence of output img file
 				if (m_iMenuCreateOption == 0)
 				{
+					std::string imgExtension = ".";
+					imgExtension = imgExtension + g_RBRPluginMenu_ImageOptions[m_iMenuImageOption];
+					_ToLowerCase(imgExtension);
+
 					// If the output PNG preview image file already exists then don't re-generate the screenshot (menu option "Only missing car images")
-					outputFileName = m_screenshotPath + L"\\" + g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(currentCarID)].wszCarModel + L".png";
+					outputFileName = m_screenshotPath + L"\\" + g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(currentCarID)].wszCarModel + _ToWString(imgExtension);
 					if (fs::exists(outputFileName))
 						continue;
 				}
@@ -658,12 +800,12 @@ bool CNGPCarMenu::PrepareScreenshotReplayFile(int carID)
 	}
 	catch (const fs::filesystem_error& ex)
 	{
-		DebugPrint("ERROR in PrepareScreenshotReplayFile. %s", ex.what());
+		LogPrint("ERROR CNGPCarMenu::PrepareScreenshotReplayFile. carid=%d %s", carID, ex.what());
 		return FALSE;
 	}
 	catch (...)
 	{
-		DebugPrint("ERROR in PrepareScreenshotReplayFile");
+		LogPrint("ERROR CNGPCarMenu::PrepareScreenshotReplayFile. carid=%d", carID);
 		return FALSE;
 	}
 }
@@ -686,29 +828,25 @@ const char* CNGPCarMenu::GetName(void)
 		g_pRBRIDirect3DDevice9->GetCreationParameters(&d3dCreationParameters);
 		g_hRBRWnd = d3dCreationParameters.hFocusWindow;
 
-		GetWindowRect(g_hRBRWnd, &g_rectRBRWnd);							// Window size and position (including potential WinOS window decorations)
-		GetClientRect(g_hRBRWnd, &g_rectRBRWndClient);						// The size or the D3D9 client area (without window decorations and left-top always 0)
-		CopyRect(&g_rectRBRWndMapped, &g_rectRBRWndClient);					
-		MapWindowPoints(g_hRBRWnd, NULL, (LPPOINT)&g_rectRBRWndMapped, 2);	// The client area mapped as physical screen position (left-top relative to screen)
-
+		RBRAPI_RefreshWndRect();
 		// Pointer 0x493980 -> rbrHwnd? Can it be used to re-route WM messages to our own windows handler and this way to "listen" RBR key presses?
 
 		RefreshSettingsFromPluginINIFile();
 
 		// Initialize D3D9 compatible font classes
 #if USE_DEBUG == 1
-		pFontDebug = new CD3DFont(L"Courier New", 11, 0);
-		pFontDebug->InitDeviceObjects(g_pRBRIDirect3DDevice9);
-		pFontDebug->RestoreDeviceObjects();
+		g_pFontDebug = new CD3DFont(L"Courier New", 11, 0);
+		g_pFontDebug->InitDeviceObjects(g_pRBRIDirect3DDevice9);
+		g_pFontDebug->RestoreDeviceObjects();
 #endif 
 
 		int iFontSize = 12;
 		if (g_rectRBRWndClient.bottom < 600) iFontSize = 7;
 		else if (g_rectRBRWndClient.bottom < 768) iFontSize = 9;
 
-		pFontCarSpecCustom = new CD3DFont(L"Trebuchet MS", iFontSize, 0);
-		pFontCarSpecCustom->InitDeviceObjects(g_pRBRIDirect3DDevice9);
-		pFontCarSpecCustom->RestoreDeviceObjects();
+		g_pFontCarSpecCustom = new CD3DFont(L"Trebuchet MS", iFontSize, 0);
+		g_pFontCarSpecCustom->InitDeviceObjects(g_pRBRIDirect3DDevice9);
+		g_pFontCarSpecCustom->RestoreDeviceObjects();
 
 		if (g_pRBRGameConfig == NULL)  g_pRBRGameConfig = (PRBRGameConfig) *(DWORD*)(0x007EAC48);
 		if (g_pRBRGameMode == NULL)    g_pRBRGameMode = (PRBRGameMode) * (DWORD*)(0x007EAC48);
@@ -807,6 +945,8 @@ void CNGPCarMenu::DrawResultsUI(void)
 //
 void CNGPCarMenu::DrawFrontEndPage(void)
 {
+	char szTextBuf[128]; // This should be enough to hold the longest g_RBRPlugin menu string + the logest g_RBRPluginMenu_xxxOptions option string
+
 	// Draw blackout (coordinates specify the 'window' where you don't want black)
 	m_pGame->DrawBlackOut(420.0f, 0.0f, 420.0f, 480.0f);
 
@@ -821,14 +961,14 @@ void CNGPCarMenu::DrawFrontEndPage(void)
 	m_pGame->SetMenuColor(IRBRGame::MENU_TEXT);
 	for (unsigned int i = 0; i < COUNT_OF_ITEMS(g_RBRPluginMenu); ++i)
 	{
-		if (i == 1)
-		{
-			char szTextBuf[128];
+		if (i == C_MENUCMD_CREATEOPTION)
 			sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_RBRPluginMenu[i], g_RBRPluginMenu_CreateOptions[m_iMenuCreateOption]);
-			m_pGame->WriteText(65.0f, 70.0f + (static_cast< float >(i) * 21.0f), szTextBuf);
-		}
+		else if (i == C_MENUCMD_IMAGEOPTION)
+			sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_RBRPluginMenu[i], g_RBRPluginMenu_ImageOptions[m_iMenuImageOption]);
 		else
-			m_pGame->WriteText(65.0f, 70.0f + (static_cast< float >(i) * 21.0f), g_RBRPluginMenu[i]);
+			sprintf_s(szTextBuf, sizeof(szTextBuf), "%s", g_RBRPluginMenu[i]);
+
+		m_pGame->WriteText(65.0f, 70.0f + (static_cast< float >(i) * 21.0f), szTextBuf);
 	}
 
 	if (!m_sMenuStatusText1.empty())
@@ -858,24 +998,26 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 		// Menu item "selected". Do the action.
 		//
 
-		if (m_iMenuSelection == 0)
+		if (m_iMenuSelection == C_MENUCMD_RELOAD)
 		{
-			// Re-read car preview images
+			// Re-read car preview images from source files
 			ClearCachedCarPreviewImages();
 			RefreshSettingsFromPluginINIFile();
 
 			// DEBUG. Show/Hide cropping area
-			bool bNewStatus = !m_bCustomReplayShowCroppingRect;
+			//bool bNewStatus = !m_bCustomReplayShowCroppingRect;
 			m_bCustomReplayShowCroppingRect = false;
 			D3D9CreateRectangleVertexBuffer(g_pRBRIDirect3DDevice9, (float)this->m_screenshotCroppingRect.left, (float)this->m_screenshotCroppingRect.top, (float)(this->m_screenshotCroppingRect.right - this->m_screenshotCroppingRect.left), (float)(this->m_screenshotCroppingRect.bottom - this->m_screenshotCroppingRect.top), &m_screenshotCroppingRectVertexBuffer);
-			m_bCustomReplayShowCroppingRect = bNewStatus;
+			//m_bCustomReplayShowCroppingRect = bNewStatus;
 		}
-		else if (m_iMenuSelection == 1)
+		//else if (m_iMenuSelection == C_MENUCMD_CREATEOPTION || m_iMenuSelection == C_MENUCMD_IMAGEOPTION)
+		//{
+			// Do nothing when option line is selected
+		//}
+		else if (m_iMenuSelection == C_MENUCMD_CREATE)
 		{
-			// Do nothing when "Create option" line is selected
-		}
-		else if (m_iMenuSelection == 2)
-		{
+			// Create new car preview images using BMP or PNG format
+
 			m_bCustomReplayShowCroppingRect = false;
 			m_iCustomReplayScreenshotCount = 0;
 
@@ -919,12 +1061,22 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 	// Menu options changed in the current menu line. Options don't wrap around.
 	// Note! Not all menu lines have any additional options.
 	//
-	if (m_iMenuSelection == 1 && bLeft && (--m_iMenuCreateOption) < 0)
+	if (m_iMenuSelection == C_MENUCMD_CREATEOPTION && bLeft && (--m_iMenuCreateOption) < 0)
 		m_iMenuCreateOption = 0;
 
-	if (m_iMenuSelection == 1 && bRight && (++m_iMenuCreateOption) >= COUNT_OF_ITEMS(g_RBRPluginMenu_CreateOptions))
+	if (m_iMenuSelection == C_MENUCMD_CREATEOPTION && bRight && (++m_iMenuCreateOption) >= COUNT_OF_ITEMS(g_RBRPluginMenu_CreateOptions))
 		m_iMenuCreateOption = COUNT_OF_ITEMS(g_RBRPluginMenu_CreateOptions) - 1;
 
+
+	int iPrevMenuImageOptionValue = m_iMenuImageOption;
+	if (m_iMenuSelection == C_MENUCMD_IMAGEOPTION && bLeft && (--m_iMenuImageOption) < 0)
+		m_iMenuImageOption = 0;
+
+	if (m_iMenuSelection == C_MENUCMD_IMAGEOPTION && bRight && (++m_iMenuImageOption) >= COUNT_OF_ITEMS(g_RBRPluginMenu_ImageOptions))
+		m_iMenuImageOption = COUNT_OF_ITEMS(g_RBRPluginMenu_ImageOptions) - 1;
+
+	if(iPrevMenuImageOptionValue != m_iMenuImageOption)
+		SaveSettingsToPluginINIFile();
 }
 
 //------------------------------------------------------------------------------------------------
@@ -1048,106 +1200,88 @@ HRESULT __fastcall CustomRBRDirectXBeginScene(void* objPointer)
 	else if (g_pRBRPlugin->m_iCustomReplayState > 0)
 	{	
 		// NGPCarMenu plugin is generating car preview screenshot images. Draw a car model and take a screenshot from a specified cropping screen area
-
+		g_pRBRPlugin->m_bCustomReplayShowCroppingRect = true;
 		g_pRBRCarInfo->stageStartCountdown = 1.0f;
 
 		if (g_pRBRGameMode->gameMode == 0x08 /*&& g_pRBRGameModeExt->gameModeExt == 0x04*/)
 		{
-			// Move around the car and camera during replay and pause the replay. Don't start the normal replay logic of RBR
+			// Don't start the normal replay logic of RBR
+			g_pRBRGameMode->gameMode = 0x0A;
+			//g_pRBRGameModeExt->gameModeExt = 0x04;
+		}
+
+		if (g_pRBRGameMode->gameMode == 0x0A && g_pRBRGameModeExt->gameModeExt == 0x01 && g_pRBRPlugin->m_iCustomReplayState == 1)
+		{		
+			g_pRBRPlugin->m_iCustomReplayState = 2;
+			g_pRBRPlugin->m_tCustomReplayStateStartTime = std::chrono::steady_clock::now();
+		}
+		else if (g_pRBRGameMode->gameMode == 0x0A && g_pRBRGameModeExt->gameModeExt == 0x01 && g_pRBRPlugin->m_iCustomReplayState == 3)
+		{
+			g_pRBRPlugin->m_iCustomReplayState = 4;
+			g_pRBRPlugin->m_tCustomReplayStateStartTime = std::chrono::steady_clock::now();
+
 			g_pRBRGameMode->gameMode = 0x0A;
 			g_pRBRGameModeExt->gameModeExt = 0x04;
+
+			g_pRBRCameraInfo = g_pRBRCarInfo->pCamera->pCameraInfo;
+			g_pRBRCarMovement = (PRBRCarMovement) * (DWORD*)(0x008EF660);
+
+			g_pRBRCameraInfo->cameraType = 3;
+
+			// TODO. Read from INI file
+			// Set car and camera position to create a cool car preview image
+			g_pRBRCameraInfo->camOrientation.x = 0.664824f;
+			g_pRBRCameraInfo->camOrientation.y = -0.747000f;
+			g_pRBRCameraInfo->camOrientation.z = 0.000000f;
+			g_pRBRCameraInfo->camPOV1.x = 0.699783f;
+			g_pRBRCameraInfo->camPOV1.y = 0.622800f;
+			g_pRBRCameraInfo->camPOV1.z = -0.349891f;
+			g_pRBRCameraInfo->camPOV2.x = 0.261369f;
+			g_pRBRCameraInfo->camPOV2.y = 0.232616f;
+			g_pRBRCameraInfo->camPOV2.z = 0.936790f;
+			g_pRBRCameraInfo->camPOS.x = -4.000000f;
+			g_pRBRCameraInfo->camPOS.y = -4.559966f;
+			g_pRBRCameraInfo->camPOS.z = 2.000000f;
+			g_pRBRCameraInfo->camFOV = 75.000175f;
+			g_pRBRCameraInfo->camNear = 0.150000f;
+
+			g_pRBRCarMovement->carQuat.x = -0.017969f;
+			g_pRBRCarMovement->carQuat.y = 0.008247f;
+			g_pRBRCarMovement->carQuat.z = 0.982173f;
+			g_pRBRCarMovement->carQuat.w = -0.186811f;
+			g_pRBRCarMovement->carMapLocation.m[0][0] = -0.929464f;
+			g_pRBRCarMovement->carMapLocation.m[0][1] = -0.367257f;
+			g_pRBRCarMovement->carMapLocation.m[0][2] = -0.032216f;
+			g_pRBRCarMovement->carMapLocation.m[0][3] = 0.366664f;
+			g_pRBRCarMovement->carMapLocation.m[1][0] = -0.929974f;
+			g_pRBRCarMovement->carMapLocation.m[1][1] = 0.022913f;
+			g_pRBRCarMovement->carMapLocation.m[1][2] = -0.038378f;
+			g_pRBRCarMovement->carMapLocation.m[1][3] = 0.009485f;
+			g_pRBRCarMovement->carMapLocation.m[2][0] = 0.999218f;
+			g_pRBRCarMovement->carMapLocation.m[2][1] = 0.000008f;
+			g_pRBRCarMovement->carMapLocation.m[2][2] = 2.000000f;
+			g_pRBRCarMovement->carMapLocation.m[2][3] = 524287.968750f;
+			g_pRBRCarMovement->carMapLocation.m[3][0] = 7.236033f;
+			g_pRBRCarMovement->carMapLocation.m[3][1] = 149.234146f;
+			g_pRBRCarMovement->carMapLocation.m[3][2] = 0.287426f;
+			g_pRBRCarMovement->carMapLocation.m[3][3] = -1.453711f;
 		}
-
-		if(g_pRBRGameMode->gameMode == 0x0A && g_pRBRGameModeExt->gameModeExt == 0x01)
-		{ 
-			// Prepare a new screenshot. Wait few secs to let RBR to finalize the 3D car drawing and finishing the replay starting animation
-
-			g_pRBRPlugin->m_iCustomReplayState++;
-			if (g_pRBRPlugin->m_iCustomReplayState > 100)
-			{
-				g_pRBRPlugin->m_iCustomReplayState = 1;
-				g_pRBRGameModeExt->gameModeExt = 0x04;
-
-				g_pRBRCameraInfo = g_pRBRCarInfo->pCamera->pCameraInfo;
-				g_pRBRCarMovement = (PRBRCarMovement) * (DWORD*)(0x008EF660);
-
-				g_pRBRCameraInfo->cameraType = 3;
-
-				// TODO. Read from INI file
-				// Set car and camera position to create a cool car preview image
-				g_pRBRCameraInfo->camOrientation.x = 0.664824f;
-				g_pRBRCameraInfo->camOrientation.y = -0.747000f;
-				g_pRBRCameraInfo->camOrientation.z = 0.000000f;
-				g_pRBRCameraInfo->camPOV1.x = 0.699783f;
-				g_pRBRCameraInfo->camPOV1.y = 0.622800f;
-				g_pRBRCameraInfo->camPOV1.z = -0.349891f;
-				g_pRBRCameraInfo->camPOV2.x = 0.261369f;
-				g_pRBRCameraInfo->camPOV2.y = 0.232616f;
-				g_pRBRCameraInfo->camPOV2.z = 0.936790f;
-				g_pRBRCameraInfo->camPOS.x = -4.000000f;
-				g_pRBRCameraInfo->camPOS.y = -4.559966f;
-				g_pRBRCameraInfo->camPOS.z = 2.000000f;
-				g_pRBRCameraInfo->camFOV = 75.000175f;
-				g_pRBRCameraInfo->camNear = 0.150000f;
-
-				g_pRBRCarMovement->carQuat.x = -0.017969f;
-				g_pRBRCarMovement->carQuat.y = 0.008247f;
-				g_pRBRCarMovement->carQuat.z = 0.982173f;
-				g_pRBRCarMovement->carQuat.w = -0.186811f;
-				g_pRBRCarMovement->carMapLocation.m[0][0] = -0.929464f;
-				g_pRBRCarMovement->carMapLocation.m[0][1] = -0.367257f;
-				g_pRBRCarMovement->carMapLocation.m[0][2] = -0.032216f;
-				g_pRBRCarMovement->carMapLocation.m[0][3] = 0.366664f;
-				g_pRBRCarMovement->carMapLocation.m[1][0] = -0.929974f;
-				g_pRBRCarMovement->carMapLocation.m[1][1] = 0.022913f;
-				g_pRBRCarMovement->carMapLocation.m[1][2] = -0.038378f;
-				g_pRBRCarMovement->carMapLocation.m[1][3] = 0.009485f;
-				g_pRBRCarMovement->carMapLocation.m[2][0] = 0.999218f;
-				g_pRBRCarMovement->carMapLocation.m[2][1] = 0.000008f;
-				g_pRBRCarMovement->carMapLocation.m[2][2] = 2.000000f;
-				g_pRBRCarMovement->carMapLocation.m[2][3] = 524287.968750f;
-				g_pRBRCarMovement->carMapLocation.m[3][0] = 7.236033f;
-				g_pRBRCarMovement->carMapLocation.m[3][1] = 149.234146f;
-				g_pRBRCarMovement->carMapLocation.m[3][2] = 0.287426f;
-				g_pRBRCarMovement->carMapLocation.m[3][3] = -1.453711f;
-			}
-		}
-		else if (g_pRBRGameMode->gameMode == 0x0A && g_pRBRGameModeExt->gameModeExt == 0x04)
+		else if (g_pRBRPlugin->m_iCustomReplayState == 6)
 		{
-			// Car and camera is set in a custom location. Show the screenshot cropping rectangle for a few secs before taking the actual screenshot
+			// Screenshot taken. Prepare the next car for a screenshot
+			g_pRBRPlugin->m_bCustomReplayShowCroppingRect = false;
+			g_pRBRCarInfo->stageStartCountdown = 7.0f;
 
-			g_pRBRPlugin->m_iCustomReplayState++;		
+			g_pRBRPlugin->m_iCustomReplayState = 0;
+			g_pRBRPlugin->m_iCustomReplayCarID = g_pRBRPlugin->GetNextScreenshotCarID(g_pRBRPlugin->m_iCustomReplayCarID);
 
-			if (g_pRBRPlugin->m_iCustomReplayState <= 8 || g_pRBRPlugin->m_iCustomReplayState > 10)
-				g_pRBRPlugin->m_bCustomReplayShowCroppingRect = true;
-			else
-				g_pRBRPlugin->m_bCustomReplayShowCroppingRect = false;
-			
-			if (g_pRBRPlugin->m_iCustomReplayState == 10 && !g_pRBRPlugin->m_screenshotPath.empty() && g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(g_pRBRPlugin->m_iCustomReplayCarID)].wszCarModel[0] != '\0')
+			if (g_pRBRPlugin->m_iCustomReplayCarID >= 0)
 			{
-				// Take a RBR car preview screenshot and save it as PNG preview file.
-				// At this point the cropping highlight rectangle is hidden, so it is not shown in the screenshot.
-				std::wstring outputFileName = g_pRBRPlugin->m_screenshotPath + L"\\" + g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(g_pRBRPlugin->m_iCustomReplayCarID)].wszCarModel + L".png";
-				D3D9SaveScreenToFile(g_pRBRIDirect3DDevice9, g_hRBRWnd, g_pRBRPlugin->m_screenshotCroppingRect, outputFileName);
-
-				g_pRBRPlugin->m_iCustomReplayScreenshotCount++;
+				if (CNGPCarMenu::PrepareScreenshotReplayFile(g_pRBRPlugin->m_iCustomReplayCarID))
+					g_pRBRPlugin->m_iCustomReplayState = 1;
 			}
-			else if (g_pRBRPlugin->m_iCustomReplayState >= (g_pRBRPlugin->m_iCustomReplayScreenshotCount <= 1 ? 100 : 15))  // Show the cropping rect few secs longer during the first screenshot
-			{
-				g_pRBRPlugin->m_bCustomReplayShowCroppingRect = false;
-				g_pRBRCarInfo->stageStartCountdown = 7.0f;
 
-				g_pRBRPlugin->m_iCustomReplayState = 0;
-				g_pRBRPlugin->m_iCustomReplayCarID = g_pRBRPlugin->GetNextScreenshotCarID(g_pRBRPlugin->m_iCustomReplayCarID);
-
-				if (g_pRBRPlugin->m_iCustomReplayCarID >= 0)
-				{
-					if (CNGPCarMenu::PrepareScreenshotReplayFile(g_pRBRPlugin->m_iCustomReplayCarID))
-						g_pRBRPlugin->m_iCustomReplayState = 1;
-				}
-
-				RBRAPI_Replay(g_pRBRPlugin->m_sRBRRootDir, C_REPLAYFILENAME_SCREENSHOT);
-			}
+			RBRAPI_Replay(g_pRBRPlugin->m_sRBRRootDir, C_REPLAYFILENAME_SCREENSHOT);
 		}
 	}
 
@@ -1160,7 +1294,7 @@ HRESULT __fastcall CustomRBRDirectXBeginScene(void* objPointer)
 //
 HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 {
-	//HRESULT hResult;
+	HRESULT hResult;
 
 	if (!g_bRBRHooksInitialized) 
 		return S_OK;
@@ -1199,7 +1333,7 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 				default:   rbrPosX = 245; break;
 			}
 
-			iFontHeight = pFontCarSpecCustom->GetTextHeight();
+			iFontHeight = g_pFontCarSpecCustom->GetTextHeight();
 
 			// TODO: Better re-scaler function to map game resolution to screen resolution
 			RBRAPI_MapRBRPointToScreenPoint(rbrPosX, g_pRBRMenuSystem->menuImagePosY, &posX, &posY);
@@ -1207,10 +1341,10 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 			
 			PRBRCarSelectionMenuEntry pCarSelectionMenuEntry = &g_RBRCarSelectionMenuEntry[selectedCarIdx];
 
-			pFontCarSpecCustom->DrawText(posX, 0 * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsRevision, 0);
-			pFontCarSpecCustom->DrawText(posX, 1 * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsSpecYear, 0);
-			pFontCarSpecCustom->DrawText(posX, 2 * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysics3DModel, 0);
-			pFontCarSpecCustom->DrawText(posX, 3 * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsCustomTxt, 0);
+			g_pFontCarSpecCustom->DrawText(posX, 0 * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsRevision, 0);
+			g_pFontCarSpecCustom->DrawText(posX, 1 * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsSpecYear, 0);
+			g_pFontCarSpecCustom->DrawText(posX, 2 * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysics3DModel, 0);
+			g_pFontCarSpecCustom->DrawText(posX, 3 * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsCustomTxt, 0);
 
 			if (g_pRBRPlugin->m_carPreviewTexture[selectedCarIdx].pTexture == nullptr && g_pRBRPlugin->m_carPreviewTexture[selectedCarIdx].imgSize.cx >= 0 && g_RBRCarSelectionMenuEntry[selectedCarIdx].wszCarModel[0] != '\0')
 			{
@@ -1220,9 +1354,13 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 
 				// TODO. Read image size and re-scale and center the image if it is not in native resolution folder
 
+				std::string imgExtension = ".";
+				imgExtension = imgExtension + g_RBRPluginMenu_ImageOptions[g_pRBRPlugin->m_iMenuImageOption];  // .PNG or .BMP img file format
+				_ToLowerCase(imgExtension);
+
 				HRESULT hResult = D3D9CreateRectangleVertexTexBufferFromFile(g_pRBRIDirect3DDevice9,
-					g_pRBRPlugin->m_screenshotPath + L"\\" + g_RBRCarSelectionMenuEntry[selectedCarIdx].wszCarModel + L".png",
-					0, posYf, 0, 0,
+					g_pRBRPlugin->m_screenshotPath + L"\\" + g_RBRCarSelectionMenuEntry[selectedCarIdx].wszCarModel + _ToWString(imgExtension),
+					(float)g_pRBRPlugin->m_carSelectLeftBlackBarRect.left, posYf, 0, 0,
 					&g_pRBRPlugin->m_carPreviewTexture[selectedCarIdx]);
 
 				// Image not available. Do not try to re-load it again (set cx=-1 to indicate that the image loading failed, so no need to try to re-load it in every frame even when texture is null)
@@ -1252,7 +1390,7 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 		}
 	}
 	//else if (g_pRBRPlugin->m_iCustomReplayState > 0 && g_pRBRPlugin->m_bCustomReplayShowCroppingRect && g_pRBRPlugin->m_screenshotCroppingRectVertexBuffer != nullptr)
-	else if (g_pRBRPlugin->m_bCustomReplayShowCroppingRect)
+	else if (g_pRBRPlugin->m_bCustomReplayShowCroppingRect && g_pRBRPlugin->m_iCustomReplayState >= 2 && g_pRBRPlugin->m_iCustomReplayState != 4)
 	{
 		// Draw rectangle to highlight the screenshot capture area
 		D3D9DrawVertex2D(g_pRBRIDirect3DDevice9, g_pRBRPlugin->m_screenshotCroppingRectVertexBuffer);
@@ -1262,7 +1400,7 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 	WCHAR szTxtBuffer[200];
 
 	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"Mode %d %d.  Img (%f,%f)(%f,%f)  Timer=%f", g_pRBRGameMode->gameMode, g_pRBRGameModeExt->gameModeExt, g_pRBRMenuSystem->menuImagePosX, g_pRBRMenuSystem->menuImagePosY, g_pRBRMenuSystem->menuImageWidth, g_pRBRMenuSystem->menuImageHeight, g_pRBRCarInfo->stageStartCountdown);
-	pFontDebug->DrawText(1, 1 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, 0);
+	g_pFontDebug->DrawText(1, 1 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, 0);
 
 	RECT wndRect;
 	RECT wndClientRect;
@@ -1277,12 +1415,67 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"hWnd=%x Win=(%d,%d)(%d,%d) Client=(%d,%d)(%d,%d)", (int)creationParameters.hFocusWindow,
 		wndRect.left, wndRect.top, wndRect.right, wndRect.bottom,
 		wndClientRect.left, wndClientRect.top, wndClientRect.right, wndClientRect.bottom);
-	pFontDebug->DrawText(1, 2 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, 0);
+	g_pFontDebug->DrawText(1, 2 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, 0);
 
 	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"Mapped=(%d,%d)(%d,%d) GameRes=(%d,%d)", wndMappedRect.left, wndMappedRect.top, wndMappedRect.right, wndMappedRect.bottom, g_pRBRGameConfig->resolutionX, g_pRBRGameConfig->resolutionY);
-	pFontDebug->DrawText(1, 3 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, 0);
+	g_pFontDebug->DrawText(1, 3 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, 0);
+
+	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"ReplayState=%d", g_pRBRPlugin->m_iCustomReplayState);
+	g_pFontDebug->DrawText(1, 4 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, 0);
+
 #endif
 
 	// Call original RBR DXEndScene function and let it to do whatever needed to complete the drawing of DX framebuffer
-	return Func_OrigRBRDirectXEndScene(objPointer);
+	hResult = Func_OrigRBRDirectXEndScene(objPointer);
+	if (g_pRBRPlugin->m_iCustomReplayState <= 0) 
+		return hResult;
+
+
+	//
+	// Custom "screenshot generation replay" process running.
+	// State 1=Preparing (replay not yet loaded)
+	//       2=Replay loaded, camera spinning around the car and blackout fading out
+	//       3=The startup blackout has faded out. Prepare to move the car and cam to a custom location
+	//       4=Car and cam moved to a custom location. Prepare to take a screenshot (wait 0.5s before taking the shot)
+	//       5=Screenshot taken. If this was the first car then show the cropping rect for few secs (easier to check that the cropping rect is in the correct location)
+	//       6=Ending the screenshot state cycle. End or start all over again with a new car
+	//
+	if (g_pRBRPlugin->m_iCustomReplayState == 2)
+	{
+		std::chrono::steady_clock::time_point tCustomReplayStateNowTime = std::chrono::steady_clock::now();
+		auto iTimeElapsedSec = std::chrono::duration_cast<std::chrono::milliseconds>(tCustomReplayStateNowTime - g_pRBRPlugin->m_tCustomReplayStateStartTime).count();
+		if (iTimeElapsedSec >= 1200)
+			g_pRBRPlugin->m_iCustomReplayState = 3;
+	}
+	else if (g_pRBRPlugin->m_iCustomReplayState == 4)
+	{
+		std::chrono::steady_clock::time_point tCustomReplayStateNowTime = std::chrono::steady_clock::now();
+		auto iTimeElapsedSec = std::chrono::duration_cast<std::chrono::milliseconds>(tCustomReplayStateNowTime - g_pRBRPlugin->m_tCustomReplayStateStartTime).count();
+		if (iTimeElapsedSec >= 500)
+		{
+			// Take a RBR car preview screenshot and save it as PNG preview file.
+			// At this point the cropping highlight rectangle is hidden, so it is not shown in the screenshot.
+			std::string imgExtension = ".";
+			imgExtension = imgExtension + g_RBRPluginMenu_ImageOptions[g_pRBRPlugin->m_iMenuImageOption];  // .PNG or .BMP img file format
+			_ToLowerCase(imgExtension);
+
+			std::wstring outputFileName = g_pRBRPlugin->m_screenshotPath + L"\\" + g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(g_pRBRPlugin->m_iCustomReplayCarID)].wszCarModel + _ToWString(imgExtension);			
+
+			D3D9SaveScreenToFile((g_pRBRPlugin->m_screenshotAPIType == C_SCREENSHOTAPITYPE_DIRECTX ? g_pRBRIDirect3DDevice9 : nullptr), 
+				g_hRBRWnd, g_pRBRPlugin->m_screenshotCroppingRect, outputFileName);
+
+			g_pRBRPlugin->m_iCustomReplayScreenshotCount++;
+			g_pRBRPlugin->m_iCustomReplayState = 5;
+			g_pRBRPlugin->m_tCustomReplayStateStartTime = std::chrono::steady_clock::now();
+		}
+	}
+	else if (g_pRBRPlugin->m_iCustomReplayState == 5)
+	{
+		std::chrono::steady_clock::time_point tCustomReplayStateNowTime = std::chrono::steady_clock::now();
+		auto iTimeElapsedSec = std::chrono::duration_cast<std::chrono::milliseconds>(tCustomReplayStateNowTime - g_pRBRPlugin->m_tCustomReplayStateStartTime).count();
+		if (g_pRBRPlugin->m_iCustomReplayScreenshotCount > 1 || iTimeElapsedSec >= 3000)
+			g_pRBRPlugin->m_iCustomReplayState = 6; // Completing the screenshot state for this carID
+	}
+
+	return hResult;
 }

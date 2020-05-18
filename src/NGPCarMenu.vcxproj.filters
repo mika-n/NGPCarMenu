@@ -45,6 +45,9 @@
       <Filter>Source Files</Filter>
     </None>
     <None Include="..\ReadMe.md" />
+    <None Include="CustomCarSpecs.ini" />
+    <None Include="CreateReleaseZip.cmd" />
+    <None Include="NGPCarMenu.ini" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="PluginHelpers.h">

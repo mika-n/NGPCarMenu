@@ -26,8 +26,14 @@
 #include <vector>			// vector
 #include <sstream>			// wstringstream
 #include <filesystem>		// fs::exists
+#include <fstream>			// std::ifstream and ofstream
 
 #include <wincodec.h>		// IWICxx image funcs
+#include <shlwapi.h>		// PathRemoveFileSpec
+
+#include <gdiplus.h>
+#include <gdiplusimaging.h>
+#pragma comment(lib,"gdiplus.lib")
 
 #include <d3d9.h>
 #pragma comment(lib, "d3d9.lib") 
@@ -130,6 +136,18 @@ inline std::string _ToString(const std::wstring& s)
 	return std::string{ buf.get() };
 }
 
+
+inline void _ToLowerCase(std::string& s)
+{
+	transform(s.begin(), s.end(), s.begin(), ::tolower);
+}
+
+inline void _ToLowerCase(std::wstring& s)
+{
+	transform(s.begin(), s.end(), s.begin(), ::tolower);
+}
+
+
 //
 // Split "12 34 54 45" string and populate RECT struct with splitted values
 //
@@ -173,14 +191,51 @@ bool _StringToRect(const std::wstring& s, RECT* outRect, const wchar_t separator
 
 
 //---------------------------------------------------------------------------------------------------------------
-#if USE_DEBUG == 1
 
 //-----------------------------------------------------------------------------------------------------------------------------
 // Debug printout functions. Not used in release build.
 //
 
-FILE* g_fpDebugLogFile = nullptr;
-void DebugPrintCloseFile();
+std::string g_sLogFileName;
+FILE* g_fpLogFile = nullptr;
+
+void DebugOpenFile(bool bOverwriteFile = false)
+{
+	try
+	{
+		if (g_fpLogFile == nullptr)
+		{
+			if (g_sLogFileName.empty())
+			{
+				char  szModulePath[_MAX_PATH];
+				::GetModuleFileName(NULL, szModulePath, sizeof(szModulePath));
+				::PathRemoveFileSpec(szModulePath);
+
+				g_sLogFileName = szModulePath;
+				g_sLogFileName = g_sLogFileName + "\\Plugins\\NGPCarMenu\\NGPCarMenu.log";
+
+#ifndef USE_DEBUG
+				// Release build creates always a new empty logfile when the logfile is opened for the first time during a process run
+				bOverwriteFile = true;
+#endif
+			}
+
+			// Overwrite or append the logfile
+			fopen_s(&g_fpLogFile, g_sLogFileName.c_str(), (bOverwriteFile ? "w+t" : "a+t"));
+		}
+	}
+	catch (...)
+	{
+		// Do nothing
+	}
+}
+
+void DebugCloseFile()
+{
+	FILE* fpLogFile = g_fpLogFile;
+	g_fpLogFile = nullptr;
+	if (fpLogFile != nullptr) fclose(fpLogFile);
+}
 
 void DebugPrintFunc(LPCSTR lpszFormat, ...)
 {
@@ -200,14 +255,15 @@ void DebugPrintFunc(LPCSTR lpszFormat, ...)
 		if (_vsnprintf_s(szTxtBuf, sizeof(szTxtBuf) - 1, lpszFormat, args) <= 0)
 			szTxtBuf[0] = '\0';
 
-		if (g_fpDebugLogFile == nullptr)
-			fopen_s(&g_fpDebugLogFile, "NGPCarMenu.log", "a+t");
+		if (g_fpLogFile == nullptr) 
+			DebugOpenFile();
 
-		if (g_fpDebugLogFile)
+		if (g_fpLogFile)
 		{
-			fprintf(g_fpDebugLogFile, szTxtTimeStampBuf);
-			fprintf(g_fpDebugLogFile, szTxtBuf);
-			fprintf(g_fpDebugLogFile, "\n");
+			fprintf(g_fpLogFile, szTxtTimeStampBuf);
+			fprintf(g_fpLogFile, szTxtBuf);
+			fprintf(g_fpLogFile, "\n");
+			DebugCloseFile();
 		}
 	}
 	catch (...)
@@ -218,20 +274,51 @@ void DebugPrintFunc(LPCSTR lpszFormat, ...)
 	va_end(args);
 }
 
-void DebugPrintEmptyFile()
+void DebugPrintFunc(LPCWSTR lpszFormat, ...)
 {
-	FILE* fpDebugLogFile = nullptr;
-	DebugPrintCloseFile();
-	fopen_s(&fpDebugLogFile, "NGPCarMenu.log", "w");
-	if (fpDebugLogFile != nullptr) fclose(fpDebugLogFile);
+	va_list args;
+	va_start(args, lpszFormat);
+
+	SYSTEMTIME t;
+	char szTxtTimeStampBuf[32];
+	WCHAR szTxtBuf[1024];
+
+	try
+	{
+		GetLocalTime(&t);
+		if (GetTimeFormat(LOCALE_USER_DEFAULT, 0, &t, "hh:mm:ss ", (LPSTR)szTxtTimeStampBuf, sizeof(szTxtTimeStampBuf) - 1) <= 0)
+			szTxtTimeStampBuf[0] = '\0';
+
+		if (_vsnwprintf_s(szTxtBuf, sizeof(szTxtBuf) - 1, lpszFormat, args) <= 0)
+			szTxtBuf[0] = L'\0';
+
+		if (g_fpLogFile == nullptr)
+			DebugOpenFile();
+
+		if (g_fpLogFile)
+		{
+			fprintf(g_fpLogFile, szTxtTimeStampBuf);
+			fwprintf(g_fpLogFile, szTxtBuf);
+			fprintf(g_fpLogFile, "\n");
+			DebugCloseFile();
+		}
+	}
+	catch (...)
+	{
+		// Do nothing
+	}
+
+	va_end(args);
 }
 
-void DebugPrintCloseFile()
+void DebugClearFile()
 {
-	FILE* fpDebugLogFile = g_fpDebugLogFile;
-	g_fpDebugLogFile = nullptr;
-	if (fpDebugLogFile != nullptr) fclose(fpDebugLogFile);
+	DebugCloseFile();
+	DebugOpenFile(true);
 }
+
+
+#if USE_DEBUG == 1
 
 void DebugDumpBuffer(byte* pBuffer, int iPreOffset = 0, int iBytesToDump = 64)
 {
@@ -253,42 +340,190 @@ void DebugDumpBuffer(byte* pBuffer, int iPreOffset = 0, int iBytesToDump = 64)
 	}
 }
 
-void DebugDumpBufferToScreen(byte* pBuffer, int iPreOffset = 0, int iBytesToDump = 64, int posX = 850, int posY = 1)
-{
-	WCHAR txtBuffer[64];
-
-	D3DRECT rec = { posX, posY, posX + 440, posY + ((iBytesToDump / 8) * 20) };
-	g_pRBRIDirect3DDevice9->Clear(1, &rec, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 50, 50, 50), 0, 0);
-
-	byte* pBuffer2 = pBuffer - iPreOffset;
-	for (int idx = 0; idx < iBytesToDump; idx += 8)
-	{
-		int iAppendPos = 0;
-
-		iAppendPos += swprintf_s(txtBuffer + iAppendPos, COUNT_OF_ITEMS(txtBuffer) - iAppendPos, L"%04x ", idx);
-		for (int idx2 = 0; idx2 < 8; idx2++)
-			iAppendPos += swprintf_s(txtBuffer + iAppendPos, COUNT_OF_ITEMS(txtBuffer) - iAppendPos, L"%02x ", (byte)pBuffer2[idx + idx2]);
-
-		iAppendPos += swprintf_s(txtBuffer + iAppendPos, COUNT_OF_ITEMS(txtBuffer) - iAppendPos, L" | ");
-
-		for (int idx2 = 0; idx2 < 8; idx2++)
-			iAppendPos += swprintf_s(txtBuffer + iAppendPos, COUNT_OF_ITEMS(txtBuffer) - iAppendPos, L"%c", (pBuffer2[idx + idx2] < 32 || pBuffer2[idx + idx2] > 126) ? L'.' : pBuffer2[idx + idx2]);
-
-		pFontDebug->DrawText(posX, (idx / 8) * 20 + posY, D3DCOLOR_ARGB(255, 240, 250, 0), txtBuffer, 0);
-		//pFontDebug->DrawText(posX, (idx / 8) * 20 + posY, D3DCOLOR_ARGB(255, 240, 250, 0), txtBuffer, 0);
-	}
-}
-
 #endif // USE_DEBUG
 
 
 
 //---------------------------------------------------------------------------------------------------------------
+HRESULT D3D9SavePixelsToFile32bppPBGRA(UINT width, UINT height, UINT stride, LPBYTE pixels, const std::wstring& filePath, const GUID& format, WICPixelFormatGUID pixelFormat);
+
+// Return GDI+ encoder classid.
+// GetEncoderClsid method borrowed from Windows documentation (https://docs.microsoft.com/en-us/windows/win32/gdiplus/-gdiplus-retrieving-the-class-identifier-for-an-encoder-use)
+int GdiPlusGetEncoderClsid(const WCHAR* format, CLSID* pClsid)
+{
+	UINT  num = 0;          // number of image encoders
+	UINT  size = 0;         // size of the image encoder array in bytes
+
+	Gdiplus::ImageCodecInfo* pImageCodecInfo = NULL;
+	Gdiplus::GetImageEncodersSize(&num, &size);
+	if (size == 0)
+		return -1;  // Failure
+
+	pImageCodecInfo = (Gdiplus::ImageCodecInfo*)(malloc(size));
+	if (pImageCodecInfo == NULL)
+		return -1;  // Failure
+
+	Gdiplus::GetImageEncoders(num, size, pImageCodecInfo);
+	for (UINT j = 0; j < num; ++j)
+	{
+		if (wcscmp(pImageCodecInfo[j].MimeType, format) == 0)
+		{
+			*pClsid = pImageCodecInfo[j].Clsid;
+			free(pImageCodecInfo);
+			return j;  // Success
+		}
+	}
+
+	free(pImageCodecInfo);
+	return -1;  // Failure
+}
+
+
+// Save screenshot file using GDI services instead of DirectX services
+HRESULT D3D9SavePixelsToFileGDI(const HWND hAppWnd, RECT wndCaptureRect, const std::wstring& outputFileName, const GUID& format)
+{
+	HRESULT hResult;
+
+	LPSTR pBuf = nullptr;
+	HDC hdcAppWnd = nullptr;
+	HDC hdcMemory = nullptr;
+	HBITMAP hbmAppWnd = nullptr;
+	HANDLE hDIB = INVALID_HANDLE_VALUE;
+
+	BITMAP hAppWndBitmap;
+	BITMAPINFOHEADER bmpInfoHeader;
+	BITMAPFILEHEADER bmpFileHeader;
+
+	Gdiplus::Bitmap* gdiBitmap = nullptr;
+
+	hResult = S_OK;
+
+	try
+	{
+		hdcAppWnd = GetDC(hAppWnd);
+		if (hdcAppWnd) hdcMemory = CreateCompatibleDC(hdcAppWnd);
+
+		if (!hdcMemory || !hdcAppWnd) hResult = E_INVALIDARG;
+
+		if (SUCCEEDED(hResult) && wndCaptureRect.right == 0 && wndCaptureRect.bottom == 0 && wndCaptureRect.left == 0 && wndCaptureRect.right == 0)
+		{
+			// Capture rect all zeros. Take a screenshot of the whole D3D9 client window area (ie. RBR game content without WinOS wnd decorations)
+			if (GetClientRect(hAppWnd, &wndCaptureRect) == false)
+				hResult = E_INVALIDARG;
+		}
+
+		if (SUCCEEDED(hResult)) hbmAppWnd = CreateCompatibleBitmap(hdcAppWnd, wndCaptureRect.right - wndCaptureRect.left, wndCaptureRect.bottom - wndCaptureRect.top);
+		if (!hbmAppWnd) hResult = E_INVALIDARG;
+
+		HGDIOBJ hgdiResult = SelectObject(hdcMemory, hbmAppWnd);
+		if(hgdiResult == nullptr || hgdiResult == HGDI_ERROR)
+			hResult = E_INVALIDARG;
+
+		if (!BitBlt(hdcMemory, 0, 0, wndCaptureRect.right - wndCaptureRect.left, wndCaptureRect.bottom - wndCaptureRect.top, hdcAppWnd, wndCaptureRect.left, wndCaptureRect.top, SRCCOPY | CAPTUREBLT))
+			hResult = E_INVALIDARG;
+
+		ZeroMemory(&hAppWndBitmap, sizeof(BITMAP));
+		if (SUCCEEDED(hResult) && GetObject(hbmAppWnd, sizeof(BITMAP), &hAppWndBitmap) == 0)
+			hResult = E_INVALIDARG;
+
+		ZeroMemory(&bmpInfoHeader, sizeof(BITMAPINFOHEADER));
+		bmpInfoHeader.biSize        = sizeof(BITMAPINFOHEADER);
+		bmpInfoHeader.biWidth       = hAppWndBitmap.bmWidth;
+		bmpInfoHeader.biHeight      = hAppWndBitmap.bmHeight;
+		bmpInfoHeader.biPlanes      = 1;
+		bmpInfoHeader.biBitCount    = hAppWndBitmap.bmBitsPixel; // 32;
+		bmpInfoHeader.biCompression = BI_RGB;
+
+		DWORD dwBmpSize = ((hAppWndBitmap.bmWidth * bmpInfoHeader.biBitCount + 31) / 32) * 4 * hAppWndBitmap.bmHeight;
+
+		if (SUCCEEDED(hResult))	hDIB = GlobalAlloc(GHND, dwBmpSize);
+		if (hDIB == nullptr) hResult = E_INVALIDARG;
+
+		if (SUCCEEDED(hResult))	pBuf = (LPSTR)GlobalLock(hDIB);
+		if (pBuf == nullptr) hResult = E_INVALIDARG;
+
+		if (SUCCEEDED(hResult) && GetDIBits(hdcAppWnd, hbmAppWnd, 0, (UINT)hAppWndBitmap.bmHeight, pBuf, (BITMAPINFO*)&bmpInfoHeader, DIB_RGB_COLORS) == 0)
+			hResult = E_INVALIDARG;
+
+		if (SUCCEEDED(hResult))
+			// Remove potentially existing output file
+			::_wremove(outputFileName.c_str());
+
+		// BMP or PNG output file format
+		if (SUCCEEDED(hResult) && format == GUID_ContainerFormatBmp)
+		{
+			// Save BMP file
+			std::ofstream outFile(outputFileName, std::ofstream::binary | std::ios::out);
+			if (outFile)
+			{
+				bmpFileHeader.bfOffBits = (DWORD)sizeof(BITMAPFILEHEADER) + (DWORD)sizeof(BITMAPINFOHEADER);
+				bmpFileHeader.bfSize = dwBmpSize + sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+				bmpFileHeader.bfType = 0x4D42; // BM file type tag in little endian mode
+
+				outFile.write((LPCSTR)&bmpFileHeader, sizeof(BITMAPFILEHEADER));
+				outFile.write((LPCSTR)&bmpInfoHeader, sizeof(BITMAPINFOHEADER));
+				outFile.write(pBuf, dwBmpSize);
+				outFile.flush();
+				outFile.close();
+			}
+		}
+		else if (SUCCEEDED(hResult))
+		{
+			// Save PNG file
+			CLSID encoderClsid;
+			Gdiplus::GdiplusStartupInput gdiplusStartupInput;
+			ULONG_PTR gdiplusToken = 0;
+
+			try
+			{
+				Gdiplus::GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
+
+				if (gdiplusToken != 0 && GdiPlusGetEncoderClsid(L"image/png", &encoderClsid) >= 0)
+				{
+					BITMAPINFO binfo;
+					ZeroMemory(&binfo, sizeof(binfo));
+					binfo.bmiHeader = bmpInfoHeader;
+					binfo.bmiHeader.biSize = sizeof(binfo);
+					binfo.bmiHeader.biSizeImage = dwBmpSize;
+
+					gdiBitmap = Gdiplus::Bitmap::FromBITMAPINFO(&binfo, pBuf);
+					if (gdiBitmap != nullptr)
+						gdiBitmap->Save(outputFileName.c_str(), &encoderClsid);
+				}
+			}
+			catch(...)
+			{
+				LogPrint("ERROR D3D9SavePixelsToFileGDI. %s GDI failed to create file", outputFileName.c_str());
+			}
+
+			SAFE_DELETE(gdiBitmap);
+			if(gdiplusToken != 0) Gdiplus::GdiplusShutdown(gdiplusToken);
+		}
+	}
+	catch (...)
+	{
+		hResult = E_INVALIDARG;
+		LogPrint("ERROR D3D9SavePixelsToFileGDI. %s failed to create the file", outputFileName.c_str());
+	}
+
+	if (hDIB != INVALID_HANDLE_VALUE)
+	{
+		GlobalUnlock(hDIB);
+		GlobalFree(hDIB);
+	}
+
+	if (hbmAppWnd) DeleteObject(hbmAppWnd);
+	if (hdcMemory) DeleteObject(hdcMemory);
+	if (hdcAppWnd) ReleaseDC(hAppWnd, hdcAppWnd);
+
+	return hResult;
+}
+
 
 //
 // Save bitmap buffer (taken from D3D9 surface) as PNG file
 //
-HRESULT D3D9SavePixelsToFile32bppPBGRA(UINT width, UINT height, UINT stride, LPBYTE pixels, const std::wstring& filePath, const GUID& format)
+HRESULT D3D9SavePixelsToFile32bppPBGRA(UINT width, UINT height, UINT stride, LPBYTE pixels, const std::wstring& filePath, const GUID& format, WICPixelFormatGUID pixelFormat)
 {
 	if (!pixels || filePath.empty())
 		return E_INVALIDARG;
@@ -300,7 +535,8 @@ HRESULT D3D9SavePixelsToFile32bppPBGRA(UINT width, UINT height, UINT stride, LPB
 	IWICBitmapEncoder* encoder = nullptr;
 	IWICBitmapFrameEncode* frame = nullptr;
 	IWICStream* stream = nullptr;
-	GUID pf = GUID_WICPixelFormat32bppPBGRA;
+	//GUID pf = GUID_WICPixelFormat32bppPBGRA; // DX9 surface bitmap format
+	//GUID pf = GUID_WICPixelFormat24bppBGR; ¨ // GDI bitmap format
 
 	try
 	{
@@ -321,7 +557,7 @@ HRESULT D3D9SavePixelsToFile32bppPBGRA(UINT width, UINT height, UINT stride, LPB
 
 		if (SUCCEEDED(hResult)) hResult = frame->Initialize(nullptr);
 		if (SUCCEEDED(hResult)) hResult = frame->SetSize(width, height);
-		if (SUCCEEDED(hResult)) hResult = frame->SetPixelFormat(&pf);
+		if (SUCCEEDED(hResult)) hResult = frame->SetPixelFormat(&pixelFormat);
 		if (SUCCEEDED(hResult)) hResult = frame->WritePixels(height, stride, stride * height, pixels);
 
 		if (SUCCEEDED(hResult)) hResult = frame->Commit();
@@ -345,7 +581,8 @@ HRESULT D3D9SavePixelsToFile32bppPBGRA(UINT width, UINT height, UINT stride, LPB
 
 
 //
-// Take D3D9 screenshot of RBR screen (the whole game screen or specified capture rectangle only) and save it as PNG file
+// Take D3D9 screenshot of RBR screen (the whole game screen or specified capture rectangle only) and save it as PNG file.
+// If the outputFileName extension defines the file format (.PNG or .BMP)
 //
 HRESULT D3D9SaveScreenToFile(const LPDIRECT3DDEVICE9 pD3Device, const HWND hAppWnd, RECT wndCaptureRect, const std::wstring& outputFileName)
 {
@@ -358,42 +595,63 @@ HRESULT D3D9SaveScreenToFile(const LPDIRECT3DDEVICE9 pD3Device, const HWND hAppW
 	D3DLOCKED_RECT rc;
 	UINT pitch;
 
-	if (pD3Device == nullptr || outputFileName.empty())
+	GUID cf; // GUID_ContainerFormatPng or GUID_ContainerFormatBmp
+
+	if (/*pD3Device == nullptr ||*/ outputFileName.empty())
 		return E_INVALIDARG;
 
 	try
 	{
+		cf = GUID_ContainerFormatPng;
+		if (fs::path(outputFileName).extension() == ".bmp")
+			cf = GUID_ContainerFormatBmp;
+		
+		// If DX9 device is NULL then save the output image file using GDI bitmap data instead of using DX9 framebuffer data
+		if (pD3Device == nullptr)
+			return D3D9SavePixelsToFileGDI(hAppWnd, wndCaptureRect, outputFileName, cf);
+
+		// Reading bitmap via DirectX frame buffers
+		DebugPrint("D3D9SaveScreenToFile DirectX buffer");
+
 		//d3d = Direct3DCreate9(D3D_SDK_VERSION);
 		//d3d->GetAdapterDisplayMode(adapter, &mode)
 		pD3Device->GetDirect3D(&d3d);
 		hResult = d3d->GetAdapterDisplayMode(D3DADAPTER_DEFAULT, &mode);
 
-		if (hResult == S_OK) hResult = pD3Device->CreateOffscreenPlainSurface(mode.Width, mode.Height, D3DFMT_A8R8G8B8, D3DPOOL_SYSTEMMEM, &surface, nullptr);
+		if (SUCCEEDED(hResult)) hResult = pD3Device->CreateOffscreenPlainSurface(mode.Width, mode.Height, D3DFMT_A8R8G8B8, D3DPOOL_SCRATCH /*D3DPOOL_SYSTEMMEM*/, &surface, nullptr);
 
-		if (wndCaptureRect.right == 0 && wndCaptureRect.bottom == 0 && wndCaptureRect.left == 0 && wndCaptureRect.right == 0)
+		if (SUCCEEDED(hResult) && wndCaptureRect.right == 0 && wndCaptureRect.bottom == 0 && wndCaptureRect.left == 0 && wndCaptureRect.right == 0)
 		{
 			// Capture rect all zeros. Take a screenshot of the whole D3D9 client window area (ie. RBR game content without WinOS wnd decorations)
-			GetClientRect(hAppWnd, &wndCaptureRect);
-			MapWindowPoints(hAppWnd, NULL, (LPPOINT)&wndCaptureRect, 2);
+			if(!GetClientRect(hAppWnd, &wndCaptureRect))
+			//	MapWindowPoints(hAppWnd, NULL, (LPPOINT)&wndCaptureRect, 2);
+			//else
+				hResult = E_INVALIDARG;
 		}
+
+		if (SUCCEEDED(hResult)) MapWindowPoints(hAppWnd, NULL, (LPPOINT)&wndCaptureRect, 2);
 
 		// Compute the required bitmap buffer size and allocate it
 		rc.Pitch = 4;
-		if (hResult == S_OK) hResult = surface->LockRect(&rc, &wndCaptureRect, 0);
+		if (SUCCEEDED(hResult)) hResult = surface->LockRect(&rc, &wndCaptureRect, /*0*/ D3DLOCK_NO_DIRTY_UPDATE | D3DLOCK_NOSYSLOCK | D3DLOCK_READONLY);
 		pitch = rc.Pitch;
-		if (hResult == S_OK) hResult = surface->UnlockRect();
-		screenshotBuffer = new BYTE[pitch * (wndCaptureRect.bottom - wndCaptureRect.top) /* img height */];
+		if (SUCCEEDED(hResult)) hResult = surface->UnlockRect();
 
-		if (hResult == S_OK) hResult = pD3Device->GetFrontBufferData(0, surface);
-		// fullscreen screenshot
+		if (SUCCEEDED(hResult)) screenshotBuffer = new BYTE[pitch * (wndCaptureRect.bottom - wndCaptureRect.top) /* img height */];
+		if(screenshotBuffer == nullptr) hResult = E_INVALIDARG;
+
+		if (SUCCEEDED(hResult)) hResult = pD3Device->GetFrontBufferData(0, surface);
+
+		// DX fullscreen screenshot (Note! Doesn't work, so run RBR in DX9 window mode, RichardBurnsRally.ini fullsreen=false and use Fixup plugin to set fullscreen wnd mode)
 		// g_pRBRIDirect3DDevice9->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &surface)
 
 		// Copy frame to byte buffer
-		if (hResult == S_OK) hResult = surface->LockRect(&rc, &wndCaptureRect, D3DLOCK_READONLY | D3DLOCK_NOSYSLOCK);
-		if (hResult == S_OK) CopyMemory(screenshotBuffer, rc.pBits, rc.Pitch * (wndCaptureRect.bottom - wndCaptureRect.top) /* img height */);
-		if (hResult == S_OK) hResult = surface->UnlockRect();
+		if (SUCCEEDED(hResult)) hResult = surface->LockRect(&rc, &wndCaptureRect, D3DLOCK_NO_DIRTY_UPDATE | D3DLOCK_NOSYSLOCK | D3DLOCK_READONLY );
+		if (SUCCEEDED(hResult)) CopyMemory(screenshotBuffer, rc.pBits, rc.Pitch * (wndCaptureRect.bottom - wndCaptureRect.top) /* img height */);
+		if (SUCCEEDED(hResult)) hResult = surface->UnlockRect();
 
-		if (hResult == S_OK) hResult = D3D9SavePixelsToFile32bppPBGRA((wndCaptureRect.right - wndCaptureRect.left) /* img width */, (wndCaptureRect.bottom - wndCaptureRect.top) /* img height */, pitch, screenshotBuffer, outputFileName, GUID_ContainerFormatPng);
+		if (SUCCEEDED(hResult)) hResult = D3D9SavePixelsToFile32bppPBGRA((wndCaptureRect.right - wndCaptureRect.left) /* img width */, (wndCaptureRect.bottom - wndCaptureRect.top) /* img height */, pitch, screenshotBuffer, outputFileName, cf, GUID_WICPixelFormat32bppPBGRA);
+
 		//SavePixelsToFile32bppPBGRA(..., GUID_ContainerFormatDds)
 		//SavePixelsToFile32bppPBGRA(..., GUID_ContainerFormatJpeg)
 	}

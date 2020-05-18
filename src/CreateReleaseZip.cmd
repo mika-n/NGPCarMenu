@@ -1,5 +1,11 @@
 @echo off
 
+rem
+rem Quick and dirty "tool" to package a new NGPCarMenu_<versionTag>.zip release file.
+rem Remember to do "clean - rebuild all" with Release build in VC++ before packaging the release ZIP file.
+rem
+
+
 SET APPNAME=NGPCarMenu
 SET VERSIONTAG=%~1
 SET RELEASE_FOLDER=Release\VER_%VERSIONTAG%
@@ -40,15 +46,17 @@ mkdir "%RELEASE_FOLDER%\Plugins\%APPNAME%\"
 mkdir "%RELEASE_FOLDER%\Plugins\%APPNAME%\preview\1920x1080\"
 mkdir "%RELEASE_FOLDER%\Plugins\%APPNAME%\preview\1366x768\"
 
+rem Dummy files because 7Zip tool would ignore empty folders
+type NUL > "%RELEASE_FOLDER%\Plugins\%APPNAME%\preview\1920x1080\carImages.txt"
+type NUL > "%RELEASE_FOLDER%\Plugins\%APPNAME%\preview\1366x768\carImages.txt"
+
 copy "Release\%APPNAME%.dll" "%RELEASE_FOLDER%\Plugins\"
 copy "%APPNAME%.ini"         "%RELEASE_FOLDER%\Plugins\"
 copy "%APPNAME%.rpl"         "%RELEASE_FOLDER%\Replays\"
+copy "CustomCarSpecs.ini"    "%RELEASE_FOLDER%\Plugins\%APPNAME%\"
 copy "..\LicenseText.txt"    "%RELEASE_FOLDER%\Plugins\%APPNAME%\"
 copy "..\ReadMe.md"          "%RELEASE_FOLDER%\Plugins\%APPNAME%\"
 copy "..\ReadMe.md"          "%RELEASE_FOLDER%\Plugins\%APPNAME%\ReadMe.txt"
-
-type NUL > "%RELEASE_FOLDER%\Plugins\%APPNAME%\preview\1920x1080\carImages.txt"
-type NUL > "%RELEASE_FOLDER%\Plugins\%APPNAME%\preview\1366x768\carImages.txt"
 
 PUSHD "%RELEASE_FOLDER%\"
 del "..\%RELEASE_PKG%"

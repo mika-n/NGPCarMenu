@@ -43,6 +43,10 @@
 #include "D3D9Helpers.h"			// Various text and D3D9 support functions created for this RBR plugin
 #include "RBRAPI.h"					// RBR memory addresses and data structures
 
+
+#define C_PLUGIN_TITLE "Custom NGPCarMenu Plugin (v1.02) by MIKA-N"		// Remember to tweak the NGPCarMenu.rc version properties also
+
+
 #define C_DEBUGTEXT_COLOR   D3DCOLOR_ARGB(255, 255,255,255)      // White
 #define C_CARSPECTEXT_COLOR D3DCOLOR_ARGB(255, 0xE0,0xE0,0xE0)   // Grey-White
 
@@ -51,7 +55,7 @@
 #define C_REPLAYFILENAME_SCREENSHOT   "_NGPCarMenu.rpl"  // Name of the temporary RBR replay file (char and wchar version)
 #define C_REPLAYFILENAME_SCREENSHOTW L"_NGPCarMenu.rpl"
 
-#define C_PLUGIN_TITLE "Custom NGPCarMenu Plugin (v1.0) by MIKA-N"
+
 
 //
 // The state of the plugin enum
@@ -93,6 +97,9 @@ typedef RBRCarSelectionMenuEntry* PRBRCarSelectionMenuEntry;
 
 //------------------------------------------------------------------------------------------------
 
+#define C_SCREENSHOTAPITYPE_DIRECTX 0
+#define C_SCREENSHOTAPITYPE_GDI     1
+
 class CNGPCarMenu;
 
 extern BOOL         g_bRBRHooksInitialized;
@@ -127,11 +134,13 @@ public:
 
 	int m_iMenuSelection;		// Currently selected plugin menu item idx
 	int	m_iMenuCreateOption;	// 0 = Generate all car images, 1 = Generate only missing car images
+	int	m_iMenuImageOption;		// 0 = Use PNG preview file format to read and create image files, 1 = BMP file format
 
 	std::string  m_sRBRRootDir;  // RBR app path, ASCII string
 	std::wstring m_sRBRRootDirW; // RBR app path, Unicode string
 
 	std::wstring m_screenshotPath;				// Path to car preview screenshot images (by default AppPath + \plugins\NGPCarMenu\preview\XResxYRes\)
+	int m_screenshotAPIType;					// Uses DIRECTX or GDI API technique to generate a new screenshot file. 0=DirectX (default), 1=GDI. No GUI option, so tweak this in NGPCarMenu.ini file.
 	std::wstring m_screenshotReplayFileName;	// Name of the RBR replay file used when car preview images are generated
 	std::wstring m_rbrCITCarListFilePath;		// Path to RBRCIT carList.ini file (the file has NGP car details and specs information)
 
@@ -142,8 +151,10 @@ public:
 	//CUSTOM_VERTEX_2D m_screenshotCroppingRectVertex2D[4];
 	LPDIRECT3DVERTEXBUFFER9 m_screenshotCroppingRectVertexBuffer; // Screeshot rect vertex to highlight on screen the current capture area
 
-	int  m_iCustomReplayCarID;					// 0..7 = The current carID used in a custom screenshot replay file
 	int  m_iCustomReplayState;					// 0 = No custom replay (default RBR behaviour), 1 = Custom replay process is running. Take screenshots of a car models.
+	std::chrono::steady_clock::time_point m_tCustomReplayStateStartTime;
+
+	int  m_iCustomReplayCarID;					// 0..7 = The current carID used in a custom screenshot replay file
 	int  m_iCustomReplayScreenshotCount;		// Num of screenshots taken so far during the last "CREATE car preview images" command
 	bool m_bCustomReplayShowCroppingRect;		// Show the current car preview screenshot cropping rect area on screen (ie. few secs before the screenshot is taken)
 
@@ -156,6 +167,7 @@ public:
 	static bool PrepareScreenshotReplayFile(int carID);
 
 	void RefreshSettingsFromPluginINIFile();
+	void SaveSettingsToPluginINIFile();
 
 	//------------------------------------------------------------------------------------------------
 	virtual const char* GetName(void);
