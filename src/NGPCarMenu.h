@@ -132,6 +132,8 @@ public:
 	IRBRGame*     m_pGame;
 	T_PLUGINSTATE m_PluginState;
 
+	bool m_bMenuSelectCarCustomized;	// TRUE - The SelectCar is in customized state, FALSE - Various original values restored (ie. tyre brand names)
+
 	int m_iMenuSelection;		// Currently selected plugin menu item idx
 	int	m_iMenuCreateOption;	// 0 = Generate all car images, 1 = Generate only missing car images
 	int	m_iMenuImageOption;		// 0 = Use PNG preview file format to read and create image files, 1 = BMP file format
@@ -150,8 +152,7 @@ public:
 	RECT m_carSelectRightBlackBarRect;
 	POINT m_car3DModelInfoPosition;				// X Y position of the car 3D info textbox. If Y is 0 then the plugin uses the default Y location (few lines above the car preview image).
 
-	//CUSTOM_VERTEX_2D m_screenshotCroppingRectVertex2D[4];
-	LPDIRECT3DVERTEXBUFFER9 m_screenshotCroppingRectVertexBuffer; // Screeshot rect vertex to highlight on screen the current capture area
+	LPDIRECT3DVERTEXBUFFER9 m_screenshotCroppingRectVertexBuffer; // Screeshot rect vertex to highlight the current capture area on screen while capturing preview img
 
 	int  m_iCustomReplayState;					// 0 = No custom replay (default RBR behaviour), 1 = Custom replay process is running. Take screenshots of a car models.
 	std::chrono::steady_clock::time_point m_tCustomReplayStateStartTime;
@@ -161,6 +162,9 @@ public:
 	bool m_bCustomReplayShowCroppingRect;		// Show the current car preview screenshot cropping rect area on screen (ie. few secs before the screenshot is taken)
 
 	IMAGE_TEXTURE m_carPreviewTexture[8];		// 0..7 car preview image data (or NULL if missing/not loaded yet)	
+
+
+	//------------------------------------------------------------------------------------------------
 
 	CNGPCarMenu(IRBRGame* pGame);
 	virtual ~CNGPCarMenu(void);

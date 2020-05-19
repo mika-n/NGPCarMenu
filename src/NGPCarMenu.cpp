@@ -70,6 +70,7 @@ PRBRMenuSystem		g_pRBRMenuSystem = nullptr;
 WCHAR* g_pOrigCarSpecTitleWeight = nullptr;				// The original RBR Weight and Transmission string values
 WCHAR* g_pOrigCarSpecTitleTransmission = nullptr;
 
+
 //
 // Car details:
 //   rbr\cars\cars.ini					= List of active cars (8 slots). 
@@ -179,6 +180,7 @@ IPlugin* RBR_CreatePlugin( IRBRGame* pGame )
 
 //----------------------------------------------------------------------------------------------------------------------------
 
+// Constructor
 CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 {
 	DebugPrint("Enter CNGPCarMenu.Constructor");
@@ -208,6 +210,8 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	ZeroMemory(&m_carSelectRightBlackBarRect, sizeof(m_carSelectRightBlackBarRect));
 	ZeroMemory(&m_car3DModelInfoPosition, sizeof(m_car3DModelInfoPosition));
 
+	m_bMenuSelectCarCustomized = false;
+
 	m_pGame = pGame;
 	m_iMenuSelection = 0;
 	m_iMenuCreateOption = 0;
@@ -222,6 +226,7 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	DebugPrint("Exit CNGPCarMenu.Constructor");
 }
 
+// Destructor
 CNGPCarMenu::~CNGPCarMenu(void)
 {
 	g_bRBRHooksInitialized = FALSE;
@@ -1173,6 +1178,8 @@ HRESULT __fastcall CustomRBRDirectXBeginScene(void* objPointer)
 					{
 						if (g_pOrigCarSpecTitleWeight == NULL)
 						{
+							DebugPrint("CustomRBRDirectXBeginScene. First time customization of SelectCar menu");
+
 							// Store the original localized weight and transmission title values. These titles are re-used in customized carSpec info screen.
 							g_pOrigCarSpecTitleWeight = pCarMenuSpecTexts->wszWeightTitle;
 							g_pOrigCarSpecTitleTransmission = pCarMenuSpecTexts->wszTransmissionTitle;
@@ -1191,8 +1198,8 @@ HRESULT __fastcall CustomRBRDirectXBeginScene(void* objPointer)
 						pCarMenuSpecTexts->wszTransmissionTitle = pCarMenuSpecTexts->wszTransmissionValue = L"";
 					}
 
-					// Change default carSpec values each time a new car menu line was selected 
-					if (pCarMenuSpecTexts->wszTechSpecValue != pCarSelectionMenuEntry->wszCarModel)
+					// Change default carSpec values each time a new car menu line was selected or SelectCar menu was opened
+					if (pCarMenuSpecTexts->wszTechSpecValue != pCarSelectionMenuEntry->wszCarModel || g_pRBRPlugin->m_bMenuSelectCarCustomized == false)
 					{
 						pCarMenuSpecTexts->wszTechSpecValue = pCarSelectionMenuEntry->wszCarModel;
 						pCarMenuSpecTexts->wszHorsepowerValue = pCarSelectionMenuEntry->wszCarPower;
@@ -1208,8 +1215,19 @@ HRESULT __fastcall CustomRBRDirectXBeginScene(void* objPointer)
 						WriteOpCodeBuffer((LPVOID)PTR_TYREVALUE_WCHAR_PIRELLI, (const BYTE*)pCarSelectionMenuEntry->wszCarYear, 5 * sizeof(WCHAR));
 						WriteOpCodeBuffer((LPVOID)PTR_TYREVALUE_WCHAR_MICHELIN, (const BYTE*)pCarSelectionMenuEntry->wszCarYear, 5 * sizeof(WCHAR));
 					}
+
+					g_pRBRPlugin->m_bMenuSelectCarCustomized = true;
 				}
 			}
+		}
+		else if (g_pRBRPlugin->m_bMenuSelectCarCustomized)
+		{
+			// "CarSelect" menu closed and the tyre brand string was modified. Restore the original tyre brand string value
+			WriteOpCodeBuffer((LPVOID)PTR_TYREVALUE_WCHAR_FIRESTONE, (const BYTE*)L"Firestone", 9 * sizeof(WCHAR));  // No need to write NULL char because it is already there 
+			WriteOpCodeBuffer((LPVOID)PTR_TYREVALUE_WCHAR_BRIDGESTONE, (const BYTE*)L"Bridgestone", 11 * sizeof(WCHAR));
+			WriteOpCodeBuffer((LPVOID)PTR_TYREVALUE_WCHAR_PIRELLI, (const BYTE*)L"Pirelli", 7 * sizeof(WCHAR));
+			WriteOpCodeBuffer((LPVOID)PTR_TYREVALUE_WCHAR_MICHELIN, (const BYTE*)L"Michelin", 8 * sizeof(WCHAR));
+			g_pRBRPlugin->m_bMenuSelectCarCustomized = false;
 		}
 	}
 	else if (g_pRBRPlugin->m_iCustomReplayState > 0)
@@ -1451,10 +1469,6 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 
 	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"Mapped=(%d,%d)(%d,%d) GameRes=(%d,%d)", wndMappedRect.left, wndMappedRect.top, wndMappedRect.right, wndMappedRect.bottom, g_pRBRGameConfig->resolutionX, g_pRBRGameConfig->resolutionY);
 	g_pFontDebug->DrawText(1, 3 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, 0);
-
-	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"ReplayState=%d", g_pRBRPlugin->m_iCustomReplayState);
-	g_pFontDebug->DrawText(1, 4 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, 0);
-
 #endif
 
 	// Call original RBR DXEndScene function and let it to do whatever needed to complete the drawing of DX framebuffer
