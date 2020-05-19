@@ -67,9 +67,8 @@ PRBRGhostCarMovement g_pRBRGhostCarMovement = nullptr;
 
 PRBRMenuSystem		g_pRBRMenuSystem = nullptr;
 
-WCHAR* g_pOrigCarSpecTitleWeight = nullptr;				// The original RBR Weight and Transmission string values
+WCHAR* g_pOrigCarSpecTitleWeight = nullptr;				// The original RBR Weight and Transmission title string values
 WCHAR* g_pOrigCarSpecTitleTransmission = nullptr;
-
 
 //
 // Car details:
@@ -889,7 +888,7 @@ const char* CNGPCarMenu::GetName(void)
 		{
 			// Use custom car menu selection name and car description (taken from the current NGP config files)
 			WriteOpCodePtr((LPVOID)g_RBRCarSelectionMenuEntry[idx].ptrCarMenuName, &g_RBRCarSelectionMenuEntry[idx].szCarMenuName[0]);
-			WriteOpCodePtr((LPVOID)g_RBRCarSelectionMenuEntry[idx].ptrCarDescription, &g_RBRCarSelectionMenuEntry[idx].wszCarModel[0]);
+			WriteOpCodePtr((LPVOID)g_RBRCarSelectionMenuEntry[idx].ptrCarDescription, &g_RBRCarSelectionMenuEntry[idx].szCarMenuName[0]); // the default car description is CHAR and not WCHAR string
 		}
 
 		// If any of the car menu names is longer than 20 chars then move the whole menu list to left to make more room for longer text
@@ -1206,10 +1205,8 @@ HRESULT __fastcall CustomRBRDirectXBeginScene(void* objPointer)
 						pCarMenuSpecTexts->wszTorqueValue = pCarSelectionMenuEntry->wszCarWeight;
 						pCarMenuSpecTexts->wszEngineValue = pCarSelectionMenuEntry->wszCarTrans;
 
-						// TODO: Restore model name pointer when carSelection menu is closed
 						WriteOpCodePtr((LPVOID)pCarSelectionMenuEntry->ptrCarDescription, pCarSelectionMenuEntry->szCarCategory);
 
-						// TODO: Restore original tyre name wchar values when SelectCar menu is closed
 						WriteOpCodeBuffer((LPVOID)PTR_TYREVALUE_WCHAR_FIRESTONE, (const BYTE*)pCarSelectionMenuEntry->wszCarYear, 5 * sizeof(WCHAR));
 						WriteOpCodeBuffer((LPVOID)PTR_TYREVALUE_WCHAR_BRIDGESTONE, (const BYTE*)pCarSelectionMenuEntry->wszCarYear, 5 * sizeof(WCHAR));
 						WriteOpCodeBuffer((LPVOID)PTR_TYREVALUE_WCHAR_PIRELLI, (const BYTE*)pCarSelectionMenuEntry->wszCarYear, 5 * sizeof(WCHAR));
@@ -1227,6 +1224,11 @@ HRESULT __fastcall CustomRBRDirectXBeginScene(void* objPointer)
 			WriteOpCodeBuffer((LPVOID)PTR_TYREVALUE_WCHAR_BRIDGESTONE, (const BYTE*)L"Bridgestone", 11 * sizeof(WCHAR));
 			WriteOpCodeBuffer((LPVOID)PTR_TYREVALUE_WCHAR_PIRELLI, (const BYTE*)L"Pirelli", 7 * sizeof(WCHAR));
 			WriteOpCodeBuffer((LPVOID)PTR_TYREVALUE_WCHAR_MICHELIN, (const BYTE*)L"Michelin", 8 * sizeof(WCHAR));
+
+			// Restore car description to show car name instead of FIA category as shown in "Select Car" menu
+			for (int selectedCarIdx = 0; selectedCarIdx < 8; selectedCarIdx++)
+				WriteOpCodePtr((LPVOID)g_RBRCarSelectionMenuEntry[selectedCarIdx].ptrCarDescription, g_RBRCarSelectionMenuEntry[selectedCarIdx].szCarMenuName);
+
 			g_pRBRPlugin->m_bMenuSelectCarCustomized = false;
 		}
 	}
