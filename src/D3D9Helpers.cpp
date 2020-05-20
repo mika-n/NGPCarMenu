@@ -231,6 +231,7 @@ bool _StringToPoint(const std::wstring& s, POINT* outPoint, const wchar_t separa
 // Debug printout functions. Not used in release build.
 //
 
+unsigned long g_iLogMsgCount = 0;  // Safety precaution in debug logger to avoid flooding the logfile. One process running prints out only max N debug lines (more than that then the plugin is probably in some infinite loop lock)
 std::string g_sLogFileName;
 FILE* g_fpLogFile = nullptr;
 
@@ -274,6 +275,10 @@ void DebugCloseFile()
 
 void DebugPrintFunc(LPCSTR lpszFormat, ...)
 {
+	// Safety option to ignore debug messages if the app gets stuck in infinite loop
+	if (g_iLogMsgCount >= 1000)
+		return;
+
 	va_list args;
 	va_start(args, lpszFormat);
 
@@ -281,8 +286,12 @@ void DebugPrintFunc(LPCSTR lpszFormat, ...)
 	char szTxtTimeStampBuf[32];
 	char szTxtBuf[1024];
 
+	bool bFirstMessage = g_iLogMsgCount == 0;
+
 	try
 	{
+		g_iLogMsgCount++;
+
 		GetLocalTime(&t);
 		if (GetTimeFormat(LOCALE_USER_DEFAULT, 0, &t, "hh:mm:ss ", (LPSTR)szTxtTimeStampBuf, sizeof(szTxtTimeStampBuf) - 1) <= 0)
 			szTxtTimeStampBuf[0] = '\0';
@@ -295,6 +304,12 @@ void DebugPrintFunc(LPCSTR lpszFormat, ...)
 
 		if (g_fpLogFile)
 		{
+			if (bFirstMessage)
+			{
+				fprintf(g_fpLogFile, C_PLUGIN_TITLE);
+				fprintf(g_fpLogFile, "\n");
+			}
+
 			fprintf(g_fpLogFile, szTxtTimeStampBuf);
 			fprintf(g_fpLogFile, szTxtBuf);
 			fprintf(g_fpLogFile, "\n");
@@ -311,6 +326,10 @@ void DebugPrintFunc(LPCSTR lpszFormat, ...)
 
 void DebugPrintFunc(LPCWSTR lpszFormat, ...)
 {
+	// Safety option to ignore debug messages if the app gets stuck in infinite loop
+	if (g_iLogMsgCount >= 1000)
+		return;
+
 	va_list args;
 	va_start(args, lpszFormat);
 
@@ -318,8 +337,12 @@ void DebugPrintFunc(LPCWSTR lpszFormat, ...)
 	char szTxtTimeStampBuf[32];
 	WCHAR szTxtBuf[1024];
 
+	bool bFirstMessage = g_iLogMsgCount == 0;
+
 	try
 	{
+		g_iLogMsgCount++;
+
 		GetLocalTime(&t);
 		if (GetTimeFormat(LOCALE_USER_DEFAULT, 0, &t, "hh:mm:ss ", (LPSTR)szTxtTimeStampBuf, sizeof(szTxtTimeStampBuf) - 1) <= 0)
 			szTxtTimeStampBuf[0] = '\0';
@@ -332,6 +355,12 @@ void DebugPrintFunc(LPCWSTR lpszFormat, ...)
 
 		if (g_fpLogFile)
 		{
+			if (bFirstMessage)
+			{
+				fprintf(g_fpLogFile, C_PLUGIN_TITLE);
+				fprintf(g_fpLogFile, "\n");
+			}
+
 			fprintf(g_fpLogFile, szTxtTimeStampBuf);
 			fwprintf(g_fpLogFile, szTxtBuf);
 			fprintf(g_fpLogFile, "\n");

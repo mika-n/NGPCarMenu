@@ -44,7 +44,7 @@
 #include "RBRAPI.h"					// RBR memory addresses and data structures
 
 
-#define C_PLUGIN_TITLE "Custom NGPCarMenu Plugin (v1.03) by MIKA-N"		// Remember to tweak the NGPCarMenu.rc version properties also
+#define C_PLUGIN_TITLE "Custom NGPCarMenu Plugin (v1.04) by MIKA-N"		// Remember to tweak the NGPCarMenu.rc version properties also
 
 
 #define C_DEBUGTEXT_COLOR   D3DCOLOR_ARGB(255, 255,255,255)      // White

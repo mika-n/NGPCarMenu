@@ -29,15 +29,25 @@ Note! This plugin supports only the latest RichardBurnsRally_SSE.exe v1.02 versi
 ## Installation
 - Download the latest version from the link shown above (ZIP file).
 - Unzip the NGPCarMenu-versionTag.zip file to the root folder of existing installation of RBR game (for example *c:\games\richardBurnsRally* ).
-- Check *plugins\NGPCarMenu.ini* file settings, especially the *RBRCITCarListPath* option. This option should point to the carList.ini file from NGP physics plugin (by default *RBRCIT\carlist\carList.ini* which is a relative path under the RBR installation folder).
-- Start *RichardBurnsRally_SSE.exe* game as usual and go to *"Options/Plugins/NGPCarMenu"* in-game menu if this is the first time you use this plugin or you have installed new NGP custom car models via RBRCIT tool.
+- Check *plugins\NGPCarMenu.ini.sample* file settings, especially the *RBRCITCarListPath* option. This option should point to the carList.ini file from NGP physics plugin (by default *RBRCIT\carlist\carList.ini* which is a relative path under the RBR installation folder).
+- When RBR game with this plugin is started for the first time then the plugin will automatically copy the NGPCarMenu.ini.sample file as NGPCarMenu.ini file if it doesn't exist yet. If the NGPCarMenu.ini already exists then the plugin continues to use it and uses default value in all new options. Check the sample file for tips about those new options. This way you can simply unzip a new version on top of the existing NGPCarMenu plugin because you won't loose your existing customized NGPCarMenu.ini values.
+- Start *RichardBurnsRally_SSE.exe* game as usual and go to *"Options/Plugins/NGPCarMenu"* in-game menu.
 - At first you probably don't have any car preview images under *Plugins\NGPCarMenu\preview* folder. Select *"Create car images"* menu command to generate new preview images. Sit down and wait while the plugin creates new preview images from all installed car models.
-- After this you are ready to race! Go to *"Quick Rally/Multiplayer/Season"* in-game menu and verify that you can see the new information and car preview image in *"Select Car"* menu.
+- After this you should use the "Create car images" command when you have installed new NGP custom car models via RBRCIT tool.
+- Now you are ready to race! Go to *"Quick Rally/Multiplayer/Season"* in-game menu and verify that you can see the new information and car preview images in *"Select Car"* menu.
 
-Note! The NGPCarMenu.ini file has various screen resolution specific options. There are default values for the most common resolutions, but if the resolution you use is not there then you should add new resolution entry and set a value to at least ScreenshotCropping option. This option defines the rectangle area used in a car preview image screenshot.
+The NGPCarMenu.ini file has various screen resolution specific options. There are default values for the most common resolutions, but if the resolution you use is not there then you should add new resolution entry and set a value to at least ScreenshotCropping option. This option defines the rectangle area used in a car preview image screenshot. If you are upgrading from an old version then your existing NGPCarMenu.ini file remains as it is and all new INI options use a default value. Refer to NGPCarMenu.ini.sample for more information about new options.
+
+Note! If you use Windows Explorer integrated unzip tool to unzip the package then rbr\Plugins\NGPCarMenu.dll file may be in "blocked" state in some PC environments because the file was downloaded from Internet. To solve this issue choose properties of NGPCarMenu.dll file (right mouse button click and Properties popup menu) and untick "blocked" option. Or use better zip tools like 7-Zip.org or WinRAR to unzip packages.
+
+## Upgrading from an old version
+- Download the latest version from the Releases-link shown above.
+- Make sure RBR game is not running and locking the existing NGPCarMenu.dll file.
+- Unzip the package on top of the existing installation and let the unzip tool to overwrite all existing files (the zip contains only NGPCarMenu related files).
+- You won't loose your existing rbr\Plugins\NGPCarMenu.ini settings because the new version overwrites NGPCarMenu.ini.sample file. If you want to read more about new options then take a look at this NGPCarMenu.ini.sample file or Readme.txt file. However, the new version will initialize all new options with de1ault values, so the old INI file continues to work.
 
 ## Configuration
-See rbr\plugins\NGPCarMenu.ini file for more details:
+rbr\Plugins\NGPCarMenu.ini options (see the INI file for more details):
 | Option                 | Comment                                                                                |
 |------------------------|----------------------------------------------------------------------------------------|
 | ScreenshotPath         | Location of car preview images (relative to RBR executable location or absolute path). |
@@ -82,7 +92,10 @@ Also, some Windows OS setups limit writing new files under c:\program files\ or 
 This plugin has been tested by NGPCarMenu author with these magnificent RBR plugins/tools and the plugin works great with those. In fact, this plugin should be compatible with any plugin because the plugin doesn't change how the RBR game handles racing and the actual car models.
 
 Users have reported that the customized "Select Car" menu works also with following plugins:
-- RX RBR plugin and BTB tracks. (author: black f./jharron). [Info page for RX plugin and BTB tracks. Not the offical RX page](https://www.racedepartment.com/threads/virtualmotorsports-rally-finland-rx-track-archive.35080/) Is there an official home page for RX plugin?
+- RX RBR plugin and BTB tracks. (author: black f./jharron). 
+  - ["Speedy Cereals" (Vauhtimurot in Finnish) info page for RX plugin and BTB tracks](https://vauhtimurot.blogspot.com/p/installing-btb-stages.html)
+  - ["Another info page about RBR_RX"](https://www.racedepartment.com/threads/virtualmotorsports-rally-finland-rx-track-archive.35080/) 
+  - These are not "The official" home pages of RX plugin. Is there even one for RBR_RX plugin?
  
 
 NGPCarMenu. Copyright (c) 2020 by MIKA-N. All rights reserved. See LicenseText.txt file for more information (don't worry, this is published free of charge but use at your own risk). 

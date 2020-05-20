@@ -51,7 +51,7 @@ type NUL > "%RELEASE_FOLDER%\Plugins\%APPNAME%\preview\1920x1080\carImages.txt"
 type NUL > "%RELEASE_FOLDER%\Plugins\%APPNAME%\preview\1366x768\carImages.txt"
 
 copy "Release\%APPNAME%.dll" "%RELEASE_FOLDER%\Plugins\"
-copy "%APPNAME%.ini"         "%RELEASE_FOLDER%\Plugins\"
+copy "%APPNAME%.ini"         "%RELEASE_FOLDER%\Plugins\%APPNAME%.ini.sample"
 copy "%APPNAME%.rpl"         "%RELEASE_FOLDER%\Replays\"
 copy "CustomCarSpecs.ini"    "%RELEASE_FOLDER%\Plugins\%APPNAME%\"
 copy "..\LicenseText.txt"    "%RELEASE_FOLDER%\Plugins\%APPNAME%\"
