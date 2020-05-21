@@ -44,13 +44,11 @@
 #include "RBRAPI.h"					// RBR memory addresses and data structures
 
 
-#define C_PLUGIN_TITLE "Custom NGPCarMenu Plugin (v1.04) by MIKA-N"		// Remember to tweak the NGPCarMenu.rc version properties also
+#define C_PLUGIN_TITLE_FORMATSTR "NGPCarMenu Plugin (%s) by MIKA-N"	// %s is replaced with version tag strign. Remember to tweak it in NGPCarMenu.rc when making a new release
 
 
 #define C_DEBUGTEXT_COLOR   D3DCOLOR_ARGB(255, 255,255,255)      // White
 #define C_CARSPECTEXT_COLOR D3DCOLOR_ARGB(255, 0xE0,0xE0,0xE0)   // Grey-White
-
-#define COUNT_OF_ITEMS(array) (sizeof(array)/sizeof(array[0]))  // If a string array uses WCHAR then sizeof is not the same as number of chars (UTF8/Unicode has 2 bytes per char). This macro calculates the real num of items in statically allocated array
 
 #define C_REPLAYFILENAME_SCREENSHOT   "_NGPCarMenu.rpl"  // Name of the temporary RBR replay file (char and wchar version)
 #define C_REPLAYFILENAME_SCREENSHOTW L"_NGPCarMenu.rpl"
@@ -113,8 +111,9 @@ extern HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer);
 class CNGPCarMenu : public IPlugin
 {
 protected:
-	int	m_iCarMenuNameLen; // Max char space reserved for the current car menu name menu items (calculated in CalculateMaxLenCarMenuName method)
+	std::string m_sPluginTitle;
 
+	int	m_iCarMenuNameLen; // Max char space reserved for the current car menu name menu items (calculated in CalculateMaxLenCarMenuName method)
 
 	DetourXS* gtcDirect3DBeginScene = NULL;
 	DetourXS* gtcDirect3DEndScene = NULL;

@@ -191,9 +191,16 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	char szTmpRBRRootDir[_MAX_PATH];
 	::GetModuleFileName(NULL, szTmpRBRRootDir, sizeof(szTmpRBRRootDir));
 	::PathRemoveFileSpec(szTmpRBRRootDir);
+
 	CNGPCarMenu::m_sRBRRootDir = szTmpRBRRootDir;
 	CNGPCarMenu::m_sRBRRootDirW = _ToWString(CNGPCarMenu::m_sRBRRootDir);
 
+	// Init plugin title text with version tag of NGPCarMenu.dll file
+	char szTxtBuf[COUNT_OF_ITEMS(C_PLUGIN_TITLE_FORMATSTR) + 32];
+	if (sprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, C_PLUGIN_TITLE_FORMATSTR, GetFileVersionInformationAsString((m_sRBRRootDir + "\\Plugins\\NGPCarMenu.dll")).c_str()) <= 0)
+		szTxtBuf[0] = '\0';
+	m_sPluginTitle = szTxtBuf;
+	
 	m_iCarMenuNameLen = 0;
 	
 	m_iCustomReplayCarID = 0;
@@ -272,83 +279,99 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile()
 	std::wstring sTextValue;
 
 	std::string  sIniFileName = CNGPCarMenu::m_sRBRRootDir + "\\Plugins\\NGPCarMenu.ini";
-	pluginINIFile.LoadFile(sIniFileName.c_str());
 
-	this->m_screenshotReplayFileName = pluginINIFile.GetValue(L"Default", L"ScreenshotReplay", L"");
-	_Trim(this->m_screenshotReplayFileName);
+	m_sMenuStatusText1.clear();
 
-	RBRAPI_RefreshWndRect();
-	swprintf_s(szResolutionText, COUNT_OF_ITEMS(szResolutionText), L"%dx%d", g_rectRBRWndClient.right, g_rectRBRWndClient.bottom);
-
-	this->m_screenshotPath = pluginINIFile.GetValue(L"Default", L"ScreenshotPath", L"");
-	_Trim(this->m_screenshotPath);
-	if (this->m_screenshotPath.length() >= 2 && this->m_screenshotPath[0] != '\\' && this->m_screenshotPath[1] != ':' && g_rectRBRWndClient.right > 0 && g_rectRBRWndClient.bottom > 0)
+	try
 	{
-		this->m_screenshotPath = this->m_sRBRRootDirW + L"\\" + this->m_screenshotPath + L"\\" + szResolutionText;
+		// If NGPCarMenu.ini file is missing, but the NGPCarMenu.ini.sample exists then copy the sample as the official version.
+		// Upgrade version doesn't overwrite the official (possible user tweaked) NGPCarMenu.ini file.
+		if (!fs::exists(sIniFileName) && fs::exists(sIniFileName + ".sample"))
+			fs::copy_file(sIniFileName + ".sample", sIniFileName);
 
-		try
+		pluginINIFile.LoadFile(sIniFileName.c_str());
+
+		this->m_screenshotReplayFileName = pluginINIFile.GetValue(L"Default", L"ScreenshotReplay", L"");
+		_Trim(this->m_screenshotReplayFileName);
+
+		RBRAPI_RefreshWndRect();
+		swprintf_s(szResolutionText, COUNT_OF_ITEMS(szResolutionText), L"%dx%d", g_rectRBRWndClient.right, g_rectRBRWndClient.bottom);
+
+		this->m_screenshotPath = pluginINIFile.GetValue(L"Default", L"ScreenshotPath", L"");
+		_Trim(this->m_screenshotPath);
+		if (this->m_screenshotPath.length() >= 2 && this->m_screenshotPath[0] != '\\' && this->m_screenshotPath[1] != ':' && g_rectRBRWndClient.right > 0 && g_rectRBRWndClient.bottom > 0)
 		{
-			// If the rbr\plugins\NGPCarMenu\preview\<resolution>\ subfolder is missing then create it now
-			if (!this->m_screenshotPath.empty() && !fs::exists(this->m_screenshotPath))
-				fs::create_directory(this->m_screenshotPath);
+			this->m_screenshotPath = this->m_sRBRRootDirW + L"\\" + this->m_screenshotPath + L"\\" + szResolutionText;
+
+			try
+			{
+				// If the rbr\plugins\NGPCarMenu\preview\<resolution>\ subfolder is missing then create it now
+				if (!this->m_screenshotPath.empty() && !fs::exists(this->m_screenshotPath))
+					fs::create_directory(this->m_screenshotPath);
+			}
+			catch (...)
+			{
+				LogPrint("ERROR CNGPCarMenu.RefreshSettingsFromPluginINIFile. %s folder creation failed", this->m_screenshotPath.c_str());
+				m_sMenuStatusText1 = _ToString(this->m_screenshotPath) + " folder creation failed";
+			}
 		}
-		catch (...)
+
+		this->m_rbrCITCarListFilePath = pluginINIFile.GetValue(L"Default", L"RBRCITCarListPath", L"");
+		_Trim(this->m_rbrCITCarListFilePath);
+		if (this->m_rbrCITCarListFilePath.length() >= 2 && this->m_rbrCITCarListFilePath[0] != '\\' && this->m_rbrCITCarListFilePath[1] != ':')
+			this->m_rbrCITCarListFilePath = this->m_sRBRRootDirW + L"\\" + this->m_rbrCITCarListFilePath;
+
+
+		// TODO: carPosition, camPosition reading from INI file (now the car and cam position is hard-coded in this plugin code)
+
+		sTextValue = pluginINIFile.GetValue(szResolutionText, L"ScreenshotCropping", L"");
+		_StringToRect(sTextValue, &this->m_screenshotCroppingRect);
+
+		sTextValue = pluginINIFile.GetValue(szResolutionText, L"CarSelectLeftBlackBar", L"");
+		_StringToRect(sTextValue, &this->m_carSelectLeftBlackBarRect);
+
+		sTextValue = pluginINIFile.GetValue(szResolutionText, L"CarSelectRightBlackBar", L"");
+		_StringToRect(sTextValue, &this->m_carSelectRightBlackBarRect);
+
+		// Custom location of 3D model into textbox or default location (0,0 = default)
+		sTextValue = pluginINIFile.GetValue(szResolutionText, L"Car3DModelInfoPosition", L"");
+		_StringToPoint(sTextValue, &this->m_car3DModelInfoPosition);
+
+
+		// DirectX (0) or GDI (1) screenshot logic
+		sTextValue = pluginINIFile.GetValue(L"Default", L"ScreenshotAPIType", L"0");
+		this->m_screenshotAPIType = std::stoi(sTextValue);
+
+		// Screenshot image format option. One of the values in g_RBRPluginMenu_ImageOptions array (the default is the item in the first index)
+		this->m_iMenuImageOption = 0;
+		sTextValue = pluginINIFile.GetValue(L"Default", L"ScreenshotFileType", L"");
+		_Trim(sTextValue);
+		for (int idx = 0; idx < COUNT_OF_ITEMS(g_RBRPluginMenu_ImageOptions); idx++)
 		{
-			LogPrint("ERROR CNGPCarMenu.RefreshSettingsFromPluginINIFile. %s folder creation failed", this->m_screenshotPath.c_str());
+			std::string  sOptionValue;
+			std::wstring wsOptionValue;
+			sOptionValue = g_RBRPluginMenu_ImageOptions[idx];
+			wsOptionValue = _ToWString(sOptionValue);
+
+			if (_wcsnicmp(sTextValue.c_str(), wsOptionValue.c_str(), wsOptionValue.length()) == 0)
+			{
+				this->m_iMenuImageOption = idx;
+				break;
+			}
 		}
+
+
+		//
+		// Set status text msg (or if the status1 is already set then it must be an error msg set by this method)
+		//
+		if(m_sMenuStatusText1.empty()) m_sMenuStatusText1 = _ToString(m_screenshotPath);
+		m_sMenuStatusText2 = _ToString(std::wstring(szResolutionText)) + " native resolution detected";
 	}
-
-	this->m_rbrCITCarListFilePath = pluginINIFile.GetValue(L"Default", L"RBRCITCarListPath", L"");
-	_Trim(this->m_rbrCITCarListFilePath);
-	if (this->m_rbrCITCarListFilePath.length() >= 2 && this->m_rbrCITCarListFilePath[0] != '\\' && this->m_rbrCITCarListFilePath[1] != ':')
-		this->m_rbrCITCarListFilePath = this->m_sRBRRootDirW + L"\\" + this->m_rbrCITCarListFilePath;
-
-
-	// TODO: carPosition, camPosition reading from INI file (now the car and cam position is hard-coded in this plugin code)
-
-	sTextValue = pluginINIFile.GetValue(szResolutionText, L"ScreenshotCropping", L"");
-	_StringToRect(sTextValue, &this->m_screenshotCroppingRect);
-
-	sTextValue = pluginINIFile.GetValue(szResolutionText, L"CarSelectLeftBlackBar", L"");
-	_StringToRect(sTextValue, &this->m_carSelectLeftBlackBarRect);
-
-	sTextValue = pluginINIFile.GetValue(szResolutionText, L"CarSelectRightBlackBar", L"");
-	_StringToRect(sTextValue, &this->m_carSelectRightBlackBarRect);
-
-	// Custom location of 3D model into textbox or default location (0,0 = default)
-	sTextValue = pluginINIFile.GetValue(szResolutionText, L"Car3DModelInfoPosition", L"");
-	_StringToPoint(sTextValue, &this->m_car3DModelInfoPosition);
-
-
-	// DirectX (0) or GDI (1) screenshot logic
-	sTextValue = pluginINIFile.GetValue(L"Default", L"ScreenshotAPIType", L"0");
-	this->m_screenshotAPIType = std::stoi(sTextValue);
-
-	// Screenshot image format option. One of the values in g_RBRPluginMenu_ImageOptions array (the default is the item in the first index)
-	this->m_iMenuImageOption = 0;
-	sTextValue = pluginINIFile.GetValue(L"Default", L"ScreenshotFileType", L"");
-	_Trim(sTextValue);
-	for (int idx = 0; idx < COUNT_OF_ITEMS(g_RBRPluginMenu_ImageOptions); idx++)
+	catch (...)
 	{
-		std::string  sOptionValue;
-		std::wstring wsOptionValue;
-		sOptionValue  = g_RBRPluginMenu_ImageOptions[idx];
-		wsOptionValue = _ToWString(sOptionValue);
-
-		if (_wcsnicmp(sTextValue.c_str(), wsOptionValue.c_str(), wsOptionValue.length()) == 0)
-		{
-			this->m_iMenuImageOption = idx;
-			break;
-		}
-	}		
-
-
-	//
-	// Set status text msg
-	//
-	m_sMenuStatusText1 = _ToString(m_screenshotPath);
-	m_sMenuStatusText2 = _ToString(std::wstring(szResolutionText)) + " native resolution detected";
-
+		LogPrint("ERROR CNGPCarMenu.RefreshSettingsFromPluginINIFile. %s INI reading failed", sIniFileName.c_str());
+		m_sMenuStatusText1 = sIniFileName + " file access error";
+	}
 	DebugPrint("Exit CNGPCarMenu.RefreshSettingsFromPluginINIFile");
 }
 
@@ -374,6 +397,7 @@ void CNGPCarMenu::SaveSettingsToPluginINIFile()
 	catch (...)
 	{
 		LogPrint("ERROR CNGPCarMenu.SaveSettingsToPluginINIFile. %s INI writing failed", sIniFileName.c_str());
+		m_sMenuStatusText1 = sIniFileName + " INI writing failed";
 	}
 }
 
@@ -972,7 +996,7 @@ void CNGPCarMenu::DrawFrontEndPage(void)
 	// Draw custom plugin header line
 	m_pGame->SetMenuColor(IRBRGame::MENU_HEADING);
 	m_pGame->SetFont(IRBRGame::FONT_BIG);
-	m_pGame->WriteText(65.0f, 49.0f, C_PLUGIN_TITLE);
+	m_pGame->WriteText(65.0f, 49.0f, m_sPluginTitle.c_str());
 
 	// The red menu selection line
 	m_pGame->DrawSelection(0.0f, 68.0f + (static_cast< float >(m_iMenuSelection) * 21.0f), 360.0f);
@@ -1441,7 +1465,6 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 			g_pFontCarSpecCustom->DrawText(posX, 3 * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsCustomTxt, 0);
 		}
 	}
-	//else if (g_pRBRPlugin->m_iCustomReplayState > 0 && g_pRBRPlugin->m_bCustomReplayShowCroppingRect && g_pRBRPlugin->m_screenshotCroppingRectVertexBuffer != nullptr)
 	else if (g_pRBRPlugin->m_bCustomReplayShowCroppingRect && g_pRBRPlugin->m_iCustomReplayState >= 2 && g_pRBRPlugin->m_iCustomReplayState != 4)
 	{
 		// Draw rectangle to highlight the screenshot capture area
@@ -1468,9 +1491,6 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 		wndRect.left, wndRect.top, wndRect.right, wndRect.bottom,
 		wndClientRect.left, wndClientRect.top, wndClientRect.right, wndClientRect.bottom);
 	g_pFontDebug->DrawText(1, 2 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, 0);
-
-	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"Mapped=(%d,%d)(%d,%d) GameRes=(%d,%d)", wndMappedRect.left, wndMappedRect.top, wndMappedRect.right, wndMappedRect.bottom, g_pRBRGameConfig->resolutionX, g_pRBRGameConfig->resolutionY);
-	g_pFontDebug->DrawText(1, 3 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, 0);
 #endif
 
 	// Call original RBR DXEndScene function and let it to do whatever needed to complete the drawing of DX framebuffer

@@ -50,6 +50,7 @@ extern void DebugPrintFunc(LPCSTR lpszFormat, ...);
 extern void DebugPrintFunc(LPCWSTR lpszFormat, ...);
 
 //------------------------------------------------------------------------------------------------
+#define COUNT_OF_ITEMS(array) (sizeof(array)/sizeof(array[0]))  // If a string array uses WCHAR then sizeof is not the same as number of chars (UTF8/Unicode has 2 bytes per char). This macro calculates the real num of items in statically allocated array
 
 #ifndef SAFE_RELEASE
 #define SAFE_RELEASE( p ) if( p ){ p->Release(); p = nullptr; }
@@ -69,6 +70,8 @@ extern std::wstring _ToWString(const std::string & s);	// Convert std::string to
 extern std::string  _ToString(const std::wstring & s);  // Convert std::wstring to std:string
 extern inline void _ToLowerCase(std::string & s);       // Convert string to lowercase letters (in-place, so the original str in the parameter is converted)
 extern inline void _ToLowerCase(std::wstring & s);      // Convert wstring to lowercase letters (in-place)
+
+extern std::string GetFileVersionInformationAsString(const std::string & fileName);
 
 extern bool _StringToRect(const std::wstring & s, RECT * outRect, const wchar_t separatorChar = L' '); // String in "0 50 200 400" format is converted as RECT struct value 
 extern bool _StringToPoint(const std::wstring & s, POINT * outPoint, const wchar_t separatorChar = L' '); // String in "0 50" format is converted as POINT struct value 

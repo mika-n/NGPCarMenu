@@ -22,6 +22,7 @@
 #include "stdafx.h"
 
 //#include <memory>			// make_unique
+#include <string>
 #include <algorithm>		// transform
 #include <vector>			// vector
 #include <sstream>			// wstringstream
@@ -30,6 +31,9 @@
 
 #include <wincodec.h>		// IWICxx image funcs
 #include <shlwapi.h>		// PathRemoveFileSpec
+
+#include <winver.h>			// GetFileVersionInfo
+#pragma comment(lib, "version.lib")
 
 #include <gdiplus.h>
 #include <gdiplusimaging.h>
@@ -225,6 +229,44 @@ bool _StringToPoint(const std::wstring& s, POINT* outPoint, const wchar_t separa
 }
 
 
+// Return the version tag of a file as string, for example "1.0.4.0"
+std::string GetFileVersionInformationAsString(const std::string& fileName)
+{
+	std::string sResult;
+
+	DWORD dwHandle = 0;
+	DWORD dwSize = GetFileVersionInfoSize(fileName.c_str(), &dwHandle);
+
+	if (dwSize > 0)
+	{
+		LPBYTE pVerData = new BYTE[dwSize];
+		if (GetFileVersionInfo(fileName.c_str(), dwHandle, dwSize, pVerData))
+		{
+			LPBYTE pQryBuffer = nullptr;
+			UINT iLen = 0;
+
+			if (VerQueryValue(pVerData, "\\", (LPVOID*) &pQryBuffer, &iLen))
+			{
+				if (iLen > 0 && pQryBuffer != nullptr)
+				{
+					VS_FIXEDFILEINFO* verInfo = (VS_FIXEDFILEINFO*)pQryBuffer;
+					if (verInfo->dwSignature == 0xfeef04bd)
+					{
+						sResult = std::to_string((verInfo->dwFileVersionMS >> 16) & 0xffff) + "."
+							    + std::to_string((verInfo->dwFileVersionMS >> 0) & 0xffff) + "."
+							    + std::to_string((verInfo->dwFileVersionLS >> 16) & 0xffff) + "."
+							    + std::to_string((verInfo->dwFileVersionLS >> 0) & 0xffff);
+					}
+				}
+			}
+		}
+		delete[] pVerData;
+	}
+
+	// Empty string if getVer failed
+	return sResult;
+}
+
 //---------------------------------------------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------------------------------------------------------
@@ -273,19 +315,11 @@ void DebugCloseFile()
 	if (fpLogFile != nullptr) fclose(fpLogFile);
 }
 
-void DebugPrintFunc(LPCSTR lpszFormat, ...)
+// Print out CHAR or WCHAR log msg
+void DebugPrintFunc_CHAR_or_WCHAR(LPCSTR szTxtBuf, LPCWSTR wszTxtBuf)
 {
-	// Safety option to ignore debug messages if the app gets stuck in infinite loop
-	if (g_iLogMsgCount >= 1000)
-		return;
-
-	va_list args;
-	va_start(args, lpszFormat);
-
 	SYSTEMTIME t;
 	char szTxtTimeStampBuf[32];
-	char szTxtBuf[1024];
-
 	bool bFirstMessage = g_iLogMsgCount == 0;
 
 	try
@@ -296,22 +330,21 @@ void DebugPrintFunc(LPCSTR lpszFormat, ...)
 		if (GetTimeFormat(LOCALE_USER_DEFAULT, 0, &t, "hh:mm:ss ", (LPSTR)szTxtTimeStampBuf, sizeof(szTxtTimeStampBuf) - 1) <= 0)
 			szTxtTimeStampBuf[0] = '\0';
 
-		if (_vsnprintf_s(szTxtBuf, sizeof(szTxtBuf) - 1, lpszFormat, args) <= 0)
-			szTxtBuf[0] = '\0';
-
-		if (g_fpLogFile == nullptr) 
+		if (g_fpLogFile == nullptr)
 			DebugOpenFile();
 
 		if (g_fpLogFile)
 		{
 			if (bFirstMessage)
 			{
-				fprintf(g_fpLogFile, C_PLUGIN_TITLE);
+				std::string sVersionTag = "NGPCarMenu.dll version " + GetFileVersionInformationAsString(g_sLogFileName + "\\..\\..\\NGPCarMenu.dll");
+				fprintf(g_fpLogFile, sVersionTag.c_str());
 				fprintf(g_fpLogFile, "\n");
 			}
 
 			fprintf(g_fpLogFile, szTxtTimeStampBuf);
-			fprintf(g_fpLogFile, szTxtBuf);
+			if (szTxtBuf != nullptr)  fprintf(g_fpLogFile, szTxtBuf);
+			if (wszTxtBuf != nullptr) fwprintf(g_fpLogFile, wszTxtBuf);
 			fprintf(g_fpLogFile, "\n");
 			DebugCloseFile();
 		}
@@ -320,6 +353,22 @@ void DebugPrintFunc(LPCSTR lpszFormat, ...)
 	{
 		// Do nothing
 	}
+}
+
+void DebugPrintFunc(LPCSTR lpszFormat, ...)
+{
+	// Safety option to ignore debug messages if the app gets stuck in infinite loop
+	if (g_iLogMsgCount >= 1000)
+		return;
+
+	va_list args;
+	va_start(args, lpszFormat);
+
+	CHAR szTxtBuf[1024];
+	if (_vsnprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, lpszFormat, args) <= 0)
+		szTxtBuf[0] = '\0';
+
+	DebugPrintFunc_CHAR_or_WCHAR(szTxtBuf, nullptr);
 
 	va_end(args);
 }
@@ -333,44 +382,11 @@ void DebugPrintFunc(LPCWSTR lpszFormat, ...)
 	va_list args;
 	va_start(args, lpszFormat);
 
-	SYSTEMTIME t;
-	char szTxtTimeStampBuf[32];
-	WCHAR szTxtBuf[1024];
+	WCHAR wszTxtBuf[1024];
+	if (_vsnwprintf_s(wszTxtBuf, COUNT_OF_ITEMS(wszTxtBuf) - 1, lpszFormat, args) <= 0)
+		wszTxtBuf[0] = L'\0';
 
-	bool bFirstMessage = g_iLogMsgCount == 0;
-
-	try
-	{
-		g_iLogMsgCount++;
-
-		GetLocalTime(&t);
-		if (GetTimeFormat(LOCALE_USER_DEFAULT, 0, &t, "hh:mm:ss ", (LPSTR)szTxtTimeStampBuf, sizeof(szTxtTimeStampBuf) - 1) <= 0)
-			szTxtTimeStampBuf[0] = '\0';
-
-		if (_vsnwprintf_s(szTxtBuf, sizeof(szTxtBuf) - 1, lpszFormat, args) <= 0)
-			szTxtBuf[0] = L'\0';
-
-		if (g_fpLogFile == nullptr)
-			DebugOpenFile();
-
-		if (g_fpLogFile)
-		{
-			if (bFirstMessage)
-			{
-				fprintf(g_fpLogFile, C_PLUGIN_TITLE);
-				fprintf(g_fpLogFile, "\n");
-			}
-
-			fprintf(g_fpLogFile, szTxtTimeStampBuf);
-			fwprintf(g_fpLogFile, szTxtBuf);
-			fprintf(g_fpLogFile, "\n");
-			DebugCloseFile();
-		}
-	}
-	catch (...)
-	{
-		// Do nothing
-	}
+	DebugPrintFunc_CHAR_or_WCHAR(nullptr, wszTxtBuf);
 
 	va_end(args);
 }
