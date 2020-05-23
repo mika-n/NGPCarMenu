@@ -1050,8 +1050,8 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 			// DEBUG. Show/Hide cropping area
 			//bool bNewStatus = !m_bCustomReplayShowCroppingRect;
 			m_bCustomReplayShowCroppingRect = false;
-			D3D9CreateRectangleVertexBuffer(g_pRBRIDirect3DDevice9, (float)this->m_screenshotCroppingRect.left, (float)this->m_screenshotCroppingRect.top, (float)(this->m_screenshotCroppingRect.right - this->m_screenshotCroppingRect.left), (float)(this->m_screenshotCroppingRect.bottom - this->m_screenshotCroppingRect.top), &m_screenshotCroppingRectVertexBuffer);
-			//m_bCustomReplayShowCroppingRect = bNewStatus;
+			//D3D9CreateRectangleVertexBuffer(g_pRBRIDirect3DDevice9, (float)this->m_screenshotCroppingRect.left, (float)this->m_screenshotCroppingRect.top, (float)(this->m_screenshotCroppingRect.right - this->m_screenshotCroppingRect.left), (float)(this->m_screenshotCroppingRect.bottom - this->m_screenshotCroppingRect.top), &m_screenshotCroppingRectVertexBuffer);
+			//m_bCustomReplayShowCroppingRect = bNewStatus;		
 		}
 		//else if (m_iMenuSelection == C_MENUCMD_CREATEOPTION || m_iMenuSelection == C_MENUCMD_IMAGEOPTION)
 		//{
@@ -1491,6 +1491,9 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 		wndRect.left, wndRect.top, wndRect.right, wndRect.bottom,
 		wndClientRect.left, wndClientRect.top, wndClientRect.right, wndClientRect.bottom);
 	g_pFontDebug->DrawText(1, 2 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, 0);
+
+	//swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"Mapped=(%d,%d)(%d,%d) GameRes=(%d,%d)", wndMappedRect.left, wndMappedRect.top, wndMappedRect.right, wndMappedRect.bottom, g_pRBRGameConfig->resolutionX, g_pRBRGameConfig->resolutionY);
+	//g_pFontDebug->DrawText(1, 3 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, 0);
 #endif
 
 	// Call original RBR DXEndScene function and let it to do whatever needed to complete the drawing of DX framebuffer
