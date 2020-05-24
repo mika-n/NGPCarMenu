@@ -60,18 +60,28 @@ extern void DebugPrintFunc(LPCWSTR lpszFormat, ...);
 #define SAFE_DELETE( p ) if( p ){ delete p; p = nullptr; }
 #endif
 
-extern bool _iStarts_With(std::wstring s1, std::wstring s2, bool s2AlreadyInLowercase = FALSE);			// Case-insensitive starts_with string comparison
+extern bool _iStarts_With(std::wstring s1, std::wstring s2, bool s2AlreadyInLowercase = FALSE);	 // Case-insensitive starts_with string comparison
+extern bool _iEnds_With(std::wstring s1, std::wstring s2, bool s2AlreadyInLowercase = FALSE);    // Case-insensitive ends_with string comparison
+
+extern bool _iStarts_With(std::string s1, std::string s2, bool s2AlreadyInLowercase = FALSE);    // Case-insensitive starts_with string comparison
+extern bool _iEnds_With(std::string s1, std::string s2, bool s2AlreadyInLowercase = FALSE);      // Case-insensitive ends_with string comparison
+
 //extern bool _iEqual(std::wstring const& s1, std::wstring const& s2, bool s2AlreadyInLowercase = FALSE); // Case-insensitive string comparison
 
 extern void _Trim(std::wstring & s);  // Trim wstring (in-place, modify the s)
+extern void _Trim(std::string & s);  // Trim string (in-place, modify the s)
 //extern std::wstring _TrimCopy(std::wstring s);  // Trim wstring (return new string, the s unmodified)
 
-extern std::wstring _ToWString(const std::string & s);	// Convert std::string to std::wstring
-extern std::string  _ToString(const std::wstring & s);  // Convert std::wstring to std:string
+extern std::wstring _ToWString(const std::string & s);	   // Convert std::string to std::wstring
+extern std::string  _ToString(const std::wstring & s);     // Convert std::wstring to std:string
+
+extern std::string  _ToUTF8String(const std::wstring & s); // Convert widchar std::wstring(UTF8) to multibyte string value (WinOS specific implementation)
+extern std::wstring _ToUTF8WString(const std::string & s); // Convert multibyte std::string(UTF8) to widechar UTF8 string value (WinOS specific implementation) 
+
 extern inline void _ToLowerCase(std::string & s);       // Convert string to lowercase letters (in-place, so the original str in the parameter is converted)
 extern inline void _ToLowerCase(std::wstring & s);      // Convert wstring to lowercase letters (in-place)
 
-extern std::string GetFileVersionInformationAsString(const std::string & fileName);
+extern std::string GetFileVersionInformationAsString(const std::wstring & fileName);
 
 extern bool _StringToRect(const std::wstring & s, RECT * outRect, const wchar_t separatorChar = L' '); // String in "0 50 200 400" format is converted as RECT struct value 
 extern bool _StringToPoint(const std::wstring & s, POINT * outPoint, const wchar_t separatorChar = L' '); // String in "0 50" format is converted as POINT struct value 

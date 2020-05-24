@@ -48,6 +48,8 @@
     <None Include="CustomCarSpecs.ini" />
     <None Include="CreateReleaseZip.cmd" />
     <None Include="NGPCarMenu.ini" />
+    <None Include="NGPCarMenu_Group R1.rpl" />
+    <None Include="NGPCarMenu.rpl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="PluginHelpers.h">

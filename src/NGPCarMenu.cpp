@@ -29,6 +29,10 @@
 #include <filesystem>			// fs::directory_iterator
 #include <fstream>				// std::ifstream
 #include <chrono>				// std::chrono::steady_clock
+
+#include <locale>			// UTF8 locales
+#include <codecvt>
+
 #include <wincodec.h>			// GUID_ContainerFormatPng 
 
 #include "NGPCarMenu.h"
@@ -197,7 +201,7 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 
 	// Init plugin title text with version tag of NGPCarMenu.dll file
 	char szTxtBuf[COUNT_OF_ITEMS(C_PLUGIN_TITLE_FORMATSTR) + 32];
-	if (sprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, C_PLUGIN_TITLE_FORMATSTR, GetFileVersionInformationAsString((m_sRBRRootDir + "\\Plugins\\NGPCarMenu.dll")).c_str()) <= 0)
+	if (sprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, C_PLUGIN_TITLE_FORMATSTR, GetFileVersionInformationAsString((m_sRBRRootDirW + L"\\Plugins\\NGPCarMenu.dll")).c_str()) <= 0)
 		szTxtBuf[0] = '\0';
 	m_sPluginTitle = szTxtBuf;
 	
@@ -455,11 +459,22 @@ void CNGPCarMenu::InitCarSpecData()
 
 				sStockCarModelName = stockCarListINIFile.GetValue(wszStockCarINISection, L"CarName", L"");
 				_Trim(sStockCarModelName);
-
-				if (sStockCarModelName.length() >= 4 && sStockCarModelName[sStockCarModelName.length() - 3] == L'(' && sStockCarModelName[sStockCarModelName.length() - 1] == L')')
+				
+				if (sStockCarModelName.length() >= 4)
 				{
-					sStockCarModelName.erase(sStockCarModelName.length() - 3);
-					_Trim(sStockCarModelName);
+					// If the car name ends in "xxx #2]" tag then remove it as unecessary trailing tag (some cars like "Renault Twingo R1 #2]" or "Open ADAM R2 #2]" has this weird tag in NGP car name value in Cars.ini file)
+					if (sStockCarModelName[sStockCarModelName.length() - 3] == L'#' && sStockCarModelName[sStockCarModelName.length() - 1] == L']')
+					{
+						sStockCarModelName.erase(sStockCarModelName.length() - 3);
+						_Trim(sStockCarModelName);
+					}
+
+					// If the car name has "xxx (2)" type of trailing tag (original car names set by RBRCIT in Cars.ini has the slot number) then remove that unnecessary tag
+					if (sStockCarModelName[sStockCarModelName.length() - 3] == L'(' && sStockCarModelName[sStockCarModelName.length() - 1] == L')')
+					{
+						sStockCarModelName.erase(sStockCarModelName.length() - 3);
+						_Trim(sStockCarModelName);
+					}
 				}
 
 				if(!sStockCarModelName.empty())
@@ -495,12 +510,14 @@ bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, 
 
 	const fs::path fsFolderName(folderName);
 
-	std::wstring wfsFileName;
+	//std::wstring wfsFileName;
 	std::string  fsFileName;
 	fsFileName.reserve(128);
 	
-	std::wstring sTextLine;
+	std::string  sTextLine;
+	std::wstring wsTextLine;
 	sTextLine.reserve(128);
+	wsTextLine.reserve(128);
 
 	int iReadRowCount;
 	bool bResult = FALSE;
@@ -512,20 +529,20 @@ bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, 
 		{
 			*outNumOfGears = -1;
 
-			std::wifstream commoLspFile(folderName + "\\common.lsp");
+			std::ifstream commoLspFile(folderName + "\\common.lsp");
 			while (std::getline(commoLspFile, sTextLine))
 			{				
-				std::replace(sTextLine.begin(), sTextLine.end(), L'\t', L' ');
+				std::replace(sTextLine.begin(), sTextLine.end(), '\t', ' ');
 				_Trim(sTextLine);
 
 				// Remove double whitechars from the string value
-				sTextLine.erase(std::unique(sTextLine.begin(), sTextLine.end(), [](WCHAR a, WCHAR b) { return isspace(a) && isspace(b); }), sTextLine.end());
+				sTextLine.erase(std::unique(sTextLine.begin(), sTextLine.end(), [](char a, char b) { return isspace(a) && isspace(b); }), sTextLine.end());
 
-				if (_iStarts_With(sTextLine, L"numberofgears", true))
+				if (_iStarts_With(sTextLine, "numberofgears", true))
 				{
 					try
 					{
-						*outNumOfGears = StrToIntW(sTextLine.substr(14).c_str());
+						*outNumOfGears = StrToInt(sTextLine.substr(14).c_str());
 						if (*outNumOfGears > 2)
 							*outNumOfGears -= 2; // Minus reverse and neutral gears because NGP data includes those in NumberOfGears value
 					}
@@ -545,19 +562,24 @@ bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, 
 			{
 				fsFileName = entry.path().filename().string();
 				//DebugPrint(fsFileName.c_str());
+				//wfsFileName = _ToWString(fsFileName);
 
-				wfsFileName = _ToWString(fsFileName);
+				// Read NGP car model description file (it is in multibyte UTF8 format) and convert text lines to C++ UTF8 WCHAR strings
+				std::ifstream rbrFile(folderName + "\\" + fsFileName);
 
-				std::wifstream rbrFile(folderName + "\\" + fsFileName);
+				std::string sMultiByteUtf8TextLine;
+				sMultiByteUtf8TextLine.reserve(128);
+
 				iReadRowCount = 0;
-
-				while (std::getline(rbrFile, sTextLine) && iReadRowCount <= 6)
+				while (std::getline(rbrFile, sMultiByteUtf8TextLine) && iReadRowCount <= 6)
 				{	
 					iReadRowCount++;
-					_Trim(sTextLine);
+
+					wsTextLine = ::_ToUTF8WString(sMultiByteUtf8TextLine); // Mbc-UTF8 to widechar-UTF8
+					_Trim(wsTextLine);
 
 					/*
-					if (_iStarts_With(sTextLine, wfsFileName))
+					if (_iStarts_With(wsTextLine, wfsFileName))
 					{
 						bResult = TRUE;
 
@@ -570,32 +592,32 @@ bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, 
 					*/
 
 					// Remove double whitechars from the string value
-					sTextLine.erase(std::unique(sTextLine.begin(), sTextLine.end(), [](WCHAR a, WCHAR b) { return isspace(a) && isspace(b); }), sTextLine.end());
+					wsTextLine.erase(std::unique(wsTextLine.begin(), wsTextLine.end(), [](WCHAR a, WCHAR b) { return isspace(a) && isspace(b); }), wsTextLine.end());
 
-					if (_iStarts_With(sTextLine, L"revision", TRUE))
+					if (_iStarts_With(wsTextLine, L"revision", TRUE))
 					{						
 						bResult = TRUE;
 
-						wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysicsRevision, sTextLine.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsRevision));
+						wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysicsRevision, wsTextLine.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsRevision));
 						pRBRCarSelectionMenuEntry->wszCarPhysicsRevision[COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsRevision) - 1] = '\0';
 					}
-					else if (_iStarts_With(sTextLine, L"specification date", TRUE))
+					else if (_iStarts_With(wsTextLine, L"specification date", TRUE))
 					{
 						bResult = TRUE;
 
-						wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysicsSpecYear, sTextLine.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsSpecYear));
+						wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysicsSpecYear, wsTextLine.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsSpecYear));
 						pRBRCarSelectionMenuEntry->wszCarPhysicsSpecYear[COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsSpecYear) - 1] = '\0';
 					}
-					else if (_iStarts_With(sTextLine, L"3d model", TRUE))
+					else if (_iStarts_With(wsTextLine, L"3d model", TRUE))
 					{
 						bResult = TRUE;
 
-						wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel, sTextLine.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel));
+						wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel, wsTextLine.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel));
 						pRBRCarSelectionMenuEntry->wszCarPhysics3DModel[COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel) - 1] = '\0';
 					}
-					else if (bResult && !sTextLine.empty())
+					else if (bResult && !wsTextLine.empty())
 					{
-						wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysicsCustomTxt, sTextLine.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsCustomTxt));
+						wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysicsCustomTxt, wsTextLine.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsCustomTxt));
 						pRBRCarSelectionMenuEntry->wszCarPhysicsCustomTxt[COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsCustomTxt) - 1] = '\0';
 					}
 				}
@@ -603,7 +625,7 @@ bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, 
 				if (bResult)
 				{
 					// If NGP car model file found then set carModel string value and no need to iterate through other files (without file extension)
-					wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarModel, wfsFileName.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarModel));
+					wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarModel, (_ToWString(fsFileName)).c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarModel));
 					pRBRCarSelectionMenuEntry->wszCarModel[COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarModel) - 1] = '\0';
 
 					break;
@@ -815,15 +837,46 @@ int CNGPCarMenu::GetNextScreenshotCarID(int currentCarID)
 //
 bool CNGPCarMenu::PrepareScreenshotReplayFile(int carID)
 {
+	std::wstring inputReplayFilePath;
 	std::wstring inputReplayFileName;
 	std::wstring outputReplayFileName;
 
-	inputReplayFileName  = g_pRBRPlugin->m_sRBRRootDirW + L"\\Replays\\" + g_pRBRPlugin->m_screenshotReplayFileName;
-	outputReplayFileName = g_pRBRPlugin->m_sRBRRootDirW + L"\\Replays\\" + C_REPLAYFILENAME_SCREENSHOTW;
+	std::wstring carModelName;
+	std::wstring carCategoryName;
+
+	int carMenuIdx = RBRAPI_MapCarIDToMenuIdx(carID);
+
+	inputReplayFilePath  = g_pRBRPlugin->m_sRBRRootDirW + L"\\Plugins\\NGPCarMenu\\Replays"; // NGPCarMenu replay template folder
+	outputReplayFileName = g_pRBRPlugin->m_sRBRRootDirW + L"\\Replays\\" + C_REPLAYFILENAME_SCREENSHOTW;  // RBR replay folder and temporary output filename
 	
+	carModelName = g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(carID)].wszCarModel;
+	carCategoryName = _ToWString(std::string(g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(carID)].szCarCategory));
+
 	try
 	{
-		// Open input replay file, modify car model ID on the fly and write out the replay file used to generate screenshots
+		std::wstring screenshotReplayFileNameWithoutExt = fs::path(g_pRBRPlugin->m_screenshotReplayFileName).replace_extension();
+
+		// Lookup the replay template used to generate a car preview image. The replay file is chosen based on carModel name, category name or finally the "global" default file if more specific version was not found
+		// (1) rbr\Plugins\NGPCarMenu\Replays\NGPCarName_<CarModelName>.rpl (fex "NGPCarMenu_Citroen C3 WRC 2017.rpl")
+		// (2) rbr\Plugins\NGPCarMenu\Replays\NGPCarName_<FIACategoryName>.rpl (fex "NGPCarMenu_Group R1.rpl")
+		// (3) rbr\Plugins\NGPCarMenu\Replays\NGPCarName.rpl (this file should always exists as a fallback rpl template)
+
+		inputReplayFileName = inputReplayFilePath + L"\\" + screenshotReplayFileNameWithoutExt + L"_" + carModelName + L".rpl";
+		if (!fs::exists(inputReplayFileName))
+		{
+			inputReplayFileName = inputReplayFilePath + L"\\" + screenshotReplayFileNameWithoutExt + L"_" + carCategoryName + L".rpl";
+			if (!fs::exists(inputReplayFileName))
+			{
+				// No carModel or carCategory specific replay template file (fex "NGPCarMenu_Group R1.rpl" file is used with GroupR1 cars). Use the default generic replay file (NGPCarMenu.rpl by default, but INI file can re-define this filename).
+				inputReplayFileName = inputReplayFilePath + L"\\" + g_pRBRPlugin->m_screenshotReplayFileName;
+				if (!fs::exists(inputReplayFileName))
+					inputReplayFileName = g_pRBRPlugin->m_sRBRRootDirW + L"\\Replays\\" + g_pRBRPlugin->m_screenshotReplayFileName;
+			}
+		}
+
+		LogPrint(L"Preparing a car preview image creation. Using template file %s for a car %s (%s) (car#=%d menu#=%d)", inputReplayFileName.c_str(), carModelName.c_str(), carCategoryName.c_str(), carID, carMenuIdx);
+
+		// Open input replay template file, modify car model ID on the fly and write out the temporary replay file (stored in RBR Replays folder)
 
 		std::ifstream srcFile(inputReplayFileName, std::ifstream::binary | std::ios::in);
 		if (!srcFile) return FALSE;
@@ -843,12 +896,12 @@ bool CNGPCarMenu::PrepareScreenshotReplayFile(int carID)
 	}
 	catch (const fs::filesystem_error& ex)
 	{
-		LogPrint("ERROR CNGPCarMenu::PrepareScreenshotReplayFile. carid=%d %s", carID, ex.what());
+		LogPrint("ERROR CNGPCarMenu::PrepareScreenshotReplayFile. %s carid=%d %s", inputReplayFileName.c_str(), carID, ex.what());
 		return FALSE;
 	}
 	catch (...)
 	{
-		LogPrint("ERROR CNGPCarMenu::PrepareScreenshotReplayFile. carid=%d", carID);
+		LogPrint("ERROR CNGPCarMenu::PrepareScreenshotReplayFile. %s carid=%d", inputReplayFileName.c_str(), carID);
 		return FALSE;
 	}
 }
@@ -863,6 +916,28 @@ const char* CNGPCarMenu::GetName(void)
 	// Re-route RBR DXEndScene function to our custom function
 	if (g_bRBRHooksInitialized == FALSE && m_PluginState == T_PLUGINSTATE::PLUGINSTATE_UNINITIALIZED)
 	{
+		try
+		{
+			std::string sReplayTemplateFileName;
+
+			// Remove the temporary replay template file when the plugin is initialized (this way the temp RPL file won't be left around for too long)
+			sReplayTemplateFileName = g_pRBRPlugin->m_sRBRRootDir + "\\Replays\\" + C_REPLAYFILENAME_SCREENSHOT;
+			if (fs::exists(sReplayTemplateFileName)) ::remove(sReplayTemplateFileName.c_str());
+
+			// NGPCarMenu V1.0.4 and older had a replay template file rbr\Replays\NGPCarMenu.rpl. This no longer used in V1.0.5+ versions, so remove the old rpl file.
+			// Nowadays the plugin uses rbr\Plugins\NGPCarMenu\Replays\ folder to read rpl template files.
+			sReplayTemplateFileName = g_pRBRPlugin->m_sRBRRootDir + "\\Replays\\NGPCarMenu.rpl";
+			if (fs::exists(sReplayTemplateFileName))
+			{
+					DebugPrint("CNGPCarMenu.GetName. The old obsolete %s replay template file from V1.0.4 and older versions was deleted.", sReplayTemplateFileName.c_str());
+					::remove(sReplayTemplateFileName.c_str());
+			}
+		}
+		catch (...)
+		{
+			// Do nothing even when removal of the replay template file failed. This is not fatal error at this point.
+		}
+
 		// Get a pointer to DX9 device handler before re-routing the RBR function
 		g_pRBRIDirect3DDevice9 = (LPDIRECT3DDEVICE9) *(DWORD*)(*(DWORD*)(*(DWORD*)0x007EA990 + 0x28) + 0xF4);
 
@@ -1079,6 +1154,7 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 
 				// Set a flag that custom replay generation is active during replays. If this is zero then replay plays the file normally
 				m_iCustomReplayState = 1;
+				
 				::RBRAPI_Replay(this->m_sRBRRootDir, C_REPLAYFILENAME_SCREENSHOT);
 			}
 			else
@@ -1262,7 +1338,7 @@ HRESULT __fastcall CustomRBRDirectXBeginScene(void* objPointer)
 		g_pRBRPlugin->m_bCustomReplayShowCroppingRect = true;
 		g_pRBRCarInfo->stageStartCountdown = 1.0f;
 
-		if (g_pRBRGameMode->gameMode == 0x08 /*&& g_pRBRGameModeExt->gameModeExt == 0x04*/)
+		if (g_pRBRGameMode->gameMode == 0x08)
 		{
 			// Don't start the normal replay logic of RBR
 			g_pRBRGameMode->gameMode = 0x0A;
@@ -1340,7 +1416,7 @@ HRESULT __fastcall CustomRBRDirectXBeginScene(void* objPointer)
 					g_pRBRPlugin->m_iCustomReplayState = 1;
 			}
 
-			RBRAPI_Replay(g_pRBRPlugin->m_sRBRRootDir, C_REPLAYFILENAME_SCREENSHOT);
+			::RBRAPI_Replay(g_pRBRPlugin->m_sRBRRootDir, C_REPLAYFILENAME_SCREENSHOT);
 		}
 	}
 
@@ -1494,6 +1570,7 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 
 	//swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"Mapped=(%d,%d)(%d,%d) GameRes=(%d,%d)", wndMappedRect.left, wndMappedRect.top, wndMappedRect.right, wndMappedRect.bottom, g_pRBRGameConfig->resolutionX, g_pRBRGameConfig->resolutionY);
 	//g_pFontDebug->DrawText(1, 3 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, 0);
+
 #endif
 
 	// Call original RBR DXEndScene function and let it to do whatever needed to complete the drawing of DX framebuffer
@@ -1504,7 +1581,7 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 
 	//
 	// Custom "screenshot generation replay" process running.
-	// State 1=Preparing (replay not yet loaded)
+	// State machine 1=Preparing (replay not yet loaded)
 	//       2=Replay loaded, camera spinning around the car and blackout fading out
 	//       3=The startup blackout has faded out. Prepare to move the car and cam to a custom location
 	//       4=Car and cam moved to a custom location. Prepare to take a screenshot (wait 0.5s before taking the shot)

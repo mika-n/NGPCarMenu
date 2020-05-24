@@ -117,6 +117,8 @@
     <None Include="CustomCarSpecs.ini" />
     <None Include="NGPCarMenu.def" />
     <None Include="NGPCarMenu.ini" />
+    <None Include="NGPCarMenu.rpl" />
+    <None Include="NGPCarMenu_Group R1.rpl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="D3D9Font\D3DFont.h" />

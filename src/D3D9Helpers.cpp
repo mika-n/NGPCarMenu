@@ -29,6 +29,9 @@
 #include <filesystem>		// fs::exists
 #include <fstream>			// std::ifstream and ofstream
 
+#include <locale>			// UTF8 locales
+#include <codecvt>
+
 #include <wincodec.h>		// IWICxx image funcs
 #include <shlwapi.h>		// PathRemoveFileSpec
 
@@ -51,7 +54,7 @@
 namespace fs = std::filesystem;
 
 //
-// Case-insensitive str comparison functions. 
+// Case-insensitive str comparison functions (starts with, ends with). 
 //   s1 and s2 - Strings to compare (case-insensitive)
 //   s2AlreadyInLowercase - If true then s2 is already in lowercase letters, so "optimize" the comparison by converting only s1 to lowercase
 //   Return TRUE=Equal, FALSE=NotEqual
@@ -61,6 +64,33 @@ inline bool _iStarts_With(std::wstring s1, std::wstring s2, bool s2AlreadyInLowe
 	transform(s1.begin(), s1.end(), s1.begin(), ::tolower);
 	if (!s2AlreadyInLowercase) transform(s2.begin(), s2.end(), s2.begin(), ::tolower);
 	return s1._Starts_with(s2);
+}
+
+inline bool _iStarts_With(std::string s1, std::string s2, bool s2AlreadyInLowercase)
+{
+	transform(s1.begin(), s1.end(), s1.begin(), ::tolower);
+	if (!s2AlreadyInLowercase) transform(s2.begin(), s2.end(), s2.begin(), ::tolower);
+	return s1._Starts_with(s2);
+}
+
+inline bool _iEnds_With(std::wstring s1, std::wstring s2, bool s2AlreadyInLowercase)
+{
+	transform(s1.begin(), s1.end(), s1.begin(), ::tolower);
+	if (!s2AlreadyInLowercase) transform(s2.begin(), s2.end(), s2.begin(), ::tolower);
+	if (s1.length() >= s2.length())
+		return (s1.compare(s1.length() - s2.length(), s2.length(), s2) == 0);
+	else
+		return false;
+}
+
+inline bool _iEnds_With(std::string s1, std::string s2, bool s2AlreadyInLowercase)
+{
+	transform(s1.begin(), s1.end(), s1.begin(), ::tolower);
+	if (!s2AlreadyInLowercase) transform(s2.begin(), s2.end(), s2.begin(), ::tolower);
+	if (s1.length() >= s2.length())
+		return (s1.compare(s1.length() - s2.length(), s2.length(), s2) == 0);
+	else
+		return false;
 }
 
 /*
@@ -91,12 +121,28 @@ inline void _LTrim(std::wstring& s)
 	s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](WCHAR c) { return !std::isspace(c); }));
 }
 
+inline void _LTrim(std::string& s)
+{
+	s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](char c) { return !std::isspace(c); }));
+}
+
 inline void _RTrim(std::wstring& s)
 {
 	s.erase(std::find_if(s.rbegin(), s.rend(), [](WCHAR c) { return !std::isspace(c); }).base(), s.end());
 }
 
+inline void _RTrim(std::string& s)
+{
+	s.erase(std::find_if(s.rbegin(), s.rend(), [](char c) { return !std::isspace(c); }).base(), s.end());
+}
+
 inline void _Trim(std::wstring& s)
+{
+	_LTrim(s);
+	_RTrim(s);
+}
+
+inline void _Trim(std::string& s)
 {
 	_LTrim(s);
 	_RTrim(s);
@@ -123,7 +169,7 @@ inline std::wstring _TrimCopy(std::wstring s)
 */
 
 //
-// Convert ASCII char string to Unicode WCHAR string object or vice-versa
+// Convert ASCII char string to WCHAR string object or vice-versa
 //
 inline std::wstring _ToWString(const std::string& s)
 {
@@ -138,6 +184,40 @@ inline std::string _ToString(const std::wstring& s)
 	auto buf = std::make_unique<char[]>(s.length() + 1);
 	wcstombs_s(nullptr, buf.get(), s.length()+1, s.c_str(), s.length());
 	return std::string{ buf.get() };
+}
+
+std::string _ToUTF8String(const wchar_t* wszTextBuf, int iLen)
+{
+	std::string sResult;
+	int iChars = ::WideCharToMultiByte(CP_UTF8, 0, wszTextBuf, iLen, nullptr, 0, nullptr, nullptr);
+	if (iChars > 0)
+	{
+		sResult.resize(iChars);
+		::WideCharToMultiByte(CP_UTF8, 0, wszTextBuf, iLen, const_cast<char*>(sResult.c_str()), iChars, nullptr, nullptr);
+	}
+	return sResult;
+}
+
+std::string _ToUTF8String(const std::wstring& s)
+{
+	return ::_ToUTF8String(s.c_str(), (int)s.size());
+}
+
+std::wstring _ToUTF8WString(const char* szTextBuf, int iLen)
+{
+	std::wstring sResult;
+	int iChars = ::MultiByteToWideChar(CP_UTF8, 0, szTextBuf, -1, nullptr, 0);
+	if (iChars > 0)
+	{
+		sResult.resize(iChars);
+		::MultiByteToWideChar(CP_UTF8, 0, szTextBuf, -1, const_cast<WCHAR*>(sResult.c_str()), iChars);
+	}
+	return sResult;
+}
+
+std::wstring _ToUTF8WString(const std::string& s)
+{
+	return ::_ToUTF8WString(s.c_str(), (int)s.size());
 }
 
 
@@ -230,17 +310,17 @@ bool _StringToPoint(const std::wstring& s, POINT* outPoint, const wchar_t separa
 
 
 // Return the version tag of a file as string, for example "1.0.4.0"
-std::string GetFileVersionInformationAsString(const std::string& fileName)
+std::string GetFileVersionInformationAsString(const std::wstring& fileName)
 {
 	std::string sResult;
 
 	DWORD dwHandle = 0;
-	DWORD dwSize = GetFileVersionInfoSize(fileName.c_str(), &dwHandle);
+	DWORD dwSize = GetFileVersionInfoSizeW(fileName.c_str(), &dwHandle);
 
 	if (dwSize > 0)
 	{
 		LPBYTE pVerData = new BYTE[dwSize];
-		if (GetFileVersionInfo(fileName.c_str(), dwHandle, dwSize, pVerData))
+		if (GetFileVersionInfoW(fileName.c_str(), dwHandle, dwSize, pVerData))
 		{
 			LPBYTE pQryBuffer = nullptr;
 			UINT iLen = 0;
@@ -274,8 +354,8 @@ std::string GetFileVersionInformationAsString(const std::string& fileName)
 //
 
 unsigned long g_iLogMsgCount = 0;  // Safety precaution in debug logger to avoid flooding the logfile. One process running prints out only max N debug lines (more than that then the plugin is probably in some infinite loop lock)
-std::string g_sLogFileName;
-FILE* g_fpLogFile = nullptr;
+std::wstring g_sLogFileName;
+std::ofstream* g_fpLogFile = nullptr;
 
 void DebugOpenFile(bool bOverwriteFile = false)
 {
@@ -285,12 +365,12 @@ void DebugOpenFile(bool bOverwriteFile = false)
 		{
 			if (g_sLogFileName.empty())
 			{
-				char  szModulePath[_MAX_PATH];
-				::GetModuleFileName(NULL, szModulePath, sizeof(szModulePath));
-				::PathRemoveFileSpec(szModulePath);
+				wchar_t  szModulePath[_MAX_PATH];
+				::GetModuleFileNameW(NULL, szModulePath, sizeof(szModulePath));
+				::PathRemoveFileSpecW(szModulePath);
 
 				g_sLogFileName = szModulePath;
-				g_sLogFileName = g_sLogFileName + "\\Plugins\\NGPCarMenu\\NGPCarMenu.log";
+				g_sLogFileName = g_sLogFileName + L"\\Plugins\\NGPCarMenu\\NGPCarMenu.log";
 
 #ifndef USE_DEBUG
 				// Release build creates always a new empty logfile when the logfile is opened for the first time during a process run
@@ -299,7 +379,8 @@ void DebugOpenFile(bool bOverwriteFile = false)
 			}
 
 			// Overwrite or append the logfile
-			fopen_s(&g_fpLogFile, g_sLogFileName.c_str(), (bOverwriteFile ? "w+t" : "a+t"));
+			//_wfopen_s(&g_fpLogFile, g_sLogFileName.c_str(), (bOverwriteFile ? L"w+t,ccs=UTF-8" : L"a+t,ccs=UTF-8"));
+			g_fpLogFile = new std::ofstream(g_sLogFileName, (bOverwriteFile ? std::ios::out | std::ios::trunc : std::ios::out | std::ios::app) );
 		}
 	}
 	catch (...)
@@ -310,13 +391,17 @@ void DebugOpenFile(bool bOverwriteFile = false)
 
 void DebugCloseFile()
 {
-	FILE* fpLogFile = g_fpLogFile;
+	std::ofstream* fpLogFile = g_fpLogFile;	
 	g_fpLogFile = nullptr;
-	if (fpLogFile != nullptr) fclose(fpLogFile);
+	if (fpLogFile != nullptr)
+	{
+		fpLogFile->close();
+		delete fpLogFile;
+	}
 }
 
 // Print out CHAR or WCHAR log msg
-void DebugPrintFunc_CHAR_or_WCHAR(LPCSTR szTxtBuf, LPCWSTR wszTxtBuf)
+void DebugPrintFunc_CHAR_or_WCHAR(LPCSTR szTxtBuf, LPCWSTR wszTxtBuf, int iMaxCharsInBuf)
 {
 	SYSTEMTIME t;
 	char szTxtTimeStampBuf[32];
@@ -327,7 +412,7 @@ void DebugPrintFunc_CHAR_or_WCHAR(LPCSTR szTxtBuf, LPCWSTR wszTxtBuf)
 		g_iLogMsgCount++;
 
 		GetLocalTime(&t);
-		if (GetTimeFormat(LOCALE_USER_DEFAULT, 0, &t, "hh:mm:ss ", (LPSTR)szTxtTimeStampBuf, sizeof(szTxtTimeStampBuf) - 1) <= 0)
+		if (GetTimeFormat(LOCALE_USER_DEFAULT, 0, &t, "HH:mm:ss ", (LPSTR)szTxtTimeStampBuf, COUNT_OF_ITEMS(szTxtTimeStampBuf) - 1) <= 0)
 			szTxtTimeStampBuf[0] = '\0';
 
 		if (g_fpLogFile == nullptr)
@@ -337,16 +422,16 @@ void DebugPrintFunc_CHAR_or_WCHAR(LPCSTR szTxtBuf, LPCWSTR wszTxtBuf)
 		{
 			if (bFirstMessage)
 			{
-				std::string sVersionTag = "NGPCarMenu.dll version " + GetFileVersionInformationAsString(g_sLogFileName + "\\..\\..\\NGPCarMenu.dll");
-				fprintf(g_fpLogFile, sVersionTag.c_str());
-				fprintf(g_fpLogFile, "\n");
+				// Mark the output debug logfile as UTF8 file (just in case some debug msg contains utf8 chars)
+				*g_fpLogFile << ::_ToUTF8String(std::wstring(L"NGPCarMenu.dll "));
+				*g_fpLogFile << (GetFileVersionInformationAsString(g_sLogFileName + L"\\..\\..\\NGPCarMenu.dll")).c_str() << std::endl;
 			}
-
-			fprintf(g_fpLogFile, szTxtTimeStampBuf);
-			if (szTxtBuf != nullptr)  fprintf(g_fpLogFile, szTxtBuf);
-			if (wszTxtBuf != nullptr) fwprintf(g_fpLogFile, wszTxtBuf);
-			fprintf(g_fpLogFile, "\n");
-			DebugCloseFile();
+				
+			*g_fpLogFile << szTxtTimeStampBuf;
+			if (szTxtBuf != nullptr)  *g_fpLogFile << szTxtBuf;
+			if (wszTxtBuf != nullptr) *g_fpLogFile << ::_ToUTF8String(wszTxtBuf, iMaxCharsInBuf).c_str();
+			*g_fpLogFile << std::endl;
+			//DebugCloseFile();
 		}
 	}
 	catch (...)
@@ -368,7 +453,7 @@ void DebugPrintFunc(LPCSTR lpszFormat, ...)
 	if (_vsnprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, lpszFormat, args) <= 0)
 		szTxtBuf[0] = '\0';
 
-	DebugPrintFunc_CHAR_or_WCHAR(szTxtBuf, nullptr);
+	DebugPrintFunc_CHAR_or_WCHAR(szTxtBuf, nullptr, COUNT_OF_ITEMS(szTxtBuf)-1);
 
 	va_end(args);
 }
@@ -386,7 +471,7 @@ void DebugPrintFunc(LPCWSTR lpszFormat, ...)
 	if (_vsnwprintf_s(wszTxtBuf, COUNT_OF_ITEMS(wszTxtBuf) - 1, lpszFormat, args) <= 0)
 		wszTxtBuf[0] = L'\0';
 
-	DebugPrintFunc_CHAR_or_WCHAR(nullptr, wszTxtBuf);
+	DebugPrintFunc_CHAR_or_WCHAR(nullptr, wszTxtBuf, COUNT_OF_ITEMS(wszTxtBuf)-1);
 
 	va_end(args);
 }
@@ -480,6 +565,9 @@ HRESULT D3D9SavePixelsToFileGDI(const HWND hAppWnd, RECT wndCaptureRect, const s
 
 	try
 	{
+		// Reading bitmap via DirectX frame buffers
+		LogPrint(L"Using GDI image buffer to create %s", outputFileName.c_str());
+
 		hdcAppWnd = GetDC(hAppWnd);
 		if (hdcAppWnd) hdcMemory = CreateCompatibleDC(hdcAppWnd);
 
@@ -691,7 +779,7 @@ HRESULT D3D9SaveScreenToFile(const LPDIRECT3DDEVICE9 pD3Device, const HWND hAppW
 			return D3D9SavePixelsToFileGDI(hAppWnd, wndCaptureRect, outputFileName, cf);
 
 		// Reading bitmap via DirectX frame buffers
-		DebugPrint("D3D9SaveScreenToFile DirectX buffer");
+		LogPrint(L"Using DirectX image buffer to create %s", outputFileName.c_str());
 
 		//d3d = Direct3DCreate9(D3D_SDK_VERSION);
 		//d3d->GetAdapterDisplayMode(adapter, &mode)

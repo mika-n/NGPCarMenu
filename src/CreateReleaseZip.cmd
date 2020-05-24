@@ -40,19 +40,22 @@ pause
 
 
 mkdir "%RELEASE_FOLDER%\"
-mkdir "%RELEASE_FOLDER%\Replays\"
+rem mkdir "%RELEASE_FOLDER%\Replays\"
 mkdir "%RELEASE_FOLDER%\Plugins\"
 mkdir "%RELEASE_FOLDER%\Plugins\%APPNAME%\"
+mkdir "%RELEASE_FOLDER%\Plugins\%APPNAME%\Replays"
 mkdir "%RELEASE_FOLDER%\Plugins\%APPNAME%\preview\1920x1080\"
 mkdir "%RELEASE_FOLDER%\Plugins\%APPNAME%\preview\1366x768\"
 
 rem Dummy files because 7Zip tool would ignore empty folders
-type NUL > "%RELEASE_FOLDER%\Plugins\%APPNAME%\preview\1920x1080\carImages.txt"
-type NUL > "%RELEASE_FOLDER%\Plugins\%APPNAME%\preview\1366x768\carImages.txt"
+echo Use Options-Plugins-NGPCarMenu-CreateCarImages menu command in RBR game to update car preview images> "%RELEASE_FOLDER%\Plugins\%APPNAME%\preview\1920x1080\carImages.txt"
+copy "%RELEASE_FOLDER%\Plugins\%APPNAME%\preview\1920x1080\carImages.txt" "%RELEASE_FOLDER%\Plugins\%APPNAME%\preview\1366x768\"
 
 copy "Release\%APPNAME%.dll" "%RELEASE_FOLDER%\Plugins\"
+
 copy "%APPNAME%.ini"         "%RELEASE_FOLDER%\Plugins\%APPNAME%.ini.sample"
-copy "%APPNAME%.rpl"         "%RELEASE_FOLDER%\Replays\"
+copy "%APPNAME%*.rpl"        "%RELEASE_FOLDER%\Plugins\%APPNAME%\Replays\"
+
 copy "CustomCarSpecs.ini"    "%RELEASE_FOLDER%\Plugins\%APPNAME%\"
 copy "..\LicenseText.txt"    "%RELEASE_FOLDER%\Plugins\%APPNAME%\"
 copy "..\LicenseText_3rdPartyTools.txt" "%RELEASE_FOLDER%\Plugins\%APPNAME%\"
