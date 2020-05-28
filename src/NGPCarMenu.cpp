@@ -381,6 +381,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile()
 		//
 		if(m_sMenuStatusText1.empty()) m_sMenuStatusText1 = _ToString(m_screenshotPath);
 		m_sMenuStatusText2 = _ToString(std::wstring(szResolutionText)) + " native resolution detected";
+		m_sMenuStatusText3 = (m_easyRBRFilePath.empty() ? "RBRCIT " + _ToString(m_rbrCITCarListFilePath) : "EasyRBR " + _ToString(m_easyRBRFilePath));
 	}
 	catch (...)
 	{
@@ -1289,7 +1290,14 @@ void CNGPCarMenu::DrawFrontEndPage(void)
 		m_pGame->SetFont(IRBRGame::FONT_SMALL);
 		m_pGame->WriteText(10.0f, 70.0f + (static_cast<float>(COUNT_OF_ITEMS(g_RBRPluginMenu) + 4) * 21.0f), m_sMenuStatusText2.c_str());
 	}
+
+	if (!m_sMenuStatusText3.empty())
+	{
+		m_pGame->SetFont(IRBRGame::FONT_SMALL);
+		m_pGame->WriteText(10.0f, 70.0f + (static_cast<float>(COUNT_OF_ITEMS(g_RBRPluginMenu) + 5) * 21.0f), m_sMenuStatusText3.c_str());
+	}
 }
+
 
 //------------------------------------------------------------------------------------------------
 //

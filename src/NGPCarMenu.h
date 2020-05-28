@@ -131,6 +131,7 @@ protected:
 
 	std::string m_sMenuStatusText1;	// Status text message 
 	std::string m_sMenuStatusText2;
+	std::string m_sMenuStatusText3;
 
 public:
 	IRBRGame*     m_pGame;
