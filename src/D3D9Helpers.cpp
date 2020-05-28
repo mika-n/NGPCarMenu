@@ -220,6 +220,58 @@ std::wstring _ToUTF8WString(const std::string& s)
 	return ::_ToUTF8WString(s.c_str(), (int)s.size());
 }
 
+std::wstring _ToUTF8WString(const std::wstring& s)
+{
+	//return ::_ToWString(::_ToUTF8String(s.c_str(), (int)s.size()));
+	return ::_ToWString(::_ToUTF8String(s));
+}
+
+
+// Decode UTF8 encoded string back to "normal" (fex R\xe4m\xf6 -> Rämö)
+std::wstring _DecodeUtf8String(const std::wstring& s_encoded)
+{
+	std::wstring sResult;
+	sResult.reserve(64);
+
+	int iLen = s_encoded.length();
+	int iUTF8Value;
+
+	for (int i = 0; i < iLen; i++)
+	{
+
+		if (i + 4 <= iLen && s_encoded[i] == L'\\' && s_encoded[i + 1] == L'x'
+			&& ((s_encoded[i + 2] >= L'0' && s_encoded[i + 2] <= L'9')
+				|| (s_encoded[i + 2] >= L'a' && s_encoded[i + 2] <= L'f')
+				|| (s_encoded[i + 2] >= L'A' && s_encoded[i + 2] <= L'F'))
+			&& ((s_encoded[i + 3] >= L'0' && s_encoded[i + 3] <= L'9')
+				|| (s_encoded[i + 3] >= L'a' && s_encoded[i + 3] <= L'f')
+				|| (s_encoded[i + 3] >= L'A' && s_encoded[i + 3] <= L'F'))
+			)
+		{
+			WCHAR input;
+
+			iUTF8Value = 0;
+			input = s_encoded[i + 2];
+			if (input >= L'0' && input <= L'9') iUTF8Value = input - L'0';
+			if (input >= L'A' && input <= L'F') iUTF8Value = input - L'A' + 10;
+			if (input >= L'a' && input <= L'f') iUTF8Value = input - L'a' + 10;
+			iUTF8Value = iUTF8Value << 4;
+
+			input = s_encoded[i + 3];
+			if (input >= L'0' && input <= L'9') iUTF8Value += input - L'0';
+			if (input >= L'A' && input <= L'F') iUTF8Value += input - L'A' + 10;
+			if (input >= L'a' && input <= L'f') iUTF8Value += input - L'a' + 10;
+
+			sResult += WCHAR(iUTF8Value);
+			i += 3;
+		}
+		else
+			sResult += s_encoded[i];
+	}
+
+	return sResult;
+}
+
 
 inline void _ToLowerCase(std::string& s)
 {

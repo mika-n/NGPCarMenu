@@ -77,6 +77,9 @@ extern std::string  _ToString(const std::wstring & s);     // Convert std::wstri
 
 extern std::string  _ToUTF8String(const std::wstring & s); // Convert widchar std::wstring(UTF8) to multibyte string value (WinOS specific implementation)
 extern std::wstring _ToUTF8WString(const std::string & s); // Convert multibyte std::string(UTF8) to widechar UTF8 string value (WinOS specific implementation) 
+extern std::wstring _ToUTF8WString(const std::wstring & s);// Convert multibyte std::wstring(UTF8) to widechar UTF8 string value (WinOS specific implementation) 
+
+extern std::wstring _DecodeUtf8String(const std::wstring & s_encoded); // Decode UTF8 encoded string to "normal" string value
 
 extern inline void _ToLowerCase(std::string & s);       // Convert string to lowercase letters (in-place, so the original str in the parameter is converted)
 extern inline void _ToLowerCase(std::wstring & s);      // Convert wstring to lowercase letters (in-place)

@@ -508,6 +508,7 @@ void CNGPCarMenu::InitCarSpecData_RBRCIT()
 //   - Find [<car model from step1>] block
 //   - Find LivX=<livery name from step2> attribute
 //   - Use CreditsX= value as a livery credit
+//   - If the stock LiveriesList didn't have the livery name then try to find the credit text from EasyRBR\cars\<car model from step1>\liveries\_userliveries\UserLivery.ini file
 // - Step6: Use the car model name (step1) as a key to RBRCIT/carlist/carList.ini file NAME=xxxx line
 //   - FIA category (cat) / year / weight / power / trans
 //   - Where is this information in EasyRBR setup?
@@ -527,13 +528,14 @@ void CNGPCarMenu::InitCarSpecData_EASYRBR()
 	CSimpleIniW stockCarListINIFile;
 	std::wstring sStockCarModelName;
 
-	CSimpleIniW easyRBRINIFile;
-	std::wstring sEasyRBRCarModelName;  // The display car name (StockCarModelName) is not always the same as the car folder name used in EasyRBR. This is the internal EasyRBR model name
-	std::wstring sEasyRBRLiveryName;
-	std::wstring sEasyRBRLiveryCredit;
-	std::wstring sEasyRBRPhysicsName;
-
+	CSimpleIniW  easyRBRINIFile;
 	CSimpleIniW easyRBRLiveriesList;
+	CSimpleIniW easyRBRUserLiveriesList;
+
+	std::wstring sEasyRBRCarModelName;  // The display car name (StockCarModelName) is not always the same as the car folder name used in EasyRBR. This is the internal EasyRBR model name
+	std::wstring sEasyRBRLiveryName;    // Name of the livery
+	std::wstring sEasyRBRLiveryCredit;  // Credits (author) of the livery
+	std::wstring sEasyRBRPhysicsName;   // NGP physics used in EasyRBR setups (NGP5 or NGP6)
 
 	std::string sPath;
 	sPath.reserve(_MAX_PATH);
@@ -567,6 +569,7 @@ void CNGPCarMenu::InitCarSpecData_EASYRBR()
 		sEasyRBRPhysicsName = easyRBRINIFile.GetValue(L"General", L"Physics", L"");
 		_Trim(sEasyRBRPhysicsName);
 
+
 		// The loop uses menu idx order, not in car slot# idx order
 		for (int idx = 0; idx < 8; idx++)
 		{
@@ -584,10 +587,12 @@ void CNGPCarMenu::InitCarSpecData_EASYRBR()
 			_Trim(sEasyRBRLiveryName);
 			if (!sEasyRBRLiveryName.empty())
 			{
-				sTextValue = L"livery " + sEasyRBRLiveryName;
+				// EasyRBR encodes unicode chars as \xXX hex values. Decode those back to "normal" chars
+				sTextValue = L"livery " + ::_DecodeUtf8String(sEasyRBRLiveryName);
 				wcsncpy_s(g_RBRCarSelectionMenuEntry[idx].wszCarPhysicsLivery, sTextValue.c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[idx].wszCarPhysicsLivery));
 			}
 
+			// Read the EasyRBR internal car model name (not always the same as display car model name). This value is used as a lookup key to car specific EasyRBR config files
 			sEasyRBRCarModelName = easyRBRINIFile.GetValue(wszEasyRBRCarSlot, L"EasyRbrCarName", L"");
 			_Trim(sEasyRBRCarModelName);
 			
@@ -602,29 +607,60 @@ void CNGPCarMenu::InitCarSpecData_EASYRBR()
 					g_RBRCarSelectionMenuEntry[idx].wszCarPhysics3DModel[0] = L'\0'; // Clear warning about missing NGP car desc file
 
 
-			// Read liveries credit text from EasyRBR config files
-			int iLiveryCount = std::stoi(easyRBRLiveriesList.GetValue(sEasyRBRCarModelName.c_str(), L"Number", L"0"));
-			for (int iLiveryIdx = 1; iLiveryIdx <= iLiveryCount; iLiveryIdx++)
-			{		
-				swprintf_s(wszEasyRBRCarSlot, COUNT_OF_ITEMS(wszEasyRBRCarSlot), L"Liv%d", iLiveryIdx);
-				sTextValue = easyRBRLiveriesList.GetValue(sEasyRBRCarModelName.c_str(), wszEasyRBRCarSlot, L"");
-				_Trim(sTextValue);
+			// Read liveries credit text from EasyRBR config files. If the livery was not found from normal liveries then try to look for credit text fom UserLivery.ini file			
+			if (!sEasyRBRLiveryName.empty())
+			{
+				sTextValue.clear();
 
-				//DebugPrint(L"%s=%s == %s", wszEasyRBRCarSlot, sTextValue.c_str(), sEasyRBRLiveryName.c_str());
-
-				if (sTextValue.compare(sEasyRBRLiveryName) == 0)
+				int iLiveryCount = std::stoi(easyRBRLiveriesList.GetValue(sEasyRBRCarModelName.c_str(), L"Number", L"0"));
+				for (int iLiveryIdx = 1; iLiveryIdx <= iLiveryCount; iLiveryIdx++)
 				{
-					swprintf_s(wszEasyRBRCarSlot, COUNT_OF_ITEMS(wszEasyRBRCarSlot), L"Credits%d", iLiveryIdx);
+					swprintf_s(wszEasyRBRCarSlot, COUNT_OF_ITEMS(wszEasyRBRCarSlot), L"Liv%d", iLiveryIdx);
 					sTextValue = easyRBRLiveriesList.GetValue(sEasyRBRCarModelName.c_str(), wszEasyRBRCarSlot, L"");
 					_Trim(sTextValue);
 
-					// Append livery credit text to the existing livery text
-					if (!sTextValue.empty())
+					//DebugPrint(L"%s=%s == %s", wszEasyRBRCarSlot, sTextValue.c_str(), sEasyRBRLiveryName.c_str());
+
+					if (sTextValue.compare(sEasyRBRLiveryName) == 0)
 					{
-						sTextValue = std::wstring(g_RBRCarSelectionMenuEntry[idx].wszCarPhysicsLivery) + L" (" + sTextValue + L")";
-						wcsncpy_s(g_RBRCarSelectionMenuEntry[idx].wszCarPhysicsLivery, sTextValue.c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[idx].wszCarPhysicsLivery));
+						swprintf_s(wszEasyRBRCarSlot, COUNT_OF_ITEMS(wszEasyRBRCarSlot), L"Credits%d", iLiveryIdx);
+						sTextValue = ::_DecodeUtf8String(easyRBRLiveriesList.GetValue(sEasyRBRCarModelName.c_str(), wszEasyRBRCarSlot, L""));
+						_Trim(sTextValue);
+						break;
 					}
-					break;
+
+					sTextValue.clear();
+				}
+
+				sPath = _ToString(m_easyRBRFilePath + L"\\..\\Cars\\" + sEasyRBRCarModelName + L"\\liveries\\_userliveries\\UserLivery.ini");
+				if (sTextValue.empty() && fs::exists(sPath))
+				{
+					// Livery was not found from the stock EasyRBR livery list. Try to find the livery credit text from a custom user liveries
+					easyRBRUserLiveriesList.LoadFile(sPath.c_str());
+					
+					iLiveryCount = std::stoi(easyRBRUserLiveriesList.GetValue(L"General", L"Number", L"0"));
+					sTextValue.clear();
+					for (int iLiveryIdx = 1; iLiveryIdx <= iLiveryCount; iLiveryIdx++)
+					{
+						swprintf_s(wszEasyRBRCarSlot, COUNT_OF_ITEMS(wszEasyRBRCarSlot), L"User_%d", iLiveryIdx);
+						sTextValue = easyRBRUserLiveriesList.GetValue(wszEasyRBRCarSlot, L"LiveryName", L"");
+						_Trim(sTextValue);
+						if (sTextValue.compare(sEasyRBRLiveryName) == 0)
+						{
+							sTextValue = ::_DecodeUtf8String(easyRBRUserLiveriesList.GetValue(wszEasyRBRCarSlot, L"Credits", L""));
+							_Trim(sTextValue);
+							break;
+						}
+						
+						sTextValue.clear();
+					}
+				}
+
+				// Append livery credit text (author) to the existing livery description text
+				if (!sTextValue.empty())
+				{
+					sTextValue = std::wstring(g_RBRCarSelectionMenuEntry[idx].wszCarPhysicsLivery) + L" by " + sTextValue;
+					wcsncpy_s(g_RBRCarSelectionMenuEntry[idx].wszCarPhysicsLivery, sTextValue.c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[idx].wszCarPhysicsLivery));
 				}
 			}
 		}

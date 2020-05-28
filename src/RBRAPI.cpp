@@ -195,6 +195,9 @@ BOOL ReadOpCodeByte(const LPVOID readAddr, BYTE byteValue)
 }
 
 
+//-------------------------------------------------------------------------------------
+
+
 // Map RBR carID to menu order index (ie. internal RBR car slot numbers are not in the same order as "Select car" menu items)
 int RBRAPI_MapCarIDToMenuIdx(int carID)
 {	
