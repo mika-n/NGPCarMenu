@@ -85,10 +85,11 @@ typedef struct {
 	WCHAR wszCarTrans[32];			// physics/common.lsp.NumberOfGears, carList.ini.Trans 4WD (WCHAR, Transmission, position-Y of transmission spec item moved to TYRES title position-Y)
 									// (rbr Engine and Tyre title and text txt slot empty/not used. Position-Y moved to -XXX to hide those entries)
 
-	WCHAR wszCarPhysicsRevision[96];  // physics/CARNAME Revision: 02 / 2019-06-03 (Written below car spec data using a bit smaller font size)
-	WCHAR wszCarPhysicsSpecYear[96];  // Specification date:
-	WCHAR wszCarPhysics3DModel[96];   // 3D model:
-	WCHAR wszCarPhysicsCustomTxt[96]; // If physics/CARNAME file has a 5th text line, otherwise blank text. The 5th line in car model file can be used to show any custom text
+	WCHAR wszCarPhysicsRevision[128];  // physics/CARNAME Revision: 02 / 2019-06-03 (Written below car spec data using a bit smaller font size)
+	WCHAR wszCarPhysicsSpecYear[128];  // Specification date:
+	WCHAR wszCarPhysics3DModel[128];   // 3D model:
+	WCHAR wszCarPhysicsLivery[128];    // Livery (Liver and Livery credits)
+	WCHAR wszCarPhysicsCustomTxt[128]; // If physics/CARNAME file has a 5th text line, otherwise blank text. The 5th line in car model file can be used to show any custom text
 } RBRCarSelectionMenuEntry;
 typedef RBRCarSelectionMenuEntry* PRBRCarSelectionMenuEntry;
 
@@ -118,9 +119,13 @@ protected:
 	DetourXS* gtcDirect3DBeginScene = NULL;
 	DetourXS* gtcDirect3DEndScene = NULL;
 
-	void InitCarSpecData();
+	void InitCarSpecData_RBRCIT();
+	void InitCarSpecData_EASYRBR();
+
+	std::wstring InitCarModelNameFromCarsFile(CSimpleIniW* stockCarListINIFile, int menuIdx);
 	bool InitCarSpecDataFromPhysicsFile(const std::string& folderName, PRBRCarSelectionMenuEntry pRBRCarSelectionMenuEntry, int* outNumOfGears);
 	bool InitCarSpecDataFromNGPFile(CSimpleIniW* ngpCarListINIFile, PRBRCarSelectionMenuEntry pRBRCarSelectionMenuEntry, int numOfGears);
+
 	int  CalculateMaxLenCarMenuName();
 	void ClearCachedCarPreviewImages();
 
@@ -137,14 +142,15 @@ public:
 	int	m_iMenuCreateOption;	// 0 = Generate all car images, 1 = Generate only missing car images
 	int	m_iMenuImageOption;		// 0 = Use PNG preview file format to read and create image files, 1 = BMP file format
 
-	std::string  m_sRBRRootDir;  // RBR app path, ASCII string
-	std::wstring m_sRBRRootDirW; // RBR app path, Unicode string
+	std::string  m_sRBRRootDir;  // RBR app path, multibyte (or normal ASCII) string
+	std::wstring m_sRBRRootDirW; // RBR app path, widechar string
 
 	std::wstring m_screenshotPath;				// Path to car preview screenshot images (by default AppPath + \plugins\NGPCarMenu\preview\XResxYRes\)
 	int m_screenshotAPIType;					// Uses DIRECTX or GDI API technique to generate a new screenshot file. 0=DirectX (default), 1=GDI. No GUI option, so tweak this in NGPCarMenu.ini file.
 	std::wstring m_screenshotReplayFileName;	// Name of the RBR replay file used when car preview images are generated
 
 	std::wstring m_rbrCITCarListFilePath;		// Path to RBRCIT carList.ini file (the file has NGP car details and specs information)
+	std::wstring m_easyRBRFilePath;				// Path to EesyRBR installation folder (if RBRCIT car manager is not used)
 
 	RECT m_screenshotCroppingRect;				// Cropping rect of a screenshot (in RBR window coordinates)
 	RECT m_carSelectLeftBlackBarRect;			// Black bar on the left and right side of the "Select Car" menu (used to hide the default background image)

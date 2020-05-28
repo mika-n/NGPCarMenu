@@ -95,14 +95,14 @@ WCHAR* g_pOrigCarSpecTitleTransmission = nullptr;
 
 // Note! This table is in menu order and not in internal RBR car slot order. Values are initialized at plugin launch time from NGP physics and RBRCIT carList config files
 RBRCarSelectionMenuEntry g_RBRCarSelectionMenuEntry[8] = {
-	{ 0x4a0dd9, 0x4a0c59, /* Slot#5 */ "", L"car1", "", L"", L"", L"", L"", L"", L"", L"", L"" },
-	{ 0x4a0dc9, 0x4a0c49, /* Slot#3 */ "", L"car2", "", L"", L"", L"", L"", L"", L"", L"", L"" },
-	{ 0x4a0de1, 0x4a0c61, /* Slot#6 */ "", L"car3",	"", L"", L"", L"", L"", L"", L"", L"", L"" },
-	{ 0x4a0db9, 0x4a0c39, /* Slot#1 */ "", L"car4",	"", L"", L"", L"", L"", L"", L"", L"", L"" },
-	{ 0x4a0dd1, 0x4a0c51, /* Slot#4 */ "", L"car5",	"", L"", L"", L"", L"", L"", L"", L"", L"" },
-	{ 0x4a0de9, 0x4a0c69, /* Slot#7 */ "", L"car6",	"", L"", L"", L"", L"", L"", L"", L"", L"" },
-	{ 0x4a0db1, 0x4a0c31, /* Slot#0 */ "", L"car7",	"", L"", L"", L"", L"", L"", L"", L"", L"" },
-	{ 0x4a0dc1, 0x4a0c41, /* Slot#2 */ "", L"car8",	"", L"", L"", L"", L"", L"", L"", L"", L"" }
+	{ 0x4a0dd9, 0x4a0c59, /* Slot#5 */ "", L"car1", "", L"", L"", L"", L"", L"", L"", L"", L"", L""  },
+	{ 0x4a0dc9, 0x4a0c49, /* Slot#3 */ "", L"car2", "", L"", L"", L"", L"", L"", L"", L"", L"", L""  },
+	{ 0x4a0de1, 0x4a0c61, /* Slot#6 */ "", L"car3",	"", L"", L"", L"", L"", L"", L"", L"", L"", L""  },
+	{ 0x4a0db9, 0x4a0c39, /* Slot#1 */ "", L"car4",	"", L"", L"", L"", L"", L"", L"", L"", L"", L""  },
+	{ 0x4a0dd1, 0x4a0c51, /* Slot#4 */ "", L"car5",	"", L"", L"", L"", L"", L"", L"", L"", L"", L""  },
+	{ 0x4a0de9, 0x4a0c69, /* Slot#7 */ "", L"car6",	"", L"", L"", L"", L"", L"", L"", L"", L"", L""  },
+	{ 0x4a0db1, 0x4a0c31, /* Slot#0 */ "", L"car7",	"", L"", L"", L"", L"", L"", L"", L"", L"", L""  },
+	{ 0x4a0dc1, 0x4a0c41, /* Slot#2 */ "", L"car8",	"", L"", L"", L"", L"", L"", L"", L"", L"", L""  }
 };
 
 
@@ -230,7 +230,13 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_screenshotAPIType = C_SCREENSHOTAPITYPE_DIRECTX;
 
 	RefreshSettingsFromPluginINIFile();
-	InitCarSpecData();
+
+	// If EASYRBRPath is not set then assume cars have been setup using RBRCIT car manager tool
+	if(m_easyRBRFilePath.empty())
+		InitCarSpecData_RBRCIT();
+	else
+		InitCarSpecData_EASYRBR();
+
 	CalculateMaxLenCarMenuName();
 
 	DebugPrint("Exit CNGPCarMenu.Constructor");
@@ -325,6 +331,11 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile()
 		if (this->m_rbrCITCarListFilePath.length() >= 2 && this->m_rbrCITCarListFilePath[0] != '\\' && this->m_rbrCITCarListFilePath[1] != ':')
 			this->m_rbrCITCarListFilePath = this->m_sRBRRootDirW + L"\\" + this->m_rbrCITCarListFilePath;
 
+		this->m_easyRBRFilePath = pluginINIFile.GetValue(L"Default", L"EASYRBRPath", L"");
+		_Trim(this->m_easyRBRFilePath);
+		if (this->m_easyRBRFilePath.length() >= 2 && this->m_easyRBRFilePath[0] != '\\' && this->m_easyRBRFilePath[1] != ':')
+			this->m_easyRBRFilePath = this->m_sRBRRootDirW + L"\\" + this->m_easyRBRFilePath;
+
 
 		// TODO: carPosition, camPosition reading from INI file (now the car and cam position is hard-coded in this plugin code)
 
@@ -407,17 +418,19 @@ void CNGPCarMenu::SaveSettingsToPluginINIFile()
 
 
 //-------------------------------------------------------------------------------------------------
-// Init car spec data by reading it from NGP plugin and RBRCIT config files
-// - Read the current NGP physics car name from physics\c_xsara h_accent m_lancer mg_zr p_206 s_i2000 s_i2003 t_coroll RBR folder (the filename without extensions and revision/3D model tags)
+// RBRCIT support: Init car spec data by reading NGP plugin and RBRCIT config files
+// - Step1: rbr\Physics\<c_xsara h_accent m_lancer mg_zr p_206 s_i2000 s_i2003 t_coroll>\ RBR folder and find the file without extensions and containing keywords revision/specification date/3D model
+//   - The car model name is the same as the filename of the physics description file in this folder (or should this be the value in rbr\Cars\Cars.ini file?)
 //   - Physics revision / specification date / 3D model / plus optional 4th text line
-// - Read Common.lsp file 
+//   - If the RBRCIT/NGP description file is missing in this folder then look for the car model name in RBR\cars\cars.ini file (CarName attribute, original cars)
+// - Step2: Read rbr\Physics\<car subfolder>\Common.lsp file 
 //   - "NumberOfGears" tag
-// - Use the file name (or the first line in the file) as key to rbrcit/carlist/carList.ini file NAME=xxxx line
-//   - cat / year / weight / power / trans
+// - Step3: Use the car model name (step1) as a key to RBRCIT/carlist/carList.ini file NAME=xxxx line
+//   - FIA category (cat) / year / weight / power / trans
 //
-void CNGPCarMenu::InitCarSpecData()
+void CNGPCarMenu::InitCarSpecData_RBRCIT()
 {
-	DebugPrint("Enter CNGPCarMenu.InitCarSpecData");
+	DebugPrint("Enter CNGPCarMenu.InitCarSpecData_RBRCIT");
 
 	CSimpleIniW ngpCarListINIFile;
 	CSimpleIniW customCarSpecsINIFile;
@@ -444,6 +457,7 @@ void CNGPCarMenu::InitCarSpecData()
 		customCarSpecsINIFile.LoadFile((m_sRBRRootDirW + L"\\Plugins\\NGPCarMenu\\CustomCarSpecs.ini").c_str());
 		stockCarListINIFile.LoadFile((m_sRBRRootDirW + L"\\cars\\Cars.ini").c_str());
 
+		// The loop uses menu idx order, not in car slot# idx order
 		for (int idx = 0; idx < 8; idx++)
 		{
 			iNumOfGears = -1;
@@ -451,32 +465,8 @@ void CNGPCarMenu::InitCarSpecData()
 
 			if (!InitCarSpecDataFromPhysicsFile(sPath, &g_RBRCarSelectionMenuEntry[idx], &iNumOfGears))
 			{
-				// Desc file of NGP car models missing in physics\<carName> folder. Check if this is a stock original car model (ie. those don't have NGP desc file)
-				stockCarListINIFile.LoadFile((m_sRBRRootDirW + L"\\cars\\Cars.ini").c_str());
-
-				WCHAR wszStockCarINISection[8];
-				swprintf_s(wszStockCarINISection, COUNT_OF_ITEMS(wszStockCarINISection), L"Car0%d", RBRAPI_MenuIdxToCarID(idx));
-
-				sStockCarModelName = stockCarListINIFile.GetValue(wszStockCarINISection, L"CarName", L"");
-				_Trim(sStockCarModelName);
-				
-				if (sStockCarModelName.length() >= 4)
-				{
-					// If the car name ends in "xxx #2]" tag then remove it as unecessary trailing tag (some cars like "Renault Twingo R1 #2]" or "Open ADAM R2 #2]" has this weird tag in NGP car name value in Cars.ini file)
-					if (sStockCarModelName[sStockCarModelName.length() - 3] == L'#' && sStockCarModelName[sStockCarModelName.length() - 1] == L']')
-					{
-						sStockCarModelName.erase(sStockCarModelName.length() - 3);
-						_Trim(sStockCarModelName);
-					}
-
-					// If the car name has "xxx (2)" type of trailing tag (original car names set by RBRCIT in Cars.ini has the slot number) then remove that unnecessary tag
-					if (sStockCarModelName[sStockCarModelName.length() - 3] == L'(' && sStockCarModelName[sStockCarModelName.length() - 1] == L')')
-					{
-						sStockCarModelName.erase(sStockCarModelName.length() - 3);
-						_Trim(sStockCarModelName);
-					}
-				}
-
+				// If the Physics\<carFolder> doesn't have the NGP car description file then use rbr\cars\Cars.ini file to lookup the car model name (the car is probably original model)
+				sStockCarModelName = InitCarModelNameFromCarsFile(&stockCarListINIFile, idx);
 				if(!sStockCarModelName.empty())
 					wcsncpy_s(g_RBRCarSelectionMenuEntry[idx].wszCarModel, sStockCarModelName.c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[idx].wszCarModel));
 			}
@@ -489,15 +479,214 @@ void CNGPCarMenu::InitCarSpecData()
 	}
 	catch (const fs::filesystem_error& ex)
 	{
-		LogPrint("ERROR CNGPCarMenu.InitCarSpecData. %s %s", m_rbrCITCarListFilePath.c_str(), ex.what());
+		LogPrint("ERROR CNGPCarMenu.InitCarSpecData_RBRCIT. %s %s", m_rbrCITCarListFilePath.c_str(), ex.what());
 	}
 	catch (...)
 	{
 		// Hmmm... Something went wrong
-		LogPrint("ERROR CNGPCarMenu.InitCarSpecData. %s reading failed", m_rbrCITCarListFilePath.c_str());
+		LogPrint("ERROR CNGPCarMenu.InitCarSpecData_RBRCIT. %s reading failed", m_rbrCITCarListFilePath.c_str());
 	}
 
-	DebugPrint("Exit CNGPCarMenu.InitCarSpecData");
+	DebugPrint("Exit CNGPCarMenu.InitCarSpecData_RBRCIT");
+}
+
+
+//-------------------------------------------------------------------------------------------------
+// EasyRBR support: Init car spec data by reading NGP plugin and EasyRBR config files
+// - Step1: rbr\Cars\cars.ini and [Car00..Car07] slots
+//   - CarName attribute within the Cars.ini is the car model name
+// - Step2: EasyRBR\easyrbr.ini file and read [CarSlot00..07] slots
+//   - Internal EasyRBR configuration name of the car model (usually the same as carModel in step1 but not always)
+//   - Livery name (used also as a keyword to easyrbr\cars\_LiveriesList.ini file)
+//   - Physics=NGP5 NGP6 keyword (used as a reference keyword to physics subfolder)
+// - Step3: EasyRBR\Cars\<car model from step1>\physics\<physics from step2>\ and the file without extensions and containing keywords revision/specification date/3D model
+//   - Physics revision / specification date / 3D model / plus optional 4th text line
+// - Step4: EasyRBR\Cars\<car model from step1>\physics\<physics from step2>\common.lsp
+//   - "NumberOfGears" tag
+// - Step5: EasyRBR\Cars\_LiveriesList.ini to read livery credit 
+//   - Find [<car model from step1>] block
+//   - Find LivX=<livery name from step2> attribute
+//   - Use CreditsX= value as a livery credit
+// - Step6: Use the car model name (step1) as a key to RBRCIT/carlist/carList.ini file NAME=xxxx line
+//   - FIA category (cat) / year / weight / power / trans
+//   - Where is this information in EasyRBR setup?
+//   - Download from http://ly-racing.de/ngp/tools/rbrcit/carlist/carList.ini or install RBRCIT to get this file
+//
+
+void CNGPCarMenu::InitCarSpecData_EASYRBR()
+{
+	DebugPrint("Enter CNGPCarMenu.InitCarSpecData_EASYRBR");
+
+	std::wstring sTextValue;
+
+	CSimpleIniW carsINIFile;
+	CSimpleIniW ngpCarListINIFile;
+	CSimpleIniW customCarSpecsINIFile;
+
+	CSimpleIniW stockCarListINIFile;
+	std::wstring sStockCarModelName;
+
+	CSimpleIniW easyRBRINIFile;
+	std::wstring sEasyRBRCarModelName;  // The display car name (StockCarModelName) is not always the same as the car folder name used in EasyRBR. This is the internal EasyRBR model name
+	std::wstring sEasyRBRLiveryName;
+	std::wstring sEasyRBRLiveryCredit;
+	std::wstring sEasyRBRPhysicsName;
+
+	CSimpleIniW easyRBRLiveriesList;
+
+	std::string sPath;
+	sPath.reserve(_MAX_PATH);
+
+	try
+	{
+		int iNumOfGears;
+
+		if (fs::exists(m_rbrCITCarListFilePath))
+			ngpCarListINIFile.LoadFile(m_rbrCITCarListFilePath.c_str());
+		else
+			// Add warning about missing RBRCIT carList.ini file
+			wcsncpy_s(g_RBRCarSelectionMenuEntry[0].wszCarPhysicsCustomTxt, (m_rbrCITCarListFilePath + L" missing. Cannot show car specs").c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[0].wszCarPhysicsCustomTxt));
+
+		// Load std RBR cars list and custom carSpec file (fex original car specs are set here). These are used if the phystics\<CarFolder> doesn't have NGP car description file
+		customCarSpecsINIFile.LoadFile((m_sRBRRootDirW + L"\\Plugins\\NGPCarMenu\\CustomCarSpecs.ini").c_str());
+		stockCarListINIFile.LoadFile((m_sRBRRootDirW + L"\\cars\\Cars.ini").c_str());
+
+		// Load EasyRBR ini
+		if (fs::exists(m_easyRBRFilePath))
+			easyRBRINIFile.LoadFile(m_easyRBRFilePath.c_str());
+		else
+			// Add warning about missing RBRCIT carList.ini file
+			wcsncpy_s(g_RBRCarSelectionMenuEntry[0].wszCarPhysicsCustomTxt, (m_easyRBRFilePath + L" missing. Cannot show car specs").c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[0].wszCarPhysicsCustomTxt));
+
+		// Load EasyRBR Liveries list (credit text for a livery)
+		if (fs::exists(m_easyRBRFilePath + L"\\..\\cars\\__LiveriesList.ini"))
+			easyRBRLiveriesList.LoadFile((m_easyRBRFilePath + L"\\..\\cars\\__LiveriesList.ini").c_str());
+
+		// EasyRBR physics attribute is used as a folder name when looking for car details
+		sEasyRBRPhysicsName = easyRBRINIFile.GetValue(L"General", L"Physics", L"");
+		_Trim(sEasyRBRPhysicsName);
+
+		// The loop uses menu idx order, not in car slot# idx order
+		for (int idx = 0; idx < 8; idx++)
+		{
+			WCHAR wszEasyRBRCarSlot[12];
+
+			iNumOfGears = -1;
+
+			sStockCarModelName = InitCarModelNameFromCarsFile(&stockCarListINIFile, idx);
+			if (!sStockCarModelName.empty())
+				wcsncpy_s(g_RBRCarSelectionMenuEntry[idx].wszCarModel, sStockCarModelName.c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[idx].wszCarModel));
+
+			// Read the internal car config name and livery name of the 3D model in a car slot
+			swprintf_s(wszEasyRBRCarSlot, COUNT_OF_ITEMS(wszEasyRBRCarSlot), L"CarSlot0%d", RBRAPI_MenuIdxToCarID(idx));
+			sEasyRBRLiveryName = easyRBRINIFile.GetValue(wszEasyRBRCarSlot, L"Livery", L"");
+			_Trim(sEasyRBRLiveryName);
+			if (!sEasyRBRLiveryName.empty())
+			{
+				sTextValue = L"livery " + sEasyRBRLiveryName;
+				wcsncpy_s(g_RBRCarSelectionMenuEntry[idx].wszCarPhysicsLivery, sTextValue.c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[idx].wszCarPhysicsLivery));
+			}
+
+			sEasyRBRCarModelName = easyRBRINIFile.GetValue(wszEasyRBRCarSlot, L"EasyRbrCarName", L"");
+			_Trim(sEasyRBRCarModelName);
+			
+
+			// Read NGP model details from the NGP description file
+			sPath = _ToString(m_easyRBRFilePath + L"\\..\\Cars\\" + sEasyRBRCarModelName + L"\\physics\\" + sEasyRBRPhysicsName);
+			InitCarSpecDataFromPhysicsFile(sPath, &g_RBRCarSelectionMenuEntry[idx], &iNumOfGears);
+
+			// Read car spec details from NGP carList.ini file or from the NGPCarMenu custom INI file (the custom file contains specs for original cars also)
+			if (!InitCarSpecDataFromNGPFile(&ngpCarListINIFile, &g_RBRCarSelectionMenuEntry[idx], iNumOfGears))
+				if (InitCarSpecDataFromNGPFile(&customCarSpecsINIFile, &g_RBRCarSelectionMenuEntry[idx], iNumOfGears))
+					g_RBRCarSelectionMenuEntry[idx].wszCarPhysics3DModel[0] = L'\0'; // Clear warning about missing NGP car desc file
+
+
+			// Read liveries credit text from EasyRBR config files
+			int iLiveryCount = std::stoi(easyRBRLiveriesList.GetValue(sEasyRBRCarModelName.c_str(), L"Number", L"0"));
+			for (int iLiveryIdx = 1; iLiveryIdx <= iLiveryCount; iLiveryIdx++)
+			{		
+				swprintf_s(wszEasyRBRCarSlot, COUNT_OF_ITEMS(wszEasyRBRCarSlot), L"Liv%d", iLiveryIdx);
+				sTextValue = easyRBRLiveriesList.GetValue(sEasyRBRCarModelName.c_str(), wszEasyRBRCarSlot, L"");
+				_Trim(sTextValue);
+
+				//DebugPrint(L"%s=%s == %s", wszEasyRBRCarSlot, sTextValue.c_str(), sEasyRBRLiveryName.c_str());
+
+				if (sTextValue.compare(sEasyRBRLiveryName) == 0)
+				{
+					swprintf_s(wszEasyRBRCarSlot, COUNT_OF_ITEMS(wszEasyRBRCarSlot), L"Credits%d", iLiveryIdx);
+					sTextValue = easyRBRLiveriesList.GetValue(sEasyRBRCarModelName.c_str(), wszEasyRBRCarSlot, L"");
+					_Trim(sTextValue);
+
+					// Append livery credit text to the existing livery text
+					if (!sTextValue.empty())
+					{
+						sTextValue = std::wstring(g_RBRCarSelectionMenuEntry[idx].wszCarPhysicsLivery) + L" (" + sTextValue + L")";
+						wcsncpy_s(g_RBRCarSelectionMenuEntry[idx].wszCarPhysicsLivery, sTextValue.c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[idx].wszCarPhysicsLivery));
+					}
+					break;
+				}
+			}
+		}
+	}
+	catch (const fs::filesystem_error& ex)
+	{
+		LogPrint("ERROR CNGPCarMenu.InitCarSpecData_EASYRBR. %s %s", m_easyRBRFilePath.c_str(), ex.what());
+	}
+	catch (...)
+	{
+		// Hmmm... Something went wrong
+		LogPrint("ERROR CNGPCarMenu.InitCarSpecData_EASYRBR. %s reading failed", m_easyRBRFilePath.c_str());
+	}
+
+	DebugPrint("Exit CNGPCarMenu.InitCarSpecData_EASYRBR");
+}
+
+
+//-------------------------------------------------------------------------------------------------
+// Read the car model name from RBR cars\Cars.ini file and pretify the name if necessary.
+// 
+std::wstring CNGPCarMenu::InitCarModelNameFromCarsFile(CSimpleIniW* stockCarListINIFile, int menuIdx)
+{
+	std::wstring sStockCarModelName;
+	WCHAR wszStockCarINISection[8];
+
+	swprintf_s(wszStockCarINISection, COUNT_OF_ITEMS(wszStockCarINISection), L"Car0%d", RBRAPI_MenuIdxToCarID(menuIdx));
+	sStockCarModelName = stockCarListINIFile->GetValue(wszStockCarINISection, L"CarName", L"");
+	_Trim(sStockCarModelName);
+
+	if (sStockCarModelName.length() >= 2)
+	{
+		// If the car name is enclosed in double quotes then remove those ("Opel Fiesta" -> Opel Fiesta)
+		if (sStockCarModelName[0] == L'"')
+		{
+			sStockCarModelName.erase(0, 1);
+			_Trim(sStockCarModelName);
+		}
+		if (sStockCarModelName[sStockCarModelName.length() - 1] == L'"')
+		{
+			sStockCarModelName.erase(sStockCarModelName.length() - 1);
+			_Trim(sStockCarModelName);
+		}
+	}
+
+	if (sStockCarModelName.length() >= 4)
+	{
+		// If the car name ends in "xxx #2]" tag then remove it as unecessary trailing tag (some cars like "Renault Twingo R1 #2]" or "Open ADAM R2 #2]" has this weird tag in NGP car name value in Cars.ini file)
+		if (sStockCarModelName[sStockCarModelName.length() - 3] == L'#' && sStockCarModelName[sStockCarModelName.length() - 1] == L']')
+		{
+			sStockCarModelName.erase(sStockCarModelName.length() - 3);
+			_Trim(sStockCarModelName);
+		}
+
+		// If the car name has "xxx (2)" type of trailing tag (original car names set by RBRCIT in Cars.ini has the slot number) then remove that unnecessary tag
+		if (sStockCarModelName[sStockCarModelName.length() - 3] == L'(' && sStockCarModelName[sStockCarModelName.length() - 1] == L')')
+		{
+			sStockCarModelName.erase(sStockCarModelName.length() - 3);
+			_Trim(sStockCarModelName);
+		}
+	}
+
+	return sStockCarModelName;
 }
 
 
@@ -1535,10 +1724,22 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 
 			PRBRCarSelectionMenuEntry pCarSelectionMenuEntry = &g_RBRCarSelectionMenuEntry[selectedCarIdx];
 
-			g_pFontCarSpecCustom->DrawText(posX, 0 * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsRevision, 0);
-			g_pFontCarSpecCustom->DrawText(posX, 1 * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsSpecYear, 0);
-			g_pFontCarSpecCustom->DrawText(posX, 2 * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysics3DModel, 0);
-			g_pFontCarSpecCustom->DrawText(posX, 3 * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsCustomTxt, 0);
+			// Printout custom carSpec information (if the text line/value is not null string)
+			int iCarSpecPrintRow = 0;
+			if(pCarSelectionMenuEntry->wszCarPhysicsRevision[0] != L'\0')
+				g_pFontCarSpecCustom->DrawText(posX, (iCarSpecPrintRow++) * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsRevision, 0);
+
+			if (pCarSelectionMenuEntry->wszCarPhysicsSpecYear[0] != L'\0')
+				g_pFontCarSpecCustom->DrawText(posX, (iCarSpecPrintRow++) * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsSpecYear, 0);
+
+			if (pCarSelectionMenuEntry->wszCarPhysics3DModel[0] != L'\0')
+				g_pFontCarSpecCustom->DrawText(posX, (iCarSpecPrintRow++) * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysics3DModel, 0);
+
+			if (pCarSelectionMenuEntry->wszCarPhysicsLivery[0] != L'\0')
+				g_pFontCarSpecCustom->DrawText(posX, (iCarSpecPrintRow++) * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsLivery, 0);
+
+			if (pCarSelectionMenuEntry->wszCarPhysicsCustomTxt[0] != L'\0')
+				g_pFontCarSpecCustom->DrawText(posX, (iCarSpecPrintRow++) * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsCustomTxt, 0);
 		}
 	}
 	else if (g_pRBRPlugin->m_bCustomReplayShowCroppingRect && g_pRBRPlugin->m_iCustomReplayState >= 2 && g_pRBRPlugin->m_iCustomReplayState != 4)
