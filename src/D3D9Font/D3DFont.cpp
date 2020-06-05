@@ -378,6 +378,7 @@ HRESULT CD3DFont::DrawText(int _sx, int _sy, DWORD dwColor,	const WCHAR* strText
 	// Adjust for character spacing
 	auto spaceSize = m_font->GetCharacterSize(m_pd3dDevice, L' ');
 	float startX = sx;
+	float endX = sx;
 
 	// Fill vertex buffer
 	FONT2DVERTEX* vertices = NULL;
@@ -497,12 +498,23 @@ HRESULT CD3DFont::DrawText(int _sx, int _sy, DWORD dwColor,	const WCHAR* strText
 		}
 
 		sx += w;
+
+		// If this is multiline output then endX will be the width of the longest line
+		if (sx > endX)
+			endX = sx;
 	}
 
 	// Unlock and render the vertex buffer
 	m_pVB->Unlock();
 	if (trianglesCount > 0)
 	{
+		// Optionally clear background under the text
+		if (dwFlags & D3DFONT_CLEARTARGET)
+		{
+			D3DRECT rec = { _sx, _sy, static_cast<long>(endX), static_cast<long>(sy) + spaceSize.cy };
+			m_pd3dDevice->Clear(1, &rec, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 0, 0, 0), 0, 0);
+		}
+
 		for (size_t i = 0; i < textures.size(); i++)
 		{
 			m_pd3dDevice->SetTexture(0, textures[i]);
@@ -515,4 +527,10 @@ HRESULT CD3DFont::DrawText(int _sx, int _sy, DWORD dwColor,	const WCHAR* strText
 	m_pStateBlockSaved->Apply();
 
 	return S_OK;
+}
+
+HRESULT CD3DFont::DrawText(int _sx, int _sy, DWORD dwColor, const CHAR* strText, DWORD dwFlags)
+{
+	std::wstring wszText = _ToWString(std::string(strText));
+	return DrawText(_sx, _sy, dwColor, wszText.c_str(), dwFlags);
 }

@@ -26,6 +26,7 @@
 #define D3DFONT_BORDER		0x0010
 #define D3DFONT_COLORTABLE	0x0020
 
+#define D3DFONT_CLEARTARGET 0x0080
 
 // Defined deprecated D3Dx9.h struct because the old DX9 derived code uses these structs
 typedef struct D3DXVECTOR4 {
@@ -269,6 +270,7 @@ class CD3DFont
 public:
 	// 2D and 3D text drawing functions
 	//HRESULT DrawText(FLOAT x, FLOAT y, DWORD dwColor, const WCHAR* strText, DWORD dwFlags = 0L);
+	HRESULT DrawText(int x, int y, DWORD dwColor, const CHAR*  strText, DWORD dwFlags = 0L);
 	HRESULT DrawText(int x, int y, DWORD dwColor, const WCHAR* strText, DWORD dwFlags = 0L);
 
 	// Function to get extent of text

@@ -89,6 +89,8 @@ extern BOOL WriteOpCodeHexString(const LPVOID writeAddr, LPCSTR sHexText);
 extern BOOL WriteOpCodeBuffer(const LPVOID writeAddr, const BYTE* buffer, const int iBufLen);
 extern BOOL WriteOpCodePtr(const LPVOID writeAddr, const LPVOID ptrValue);
 
+extern BOOL ReadOpCodePtr(const LPVOID readAddr, LPVOID* ptrValue);
+
 extern int RBRAPI_MapCarIDToMenuIdx(int carID);     // 00..07 carID is not the same as order of car selection items
 extern int RBRAPI_MenuIdxToCarID(int menuIdx);
 
@@ -367,7 +369,7 @@ typedef struct {
 typedef RBRMenuItemCarSelectionCarSpecTexts* PRBRMenuItemCarSelectionCarSpecTexts;
 
 
-// Menu object (RBRMenuPoint has refrences to these objects)
+// Menu object (RBRMenuPoint has references to these objects)
 struct RBRMenuObj;
 typedef struct RBRMenuObj* PRBRMenuObj;
 typedef struct RBRMenuObj RBRMenuObj;
@@ -500,7 +502,28 @@ typedef struct {
 } RBRMenuSystem;
 typedef RBRMenuSystem* PRBRMenuSystem;
 
-// TODO. Offset 0x165FC48  Some other menu objects?
+
+// Offset 0x165FC48
+typedef struct {
+#pragma pack(push,1)
+	BYTE pad1[0x03E8];			// 0x00
+	PRBRMenuObj optionsMenuObj; // 0x3E8 (RBR Options menu)
+	BYTE pad2[0x43C - 0x3E8 - sizeof(PRBRMenuObj)];
+	LPVOID customPluginMenuObj; // 0x43C (RBRMenuSystem.currentMenuObj points to this value when a custom plugin menu is open and not a standard RBR in-game menu)
+	PRBRMenuObj pluginsMenuObj; // 0x440 (RBR Plugins menuObj. Lists all custom plugin names
+#pragma pack(pop)
+} RBRPluginMenuSystem;
+typedef RBRPluginMenuSystem* PRBRPluginMenuSystem;
+
+// pluginsMenuObj->pItemObj pointers
+typedef struct {
+#pragma pack(push,1)
+	BYTE pad1[0x20];     // 0x00
+	LPCSTR szPluginName; // 0x20
+#pragma pack(pop)
+} RBRPluginMenuSystemItemObj;
+typedef RBRPluginMenuSystemItemObj* PRBRPluginMenuSystemItemObj;
+
 
 // Global RBR object pointers
 extern PRBRGameConfig		g_pRBRGameConfig;

@@ -48,11 +48,14 @@
 
 
 #define C_DEBUGTEXT_COLOR   D3DCOLOR_ARGB(255, 255,255,255)      // White
-#define C_CARSPECTEXT_COLOR D3DCOLOR_ARGB(255, 0xE0,0xE0,0xE0)   // Grey-White
+
+#define C_CARSPECTEXT_COLOR			D3DCOLOR_ARGB(255, 0xE0,0xE0,0xE0)   // Grey-White
+#define C_CARMODELTITLETEXT_COLOR	D3DCOLOR_ARGB(255, 0x7F,0x7F,0xFE)   // Light-blue
 
 #define C_REPLAYFILENAME_SCREENSHOT   "_NGPCarMenu.rpl"  // Name of the temporary RBR replay file (char and wchar version)
 #define C_REPLAYFILENAME_SCREENSHOTW L"_NGPCarMenu.rpl"
 
+#define C_RBRTM_PLUGIN_NAME "RBR Tournament"
 
 
 //
@@ -93,6 +96,31 @@ typedef struct {
 } RBRCarSelectionMenuEntry;
 typedef RBRCarSelectionMenuEntry* PRBRCarSelectionMenuEntry;
 
+//------------------------------------------------------------------------------------------------
+typedef struct {
+#pragma pack(push,1)
+	BYTE unknown1;
+	BYTE unknown2;
+	BYTE serviceMins;    // 0 = Shakedown without service parks. >1 = Mins of the next service park
+	BYTE selectedCarID;  // 00..07 = Selected car slot#
+#pragma pack(pop)
+} RBRTMStageOptions1;
+typedef RBRTMStageOptions1* PRBRTMStageOptions1;
+
+typedef struct {
+#pragma pack(push,1)
+	__int32 unknown1;				// 0x00
+	__int32 unknown2;				// 0x04
+	__int32 unknown3;				// 0x08
+	DWORD* pCurrentRBRTMMenuObj;	// 0x0C - Pointer to current RBRTM menu object
+	__int32 selectedItemIdx;		// 0x10 - Currently selected menu item line
+	__int32 selectedStage;			// 0x14 - Currently selected shakedown stage# (map)
+
+	BYTE pad1[0xBA2 - 0x14 - sizeof(__int32)];
+	PRBRTMStageOptions1 pRBRTMStageOptions1;	// 0xBA2
+#pragma pack(pop)
+} RBRTMPlugin;
+typedef RBRTMPlugin* PRBRTMPlugin;
 
 //------------------------------------------------------------------------------------------------
 
@@ -142,6 +170,7 @@ public:
 	int m_iMenuSelection;		// Currently selected plugin menu item idx
 	int	m_iMenuCreateOption;	// 0 = Generate all car images, 1 = Generate only missing car images
 	int	m_iMenuImageOption;		// 0 = Use PNG preview file format to read and create image files, 1 = BMP file format
+	int m_iMenuRBRTMOption;		// 0 = RBRTM integration disabled, 1 = Enabled
 
 	std::string  m_sRBRRootDir;  // RBR app path, multibyte (or normal ASCII) string
 	std::wstring m_sRBRRootDirW; // RBR app path, widechar string
@@ -153,14 +182,18 @@ public:
 	std::wstring m_rbrCITCarListFilePath;		// Path to RBRCIT carList.ini file (the file has NGP car details and specs information)
 	std::wstring m_easyRBRFilePath;				// Path to EesyRBR installation folder (if RBRCIT car manager is not used)
 
-	RECT m_screenshotCroppingRect;				// Cropping rect of a screenshot (in RBR window coordinates)
-	RECT m_carSelectLeftBlackBarRect;			// Black bar on the left and right side of the "Select Car" menu (used to hide the default background image)
-	RECT m_carSelectRightBlackBarRect;
+	RECT  m_screenshotCroppingRect;				// Cropping rect of a screenshot (in RBR window coordinates)
+	RECT  m_carSelectLeftBlackBarRect;			// Black bar on the left and right side of the "Select Car" menu (used to hide the default background image)
+	RECT  m_carSelectRightBlackBarRect;			// (see above)
 	POINT m_car3DModelInfoPosition;				// X Y position of the car 3D info textbox. If Y is 0 then the plugin uses the default Y location (few lines above the car preview image).
+
+	RECT  m_carRBRTMPictureRect;				// Output rect of RBRTM car preview image (re-scaled pic area)
+	RECT  m_carRBRTMPictureCropping;			// Optional cropping area of the normal car preview image to be used as RBRTM preview image (0 0 0 0 = Re-scales the whole picture to fit the RBRTM pic rect)
+	//POINT m_carRBRTM3DModelInfoPosition;		// X Y position of the car info textbox (FIA Category, HP, Transmission, Weight, Year)
 
 	LPDIRECT3DVERTEXBUFFER9 m_screenshotCroppingRectVertexBuffer; // Screeshot rect vertex to highlight the current capture area on screen while capturing preview img
 
-	int  m_iCustomReplayState;					// 0 = No custom replay (default RBR behaviour), 1 = Custom replay process is running. Take screenshots of a car models.
+	int  m_iCustomReplayState;					// 0 = No custom replay (default RBR behaviour), 1 = Custom replay process is running. This plugin takes screenshots of car models
 	std::chrono::steady_clock::time_point m_tCustomReplayStateStartTime;
 
 	int  m_iCustomReplayCarID;					// 0..7 = The current carID used in a custom screenshot replay file
@@ -168,7 +201,12 @@ public:
 	bool m_bCustomReplayShowCroppingRect;		// Show the current car preview screenshot cropping rect area on screen (ie. few secs before the screenshot is taken)
 
 	IMAGE_TEXTURE m_carPreviewTexture[8];		// 0..7 car preview image data (or NULL if missing/not loaded yet)	
+	IMAGE_TEXTURE m_carRBRTMPreviewTexture[8];  // 0..7 car preview image for RBRTM plugin integration if RBRTM integration is enabled (the same pic as in standard preview image texture, but re-scaled to fit the smaller picture are in RBRTM screen)
 
+	int    m_iRBRTMPluginMenuIdx;				// Index of the RBRTM plugin in the RBR Plugins menu list (this way we know when RBRTM custom plugin in Nth index position is activated)
+	bool   m_bRBRTMPluginActive;				// TRUE/FALSE if the current active custom plugin is RBRTM (active = The RBRTM plugin handler is running in foreground)
+	int    m_iRBRTMCarSelectionType;			// 0=No car selection menu shown, 1=Online Tournament selection, 2=Shakedown car selection
+	PRBRTMPlugin m_pRBRTMPlugin;				// Pointer to RBRTM plugin or nullptr if not found or RBRTM integration is disabled
 
 	//------------------------------------------------------------------------------------------------
 
@@ -177,6 +215,10 @@ public:
 
 	int GetNextScreenshotCarID(int currentCarID);
 	static bool PrepareScreenshotReplayFile(int carID);
+
+	bool ReadCarPreviewImageFromFile(int selectedCarIdx, float x, float y, float cx, float cy, IMAGE_TEXTURE* pOutImageTexture);
+
+	bool InitRBRTMPluginIntegration();
 
 	void RefreshSettingsFromPluginINIFile();
 	void SaveSettingsToPluginINIFile();
