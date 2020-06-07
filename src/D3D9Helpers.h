@@ -89,6 +89,16 @@ extern std::string GetFileVersionInformationAsString(const std::wstring & fileNa
 extern bool _StringToRect(const std::wstring & s, RECT * outRect, const wchar_t separatorChar = L' '); // String in "0 50 200 400" format is converted as RECT struct value 
 extern bool _StringToPoint(const std::wstring & s, POINT * outPoint, const wchar_t separatorChar = L' '); // String in "0 50" format is converted as POINT struct value 
 
+
+//-----------------------------------------------------------------------------------------------------------------------
+// Special flags for D3D9CreateRectangleVertexTexBufferFromFile method to scale or re-position the image within the specifier rectangle area
+//
+#define IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO 0x01
+#define IMAGE_TEXTURE_SCALE_STRETCH_TO_FILL	     0x02
+#define IMAGE_TEXTURE_POSITION_BOTTOM			 0x04
+//#define IMAGE_TEXTURE_POSITION_CENTER			 0x08
+
+
 //-----------------------------------------------------------------------------------------------------------------------
 //
 // Drawing 2D images on D3D9. Code and idea borrowed from http://www.vbforums.com/showthread.php?856957-RESOLVED-DirectX-9-on-C-how-draw-an-image-transparent (Jacob Roman)
@@ -135,10 +145,7 @@ typedef struct
 } IMAGE_TEXTURE;						// RBR car preview picture (texture and rect vertex)
 typedef IMAGE_TEXTURE* PIMAGE_TEXTURE;
 
-//extern HRESULT D3D9CreateRectangleVertexTex2D(float x, float y, float cx, float cy, CUSTOM_VERTEX_TEX_2D* pOutVertexes2D, int iVertexesSize); // Create D3D9 rect texture vertex to be used with a texture
-//extern HRESULT D3D9CreateRectangleVertex2D(float x, float y, float cx, float cy, CUSTOM_VERTEX_2D* pOutVertexes2D, int iVertexesSize); // Create D3D9 rect vertex to be used to draw rectangle (no texture, transparent color)
-
-extern HRESULT D3D9CreateRectangleVertexTexBufferFromFile(const LPDIRECT3DDEVICE9 pD3Device, const std::wstring& fileName, float x, float y, float cx, float cy, IMAGE_TEXTURE* pOutImageTexture); // Create D3D9 textured rect vertex by loading the texture (image) from a file
+extern HRESULT D3D9CreateRectangleVertexTexBufferFromFile(const LPDIRECT3DDEVICE9 pD3Device, const std::wstring& fileName, float x, float y, float cx, float cy, IMAGE_TEXTURE* pOutImageTexture, DWORD dwFlags = 0); // Create D3D9 textured rect vertex by loading the texture (image) from a file
 extern HRESULT D3D9CreateRectangleVertexBuffer(const LPDIRECT3DDEVICE9 pD3Device, float x, float y, float cx, float cy, LPDIRECT3DVERTEXBUFFER9* pOutVertexBuffer);	// Create D3D9 rect vertex (no texture fill)
 
 extern void    D3D9DrawVertexTex2D(const LPDIRECT3DDEVICE9 pD3Device, IDirect3DTexture9* pTexture, const CUSTOM_VERTEX_TEX_2D* vertexes2D); // Draw rectangle vertex using the specified texture

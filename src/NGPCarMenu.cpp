@@ -489,8 +489,8 @@ bool CNGPCarMenu::InitRBRTMPluginIntegration()
 			if (m_carRBRTMPictureRect.left == 0 && m_carRBRTMPictureRect.top == 0 && m_carRBRTMPictureRect.right == 0 && m_carRBRTMPictureRect.bottom == 0)
 			{
 				// Default rectangle area of RBRTM car preview picture if RBRTM_CarPictureRect is not set in INI file
-				RBRAPI_MapRBRPointToScreenPoint((float)m_carSelectLeftBlackBarRect.left, 248.0f, (int*)&m_carRBRTMPictureRect.left, (int*)&m_carRBRTMPictureRect.top);
-				RBRAPI_MapRBRPointToScreenPoint(452.0f, 462.0f, (int*)&m_carRBRTMPictureRect.right, (int*)&m_carRBRTMPictureRect.bottom);
+				RBRAPI_MapRBRPointToScreenPoint(000.0f, 244.0f, (int*)&m_carRBRTMPictureRect.left,  (int*)&m_carRBRTMPictureRect.top);
+				RBRAPI_MapRBRPointToScreenPoint(451.0f, 461.0f, (int*)&m_carRBRTMPictureRect.right, (int*)&m_carRBRTMPictureRect.bottom);
 			}
 
 			if (g_pRBRPluginMenuSystem == nullptr) g_pRBRPluginMenuSystem = (PRBRPluginMenuSystem) * (DWORD*)(0x0165FC48);
@@ -851,7 +851,7 @@ std::wstring CNGPCarMenu::InitCarModelNameFromCarsFile(CSimpleIniW* stockCarList
 	catch (...)
 	{
 		// Hmmm... Something went wrong
-		LogPrint("ERROR CNGPCarMenu.InitCarModelNameFromCarsFile. Failed to read Cars\cars.ini file for a car idx %d", menuIdx);
+		LogPrint("ERROR CNGPCarMenu.InitCarModelNameFromCarsFile. Failed to read Cars\\cars.ini file for a car idx %d", menuIdx);
 	}
 
 	return sStockCarModelName;
@@ -1267,7 +1267,7 @@ bool CNGPCarMenu::PrepareScreenshotReplayFile(int carID)
 //------------------------------------------------------------------------------------------------
 // Initialize car preview image DX9 texture and vertex objects
 // 
-bool CNGPCarMenu::ReadCarPreviewImageFromFile(int selectedCarIdx, float x, float y, float cx, float cy, IMAGE_TEXTURE* pOutImageTexture)
+bool CNGPCarMenu::ReadCarPreviewImageFromFile(int selectedCarIdx, float x, float y, float cx, float cy, IMAGE_TEXTURE* pOutImageTexture, DWORD dwFlags)
 {
 	// TODO. Read image size and re-scale and center the image if it is not in native resolution folder
 
@@ -1278,7 +1278,8 @@ bool CNGPCarMenu::ReadCarPreviewImageFromFile(int selectedCarIdx, float x, float
 	HRESULT hResult = D3D9CreateRectangleVertexTexBufferFromFile(g_pRBRIDirect3DDevice9,
 		this->m_screenshotPath + L"\\" + g_RBRCarSelectionMenuEntry[selectedCarIdx].wszCarModel + _ToWString(imgExtension),
 		x, y, cx, cy,
-		pOutImageTexture);
+		pOutImageTexture,
+		dwFlags);
 
 	// Image not available. Do not try to re-load it again (set cx=-1 to indicate that the image loading failed, so no need to try to re-load it in every frame even when texture is null)
 	if (!SUCCEEDED(hResult)) pOutImageTexture->imgSize.cx = -1;
@@ -1832,6 +1833,10 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 
 	if (g_pRBRGameMode->gameMode == 03)
 	{ 
+		int posX;
+		int posY;
+		int iFontHeight;
+
 		if (g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_QUICKRALLY_CARS]
 			|| g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MULTIPLAYER_CARS_P1]
 			|| g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MULTIPLAYER_CARS_P2]
@@ -1846,16 +1851,11 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 
 			if (selectedCarIdx >= 0 && selectedCarIdx <= 7)
 			{
-				float rbrPosX;
-				int posX;
-				int posY;
-				int iFontHeight;
-
+				//float rbrPosX;
 				if (g_pRBRPlugin->m_carPreviewTexture[selectedCarIdx].pTexture == nullptr && g_pRBRPlugin->m_carPreviewTexture[selectedCarIdx].imgSize.cx >= 0 && g_RBRCarSelectionMenuEntry[selectedCarIdx].wszCarModel[0] != '\0')
 				{
 					float posYf;
 					RBRAPI_MapRBRPointToScreenPoint(0.0f, g_pRBRMenuSystem->menuImagePosY - 1.0f, nullptr, &posYf);
-
 					g_pRBRPlugin->ReadCarPreviewImageFromFile(selectedCarIdx, (float)g_pRBRPlugin->m_carSelectLeftBlackBarRect.left, posYf, 0, 0, &g_pRBRPlugin->m_carPreviewTexture[selectedCarIdx]);
 				}
 
@@ -1889,7 +1889,7 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 				// X pos of additional custom car spec data scaled per resolution
 				// TODO. Try to find better routine to handle in-game vs runtime screen resolution re-mapping. The current solution is veeeeery clumsy
 				//
-				switch (g_rectRBRWndClient.right)
+/*				switch (g_rectRBRWndClient.right)
 				{
 					case 640:
 					case 800:
@@ -1905,17 +1905,21 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 
 					default:   rbrPosX = -1; break; // Do not try to re-scale automatically. Use brute-force "half of RBR wnd width"
 				}
-
+*/
+				//rbrPosX = 218.0f;
 				iFontHeight = g_pFontCarSpecCustom->GetTextHeight();
 
-				// TODO: More clever and exact re-scaler function to map game resolution to screen resolution (now game position is not always mapped correctly to screen position)
-				RBRAPI_MapRBRPointToScreenPoint(rbrPosX, g_pRBRMenuSystem->menuImagePosY, &posX, &posY);
+				//RBRAPI_MapRBRPointToScreenPoint(rbrPosX, g_pRBRMenuSystem->menuImagePosY, &posX, &posY);
+				RBRAPI_MapRBRPointToScreenPoint(218.0f, g_pRBRMenuSystem->menuImagePosY, &posX, &posY);
 				posY -= 5 * iFontHeight;
+
+				//if (g_pRBRPlugin->m_car3DModelInfoPosition.x != 0)
+				//	posX = g_pRBRPlugin->m_car3DModelInfoPosition.x;  // Custom X-position
+				//else if (rbrPosX == -1)
+				//	posX = ((g_rectRBRWndClient.right - g_rectRBRWndClient.left) / 2) - 50; // Default brute-force "center of the horizontal screen line"
 
 				if (g_pRBRPlugin->m_car3DModelInfoPosition.x != 0)
 					posX = g_pRBRPlugin->m_car3DModelInfoPosition.x;  // Custom X-position
-				else if (rbrPosX == -1)
-					posX = ((g_rectRBRWndClient.right - g_rectRBRWndClient.left) / 2) - 50; // Default brute-force "center of the horizontal screen line"
 
 				if (g_pRBRPlugin->m_car3DModelInfoPosition.y != 0)
 					posY = g_pRBRPlugin->m_car3DModelInfoPosition.y;  // Custom Y-position
@@ -1978,8 +1982,12 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 				}
 
 				if (bRBRTMCarSelectionMenu && (g_pRBRPlugin->m_iRBRTMCarSelectionType == 2 || (g_pRBRPlugin->m_iRBRTMCarSelectionType == 1 && g_pRBRPlugin->m_pRBRTMPlugin->selectedItemIdx == 1)))
-				{
+				{		
+					int iCarSpecPrintRow;
 					int selectedCarIdx = ::RBRAPI_MapCarIDToMenuIdx(g_pRBRPlugin->m_pRBRTMPlugin->pRBRTMStageOptions1->selectedCarID);
+					PRBRCarSelectionMenuEntry pCarSelectionMenuEntry = &g_RBRCarSelectionMenuEntry[selectedCarIdx];
+
+					iFontHeight = g_pFontCarSpecCustom->GetTextHeight();
 
 					if (g_pRBRPlugin->m_carRBRTMPreviewTexture[selectedCarIdx].pTexture == nullptr && g_pRBRPlugin->m_carRBRTMPreviewTexture[selectedCarIdx].imgSize.cx >= 0 && g_RBRCarSelectionMenuEntry[selectedCarIdx].wszCarModel[0] != '\0')
 					{
@@ -1987,15 +1995,14 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 							(float)g_pRBRPlugin->m_carRBRTMPictureRect.left, (float)g_pRBRPlugin->m_carRBRTMPictureRect.top, 
 							(float)(g_pRBRPlugin->m_carRBRTMPictureRect.right - g_pRBRPlugin->m_carRBRTMPictureRect.left), 
 							(float)(g_pRBRPlugin->m_carRBRTMPictureRect.bottom - g_pRBRPlugin->m_carRBRTMPictureRect.top),
-							&g_pRBRPlugin->m_carRBRTMPreviewTexture[selectedCarIdx]);
+							&g_pRBRPlugin->m_carRBRTMPreviewTexture[selectedCarIdx],
+							IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO | IMAGE_TEXTURE_POSITION_BOTTOM);
 					}
 
 					// If the car preview image is successfully initialized (imgSize.cx >= 0) and texture (=image) is prepared then draw it on the screen
 					if (g_pRBRPlugin->m_carRBRTMPreviewTexture[selectedCarIdx].imgSize.cx >= 0 && g_pRBRPlugin->m_carRBRTMPreviewTexture[selectedCarIdx].pTexture != nullptr)
 					{
-						int iCarSpecPrintRow = 0;
-						int iFontHeight = g_pFontCarSpecCustom->GetTextHeight();
-						PRBRCarSelectionMenuEntry pCarSelectionMenuEntry = &g_RBRCarSelectionMenuEntry[selectedCarIdx];
+						iCarSpecPrintRow = 0;				
 
 						D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, g_pRBRPlugin->m_carRBRTMPreviewTexture[selectedCarIdx].pTexture, g_pRBRPlugin->m_carRBRTMPreviewTexture[selectedCarIdx].vertexes2D);
 
@@ -2006,27 +2013,29 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 						if (pCarSelectionMenuEntry->wszCarPhysics3DModel[0] != L'\0')
 							g_pFontCarSpecCustom->DrawText(g_pRBRPlugin->m_carRBRTMPictureRect.left + 2, g_pRBRPlugin->m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysics3DModel, 0);
 
-						// FIACategory, HP, Year, Weight, Transmission
-						iCarSpecPrintRow = 0;
-						if (pCarSelectionMenuEntry->wszCarYear[0] != L'\0')
-							g_pFontCarSpecCustom->DrawText(g_pRBRPlugin->m_carRBRTMPictureRect.right + 12, g_pRBRPlugin->m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarYear, 0);
-
-						if (pCarSelectionMenuEntry->wszCarTrans[0] != L'\0')
-							g_pFontCarSpecCustom->DrawText(g_pRBRPlugin->m_carRBRTMPictureRect.right + 12, g_pRBRPlugin->m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarTrans, 0);
-
-						if (pCarSelectionMenuEntry->wszCarWeight[0] != L'\0')
-							g_pFontCarSpecCustom->DrawText(g_pRBRPlugin->m_carRBRTMPictureRect.right + 12, g_pRBRPlugin->m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarWeight, 0);
-
-						if (pCarSelectionMenuEntry->wszCarPower[0] != L'\0')
-							g_pFontCarSpecCustom->DrawText(g_pRBRPlugin->m_carRBRTMPictureRect.right + 12, g_pRBRPlugin->m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPower, 0);
-
-						if (pCarSelectionMenuEntry->szCarCategory[0] != L'\0')
-							g_pFontCarSpecCustom->DrawText(g_pRBRPlugin->m_carRBRTMPictureRect.right + 12, g_pRBRPlugin->m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->szCarCategory, 0);
-
-						if (pCarSelectionMenuEntry->wszCarModel[0] != L'\0')
-							g_pFontCarSpecCustom->DrawText(g_pRBRPlugin->m_carRBRTMPictureRect.right + 12, g_pRBRPlugin->m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARMODELTITLETEXT_COLOR, pCarSelectionMenuEntry->wszCarModel, 0);
-
 					}
+
+					// FIACategory, HP, Year, Weight, Transmission
+					iCarSpecPrintRow = 0;
+					posX = g_pRBRPlugin->m_carRBRTMPictureRect.right + 16;
+					if (pCarSelectionMenuEntry->wszCarYear[0] != L'\0')
+						g_pFontCarSpecCustom->DrawText(posX, g_pRBRPlugin->m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarYear, 0);
+
+					if (pCarSelectionMenuEntry->wszCarTrans[0] != L'\0')
+						g_pFontCarSpecCustom->DrawText(posX, g_pRBRPlugin->m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarTrans, 0);
+
+					if (pCarSelectionMenuEntry->wszCarWeight[0] != L'\0')
+						g_pFontCarSpecCustom->DrawText(posX, g_pRBRPlugin->m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarWeight, 0);
+
+					if (pCarSelectionMenuEntry->wszCarPower[0] != L'\0')
+						g_pFontCarSpecCustom->DrawText(posX, g_pRBRPlugin->m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPower, 0);
+
+					if (pCarSelectionMenuEntry->szCarCategory[0] != L'\0')
+						g_pFontCarSpecCustom->DrawText(posX, g_pRBRPlugin->m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->szCarCategory, 0);
+
+					if (pCarSelectionMenuEntry->wszCarModel[0] != L'\0')
+						g_pFontCarSpecCustom->DrawText(posX, g_pRBRPlugin->m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARMODELTITLETEXT_COLOR, pCarSelectionMenuEntry->wszCarModel, 0);
+
 				}
 			}
 			else if (g_pRBRPlugin->m_iRBRTMPluginMenuIdx == 0)
@@ -2046,10 +2055,6 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 #if USE_DEBUG == 1
 	WCHAR szTxtBuffer[200];
 
-	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"Mode %d %d.  Img (%f,%f)(%f,%f)  Timer=%f", g_pRBRGameMode->gameMode, g_pRBRGameModeExt->gameModeExt, g_pRBRMenuSystem->menuImagePosX, g_pRBRMenuSystem->menuImagePosY, g_pRBRMenuSystem->menuImageWidth, g_pRBRMenuSystem->menuImageHeight, g_pRBRCarInfo->stageStartCountdown);
-	g_pFontDebug->DrawText(1, 1 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, D3DFONT_CLEARTARGET);
-
-/*
 	RECT wndRect;
 	RECT wndClientRect;
 	RECT wndMappedRect;
@@ -2060,12 +2065,44 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 	CopyRect(&wndMappedRect, &wndClientRect);
 	MapWindowPoints(creationParameters.hFocusWindow, NULL, (LPPOINT)&wndMappedRect, 2);
 
+	//swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"Mode %d %d.  Img (%f,%f)(%f,%f)  Timer=%f", g_pRBRGameMode->gameMode, g_pRBRGameModeExt->gameModeExt, g_pRBRMenuSystem->menuImagePosX, g_pRBRMenuSystem->menuImagePosY, g_pRBRMenuSystem->menuImageWidth, g_pRBRMenuSystem->menuImageHeight, g_pRBRCarInfo->stageStartCountdown);
+	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"Mode %d %d.  Img (%f,%f)(%f,%f)  hWnd=%x", g_pRBRGameMode->gameMode, g_pRBRGameModeExt->gameModeExt, g_pRBRMenuSystem->menuImagePosX, g_pRBRMenuSystem->menuImagePosY, g_pRBRMenuSystem->menuImageWidth, g_pRBRMenuSystem->menuImageHeight, (int)creationParameters.hFocusWindow);
+	g_pFontDebug->DrawText(1, 1 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, D3DFONT_CLEARTARGET);
 
-	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"hWnd=%x Win=(%d,%d)(%d,%d) Client=(%d,%d)(%d,%d)", (int)creationParameters.hFocusWindow,
+	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"Win=(%d,%d)(%d,%d) Client=(%d,%d)(%d,%d)", 
 		wndRect.left, wndRect.top, wndRect.right, wndRect.bottom,
 		wndClientRect.left, wndClientRect.top, wndClientRect.right, wndClientRect.bottom);
-	g_pFontDebug->DrawText(1, 2 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, 0);
-*/
+	g_pFontDebug->DrawText(1, 2 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, D3DFONT_CLEARTARGET);
+
+
+	int x, y;
+	RBRAPI_MapRBRPointToScreenPoint(451.0f, 244.0f, &x, &y);
+	g_pFontDebug->DrawText(x, y, C_DEBUGTEXT_COLOR, "XX", D3DFONT_CLEARTARGET);
+	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"(451,244)=(%d,%d)", x, y);
+	g_pFontDebug->DrawText(x, y + (20 * 1), C_DEBUGTEXT_COLOR, szTxtBuffer, D3DFONT_CLEARTARGET);
+
+	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"ScreenCenter=(%d,%d)", wndClientRect.right / 2, wndClientRect.bottom / 2);
+	g_pFontDebug->DrawText(x, y + (20 * 3), C_DEBUGTEXT_COLOR, szTxtBuffer, D3DFONT_CLEARTARGET);
+
+	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"GameRes=(%d,%d)", g_pRBRGameConfig->resolutionX, g_pRBRGameConfig->resolutionY);
+	g_pFontDebug->DrawText(x, y + (20 * 4), C_DEBUGTEXT_COLOR, szTxtBuffer, D3DFONT_CLEARTARGET);
+
+
+	RBRAPI_MapRBRPointToScreenPoint(451.0f, 461.0f, &x, &y);
+	g_pFontDebug->DrawText(x, y, C_DEBUGTEXT_COLOR, "XX", D3DFONT_CLEARTARGET);
+	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"(451,461)=(%d,%d)", x, y);
+	g_pFontDebug->DrawText(x, y + (20 * 1), C_DEBUGTEXT_COLOR, szTxtBuffer, D3DFONT_CLEARTARGET);
+
+	RBRAPI_MapRBRPointToScreenPoint(0.0f, 240.0f, &x, &y);
+	g_pFontDebug->DrawText(x, y, C_DEBUGTEXT_COLOR, "XX", D3DFONT_CLEARTARGET);
+	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"(0,240)=(%d,%d)", x, y);
+	g_pFontDebug->DrawText(x, y + (20 * 1), C_DEBUGTEXT_COLOR, szTxtBuffer, D3DFONT_CLEARTARGET);
+
+	RBRAPI_MapRBRPointToScreenPoint(640.0f, 240.0f, &x, &y);
+	g_pFontDebug->DrawText(x-20, y, C_DEBUGTEXT_COLOR, "XX", D3DFONT_CLEARTARGET);
+	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"(0,240)=(%d,%d)", x, y);
+	g_pFontDebug->DrawText(x-200, y + (20 * 1), C_DEBUGTEXT_COLOR, szTxtBuffer, D3DFONT_CLEARTARGET);
+
 
 	//swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"Mapped=(%d,%d)(%d,%d) GameRes=(%d,%d)", wndMappedRect.left, wndMappedRect.top, wndMappedRect.right, wndMappedRect.bottom, g_pRBRGameConfig->resolutionX, g_pRBRGameConfig->resolutionY);
 	//g_pFontDebug->DrawText(1, 3 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, 0);

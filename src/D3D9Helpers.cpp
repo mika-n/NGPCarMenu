@@ -1056,7 +1056,7 @@ HRESULT D3D9CreateRectangleVertex2D(float x, float y, float cx, float cy, CUSTOM
 //
 // Create D3D9 textured vertex buffer with a rect shape where texture is load from an external PNG/DDS/GIF/BMP file
 //
-HRESULT D3D9CreateRectangleVertexTexBufferFromFile(const LPDIRECT3DDEVICE9 pD3Device, const std::wstring& fileName, float x, float y, float cx, float cy, IMAGE_TEXTURE* pOutImageTexture)
+HRESULT D3D9CreateRectangleVertexTexBufferFromFile(const LPDIRECT3DDEVICE9 pD3Device, const std::wstring& fileName, float x, float y, float cx, float cy, IMAGE_TEXTURE* pOutImageTexture, DWORD dwFlags)
 {
 	IDirect3DTexture9* pTempTexture = nullptr;
 
@@ -1071,11 +1071,26 @@ HRESULT D3D9CreateRectangleVertexTexBufferFromFile(const LPDIRECT3DDEVICE9 pD3De
 
 	HRESULT hResult = D3D9LoadTextureFromFile(pD3Device, fileName, &pTempTexture, &pOutImageTexture->imgSize);
 	if (SUCCEEDED(hResult))
-	{
-		// If cx/cy is all zero then use the original image size instead of the supplied custom size (re-scaled image rect texture)
-		if(cx == 0 && cy == 0)
+	{		
+		if (cx == 0 && cy == 0)
+		{
+			// If cx/cy is all zero then use the original image size instead of the supplied custom size (re-scaled image rect texture)
 			hResult = D3D9CreateRectangleVertexTex2D(x, y, (float)pOutImageTexture->imgSize.cx, (float)pOutImageTexture->imgSize.cy, pOutImageTexture->vertexes2D, sizeof(pOutImageTexture->vertexes2D));
+		}
+		else if (dwFlags & IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO && pOutImageTexture->imgSize.cx > 0)
+		{
+			// Scale picture while keeping aspect ratio correct. Optionally place the image on the bottom of the specified rect area (x,y) (x+cx,y+cy)
+			float scale_factor = cx / ((float)pOutImageTexture->imgSize.cx);
+			float scaled_cy = ((float)pOutImageTexture->imgSize.cy) * scale_factor;
+			float scaled_y = y;
+
+			if (dwFlags & IMAGE_TEXTURE_POSITION_BOTTOM)
+				scaled_y = (y + cy) - scaled_cy;
+
+			hResult = D3D9CreateRectangleVertexTex2D(x, scaled_y, cx, scaled_cy, pOutImageTexture->vertexes2D, sizeof(pOutImageTexture->vertexes2D));
+		}
 		else
+			// Re-scale the image to fill the target area
 			hResult = D3D9CreateRectangleVertexTex2D(x, y, cx, cy, pOutImageTexture->vertexes2D, sizeof(pOutImageTexture->vertexes2D));
 	}
 
