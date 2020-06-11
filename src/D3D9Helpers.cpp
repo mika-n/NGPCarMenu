@@ -1082,12 +1082,20 @@ HRESULT D3D9CreateRectangleVertexTexBufferFromFile(const LPDIRECT3DDEVICE9 pD3De
 			// Scale picture while keeping aspect ratio correct. Optionally place the image on the bottom of the specified rect area (x,y) (x+cx,y+cy)
 			float scale_factor = cx / ((float)pOutImageTexture->imgSize.cx);
 			float scaled_cy = ((float)pOutImageTexture->imgSize.cy) * scale_factor;
+			float scaled_cx = cx;
 			float scaled_y = y;
+
+			if (scaled_cy > cy)
+			{
+				scale_factor = cy / ((float)pOutImageTexture->imgSize.cy);
+				scaled_cx = ((float)pOutImageTexture->imgSize.cx) * scale_factor;
+				scaled_cy = cy;
+			}
 
 			if (dwFlags & IMAGE_TEXTURE_POSITION_BOTTOM)
 				scaled_y = (y + cy) - scaled_cy;
 
-			hResult = D3D9CreateRectangleVertexTex2D(x, scaled_y, cx, scaled_cy, pOutImageTexture->vertexes2D, sizeof(pOutImageTexture->vertexes2D));
+			hResult = D3D9CreateRectangleVertexTex2D(x, scaled_y, scaled_cx, scaled_cy, pOutImageTexture->vertexes2D, sizeof(pOutImageTexture->vertexes2D));
 		}
 		else
 			// Re-scale the image to fill the target area

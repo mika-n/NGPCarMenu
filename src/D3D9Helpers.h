@@ -93,10 +93,9 @@ extern bool _StringToPoint(const std::wstring & s, POINT * outPoint, const wchar
 //-----------------------------------------------------------------------------------------------------------------------
 // Special flags for D3D9CreateRectangleVertexTexBufferFromFile method to scale or re-position the image within the specifier rectangle area
 //
-#define IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO 0x01
-#define IMAGE_TEXTURE_SCALE_STRETCH_TO_FILL	     0x02
-#define IMAGE_TEXTURE_POSITION_BOTTOM			 0x04
-//#define IMAGE_TEXTURE_POSITION_CENTER			 0x08
+#define IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO 0x01		// Bit1: 1=KeepAspectRatio, 0=Stretch the imaeg to fill the rendering rectangle area
+#define IMAGE_TEXTURE_POSITION_BOTTOM			 0x02		// Bit2: 1=Image positioned on the bottom of the area, 0=Top of the area
+
 
 
 //-----------------------------------------------------------------------------------------------------------------------

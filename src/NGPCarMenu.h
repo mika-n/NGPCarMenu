@@ -64,8 +64,9 @@
 enum class T_PLUGINSTATE
 {
 	PLUGINSTATE_UNINITIALIZED = 0,
-	PLUGINSTATE_INITIALIZED = 1,
-	PLUGINSTATE_CLOSING = 2
+	PLUGINSTATE_INITIALIZING = 1,
+	PLUGINSTATE_INITIALIZED = 2,
+	PLUGINSTATE_CLOSING = 3
 };
 
 
@@ -93,6 +94,8 @@ typedef struct {
 	WCHAR wszCarPhysics3DModel[128];   // 3D model:
 	WCHAR wszCarPhysicsLivery[128];    // Livery (Liver and Livery credits)
 	WCHAR wszCarPhysicsCustomTxt[128]; // If physics/CARNAME file has a 5th text line, otherwise blank text. The 5th line in car model file can be used to show any custom text
+
+	WCHAR wszCarFMODBank[128];		   // Custom FMOD sound bank
 } RBRCarSelectionMenuEntry;
 typedef RBRCarSelectionMenuEntry* PRBRCarSelectionMenuEntry;
 
@@ -149,6 +152,7 @@ protected:
 
 	void InitCarSpecData_RBRCIT();
 	void InitCarSpecData_EASYRBR();
+	void InitCarSpecAudio();
 
 	std::wstring InitCarModelNameFromCarsFile(CSimpleIniW* stockCarListINIFile, int menuIdx);
 	bool InitCarSpecDataFromPhysicsFile(const std::string& folderName, PRBRCarSelectionMenuEntry pRBRCarSelectionMenuEntry, int* outNumOfGears);
@@ -206,6 +210,7 @@ public:
 	int    m_iRBRTMPluginMenuIdx;				// Index of the RBRTM plugin in the RBR Plugins menu list (this way we know when RBRTM custom plugin in Nth index position is activated)
 	bool   m_bRBRTMPluginActive;				// TRUE/FALSE if the current active custom plugin is RBRTM (active = The RBRTM plugin handler is running in foreground)
 	int    m_iRBRTMCarSelectionType;			// 0=No car selection menu shown, 1=Online Tournament selection, 2=Shakedown car selection
+	PRBRMenuObj  m_pRBRPrevCurrentMenu;			// If RBRTM integration is enabled then NGPCarMenu must try to identify Plugins and RBRTM plugin. This is just a "previous currentMenu" in order to optimize the check routine (ie. don't re-check if the plugin is RBRTM until new menu/plugin is activated)
 	PRBRTMPlugin m_pRBRTMPlugin;				// Pointer to RBRTM plugin or nullptr if not found or RBRTM integration is disabled
 
 	//------------------------------------------------------------------------------------------------
@@ -220,7 +225,7 @@ public:
 
 	bool InitRBRTMPluginIntegration();
 
-	void RefreshSettingsFromPluginINIFile();
+	void RefreshSettingsFromPluginINIFile(bool addMissingSections = false);
 	void SaveSettingsToPluginINIFile();
 
 	//------------------------------------------------------------------------------------------------

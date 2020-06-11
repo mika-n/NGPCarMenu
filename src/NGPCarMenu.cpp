@@ -70,7 +70,10 @@ PRBRMapInfo			 g_pRBRMapInfo = nullptr;
 PRBRMapSettings		 g_pRBRMapSettings = nullptr;
 PRBRGhostCarMovement g_pRBRGhostCarMovement = nullptr;
 
-PRBRMenuSystem		 g_pRBRMenuSystem = nullptr;		 // Pointer to RBR menu system (all standard menu objects)
+PRBRMenuSystem		 g_pRBRMenuSystem = nullptr;		// Pointer to RBR menu system (all standard menu objects)
+
+//PRBRMenuObj			 g_pRBRPluginsMenuObj = nullptr;	// Pointer to RBR Plugins menu obj
+//PRBRMenuObj			 g_pRBRCustomPlugins
 PRBRPluginMenuSystem g_pRBRPluginMenuSystem = nullptr;   // Pointer to RBR plugin menu system (for some reason Plugins menu is not part of the std menu arrays)
 
 WCHAR* g_pOrigCarSpecTitleWeight = nullptr;				// The original RBR Weight and Transmission title string values
@@ -97,14 +100,14 @@ WCHAR* g_pOrigCarSpecTitleTransmission = nullptr;
 
 // Note! This table is in menu order and not in internal RBR car slot order. Values are initialized at plugin launch time from NGP physics and RBRCIT carList config files
 RBRCarSelectionMenuEntry g_RBRCarSelectionMenuEntry[8] = {
-	{ 0x4a0dd9, 0x4a0c59, /* Slot#5 */ "", L"car1", "", L"", L"", L"", L"", L"", L"", L"", L"", L""  },
-	{ 0x4a0dc9, 0x4a0c49, /* Slot#3 */ "", L"car2", "", L"", L"", L"", L"", L"", L"", L"", L"", L""  },
-	{ 0x4a0de1, 0x4a0c61, /* Slot#6 */ "", L"car3",	"", L"", L"", L"", L"", L"", L"", L"", L"", L""  },
-	{ 0x4a0db9, 0x4a0c39, /* Slot#1 */ "", L"car4",	"", L"", L"", L"", L"", L"", L"", L"", L"", L""  },
-	{ 0x4a0dd1, 0x4a0c51, /* Slot#4 */ "", L"car5",	"", L"", L"", L"", L"", L"", L"", L"", L"", L""  },
-	{ 0x4a0de9, 0x4a0c69, /* Slot#7 */ "", L"car6",	"", L"", L"", L"", L"", L"", L"", L"", L"", L""  },
-	{ 0x4a0db1, 0x4a0c31, /* Slot#0 */ "", L"car7",	"", L"", L"", L"", L"", L"", L"", L"", L"", L""  },
-	{ 0x4a0dc1, 0x4a0c41, /* Slot#2 */ "", L"car8",	"", L"", L"", L"", L"", L"", L"", L"", L"", L""  }
+	{ 0x4a0dd9, 0x4a0c59, /* Slot#5 */ "", L"car1", "", L"", L"", L"", L"", L"", L"", L"", L"", L"", L""   },
+	{ 0x4a0dc9, 0x4a0c49, /* Slot#3 */ "", L"car2", "", L"", L"", L"", L"", L"", L"", L"", L"", L"", L""   },
+	{ 0x4a0de1, 0x4a0c61, /* Slot#6 */ "", L"car3",	"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L""   },
+	{ 0x4a0db9, 0x4a0c39, /* Slot#1 */ "", L"car4",	"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L""   },
+	{ 0x4a0dd1, 0x4a0c51, /* Slot#4 */ "", L"car5",	"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L""   },
+	{ 0x4a0de9, 0x4a0c69, /* Slot#7 */ "", L"car6",	"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L""   },
+	{ 0x4a0db1, 0x4a0c31, /* Slot#0 */ "", L"car7",	"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L""   },
+	{ 0x4a0dc1, 0x4a0c41, /* Slot#2 */ "", L"car8",	"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L""   }
 };
 
 
@@ -237,6 +240,9 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	ZeroMemory(&m_carRBRTMPictureRect, sizeof(m_carRBRTMPictureRect));
 	ZeroMemory(&m_carRBRTMPictureCropping, sizeof(m_carRBRTMPictureCropping));
 
+	g_pRBRPluginMenuSystem = new RBRPluginMenuSystem;
+	ZeroMemory(g_pRBRPluginMenuSystem, sizeof(RBRPluginMenuSystem));
+
 	m_bMenuSelectCarCustomized = false;
 
 	m_pGame = pGame;
@@ -249,18 +255,11 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 
 	m_iRBRTMPluginMenuIdx = 0;		// Index (Nth item) to RBRTM plugin in RBR in-game Plugins menu list (0=Not yet initialized, -1=Initialized but RBRTM plugin missing or wrong version)
 	m_pRBRTMPlugin = nullptr;		// Pointer to RBRTM plugin object
+	m_pRBRPrevCurrentMenu = nullptr;// Previous "current menu obj" (used in RBRTM integration initialization routine)
 	m_bRBRTMPluginActive = false;	// Is RBRTM plugin currently the active custom frontend plugin
 	m_iRBRTMCarSelectionType = 0;   // If RBRTM is activated then is it at 1=Shakedown or 2=OnlineTournament car selection menu state
 
-	RefreshSettingsFromPluginINIFile();
-
-	// If EASYRBRPath is not set then assume cars have been setup using RBRCIT car manager tool
-	if(m_easyRBRFilePath.empty())
-		InitCarSpecData_RBRCIT();
-	else
-		InitCarSpecData_EASYRBR();
-
-	CalculateMaxLenCarMenuName();
+	//RefreshSettingsFromPluginINIFile();
 
 	DebugPrint("Exit CNGPCarMenu.Constructor");
 }
@@ -285,10 +284,12 @@ CNGPCarMenu::~CNGPCarMenu(void)
 	SAFE_RELEASE(m_screenshotCroppingRectVertexBuffer);
 	ClearCachedCarPreviewImages();
 
-	if (g_pRBRPlugin == this) g_pRBRPlugin = nullptr;
+	SAFE_DELETE(g_pRBRPluginMenuSystem);
 
 	DebugPrint("Exit CNGPCarMenu.Destructor");
 	DebugCloseFile();
+
+	if (g_pRBRPlugin == this) g_pRBRPlugin = nullptr;
 }
 
 void CNGPCarMenu::ClearCachedCarPreviewImages()
@@ -307,7 +308,7 @@ void CNGPCarMenu::ClearCachedCarPreviewImages()
 //-------------------------------------------------------------------------------------------------
 // Refresh pluging settings from INI file. This method can be called at any time to refresh values even at plugin runtime.
 //
-void CNGPCarMenu::RefreshSettingsFromPluginINIFile()
+void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 {
 	WCHAR szResolutionText[16];
 
@@ -327,13 +328,55 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile()
 		if (!fs::exists(sIniFileName) && fs::exists(sIniFileName + ".sample"))
 			fs::copy_file(sIniFileName + ".sample", sIniFileName);
 
+		RBRAPI_RefreshWndRect();
+		swprintf_s(szResolutionText, COUNT_OF_ITEMS(szResolutionText), L"%dx%d", g_rectRBRWndClient.right, g_rectRBRWndClient.bottom);
+
 		pluginINIFile.LoadFile(sIniFileName.c_str());
+
+		if (addMissingSections)
+		{
+			//
+			// If [XresxYres] INI section is missing then add it now with a default value in ScreenshotCropping option
+			//
+
+			bool bSectionFound = false;
+			CSimpleIniW::TNamesDepend allSections;
+			pluginINIFile.GetAllSections(allSections);
+			CSimpleIniW::TNamesDepend::const_iterator iter;
+			for (iter = allSections.begin(); iter != allSections.end(); ++iter)
+			{
+				if (wcsncmp(szResolutionText, iter->pItem, COUNT_OF_ITEMS(szResolutionText)) == 0)
+				{
+					bSectionFound = true;
+					break;
+				}
+			}
+
+			if (!bSectionFound)
+			{
+				try
+				{
+					int posY1, posY2;
+					WCHAR szScreenshotCroppingDefaultValue[32];					
+					
+					RBRAPI_MapRBRPointToScreenPoint(0.0f, 105.0f, nullptr, &posY1);
+					RBRAPI_MapRBRPointToScreenPoint(0.0f, 348.0f, nullptr, &posY2);
+					swprintf_s(szScreenshotCroppingDefaultValue, COUNT_OF_ITEMS(szScreenshotCroppingDefaultValue), L"%d %d %d %d", 0, posY1, g_rectRBRWndClient.right, posY2);
+
+					if (pluginINIFile.SetValue(szResolutionText, L"ScreenshotCropping", szScreenshotCroppingDefaultValue) >= 0)
+						pluginINIFile.SaveFile(sIniFileName.c_str());
+					else
+						LogPrint("ERROR CNGPCarMenu.RefreshSettingsFromPluginINIFile. Failed to add %s section to %s INI file. You should modify the file in Notepad and to add new resolution INI section", _ToString(std::wstring(szResolutionText)).c_str(), sIniFileName.c_str());
+				}
+				catch (...)
+				{
+					LogPrint("ERROR CNGPCarMenu.RefreshSettingsFromPluginINIFile. Failed to add %s section to %s INI file. You should modify the file in Notepad and to add new resolution INI section", _ToString(std::wstring(szResolutionText)).c_str(), sIniFileName.c_str());
+				}
+			}
+		}
 
 		this->m_screenshotReplayFileName = pluginINIFile.GetValue(L"Default", L"ScreenshotReplay", L"");
 		_Trim(this->m_screenshotReplayFileName);
-
-		RBRAPI_RefreshWndRect();
-		swprintf_s(szResolutionText, COUNT_OF_ITEMS(szResolutionText), L"%dx%d", g_rectRBRWndClient.right, g_rectRBRWndClient.bottom);
 
 		this->m_screenshotPath = pluginINIFile.GetValue(L"Default", L"ScreenshotPath", L"");
 		_Trim(this->m_screenshotPath);
@@ -417,11 +460,23 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile()
 			m_iMenuRBRTMOption = 0;
 		}
 
+		// RBRTM_CarPictureRect 
 		sTextValue = pluginINIFile.GetValue(szResolutionText, L"RBRTM_CarPictureRect", L"");
 		_StringToRect(sTextValue, &this->m_carRBRTMPictureRect);
-		
+
+		if (m_carRBRTMPictureRect.top == 0 && m_carRBRTMPictureRect.right == 0 && m_carRBRTMPictureRect.left == 0 && m_carRBRTMPictureRect.bottom == 0)
+		{
+			// Default rectangle area of RBRTM car preview picture if RBRTM_CarPictureRect is not set in INI file
+			RBRAPI_MapRBRPointToScreenPoint(000.0f, 244.0f, (int*)&m_carRBRTMPictureRect.left, (int*)&m_carRBRTMPictureRect.top);
+			RBRAPI_MapRBRPointToScreenPoint(451.0f, 461.0f, (int*)&m_carRBRTMPictureRect.right, (int*)&m_carRBRTMPictureRect.bottom);
+
+			LogPrint("RBRTM_CarPictureRect value is empty. Using the default value RBRTM_CarPictureRect=%d %d %d %d", m_carRBRTMPictureRect.left, m_carRBRTMPictureRect.top, m_carRBRTMPictureRect.right, m_carRBRTMPictureRect.bottom);
+		}
+
+		// RBRTM_CarPictureCropping (not yet implemented)
 		sTextValue = pluginINIFile.GetValue(szResolutionText, L"RBRTM_CarPictureCropping", L"");
 		_StringToRect(sTextValue, &this->m_carRBRTMPictureCropping);
+
 
 /*		sTextValue = pluginINIFile.GetValue(szResolutionText, L"RBRTM_Car3DModelInfoPosition", L"");
 		_StringToPoint(sTextValue, &this->m_carRBRTM3DModelInfoPosition);
@@ -481,50 +536,81 @@ void CNGPCarMenu::SaveSettingsToPluginINIFile()
 //
 bool CNGPCarMenu::InitRBRTMPluginIntegration()
 {
+	//DebugPrint("Enter CNGPCarMenu.InitRBRTMPluginIntegration");
+
 	try
 	{
-		// Try to lookup RBRTM plugin pointer only when all plugins have and RBR DX9 device is already initialized (this RefreshSettingsFromPluginINIFile method is called again when RBR DX9 is initialized)
-		if (m_iMenuRBRTMOption > 0 && m_iRBRTMPluginMenuIdx == 0 && g_pRBRIDirect3DDevice9 != nullptr)
-		{
-			if (m_carRBRTMPictureRect.left == 0 && m_carRBRTMPictureRect.top == 0 && m_carRBRTMPictureRect.right == 0 && m_carRBRTMPictureRect.bottom == 0)
+		// Try to lookup RBRTM plugin pointer only when all plugins have been loaded into RBR memory and RBR DX9 device is already initialized
+		if (m_iRBRTMPluginMenuIdx >= 0 && g_pRBRMenuSystem->currentMenuObj != m_pRBRPrevCurrentMenu && g_pRBRMenuSystem->currentMenuObj != nullptr)
+		{		
+			if (g_pRBRMenuSystem->currentMenuObj->numOfItems >= 7 && g_pRBRMenuSystem->currentMenuObj->firstSelectableItemIdx >= 4 && g_pRBRMenuSystem->currentMenuObj->pItemObj != nullptr)
 			{
-				// Default rectangle area of RBRTM car preview picture if RBRTM_CarPictureRect is not set in INI file
-				RBRAPI_MapRBRPointToScreenPoint(000.0f, 244.0f, (int*)&m_carRBRTMPictureRect.left,  (int*)&m_carRBRTMPictureRect.top);
-				RBRAPI_MapRBRPointToScreenPoint(451.0f, 461.0f, (int*)&m_carRBRTMPictureRect.right, (int*)&m_carRBRTMPictureRect.bottom);
-			}
-
-			if (g_pRBRPluginMenuSystem == nullptr) g_pRBRPluginMenuSystem = (PRBRPluginMenuSystem) * (DWORD*)(0x0165FC48);
-
-			// Check that RBRTM plugin is installed and loaded in RBR and it is the correct version
-			if (g_pRBRPluginMenuSystem != nullptr && g_pRBRPluginMenuSystem->pluginsMenuObj != nullptr && g_pRBRPluginMenuSystem->pluginsMenuObj->pItemObj != nullptr)
-			{
-				for (int idx = g_pRBRPluginMenuSystem->pluginsMenuObj->firstSelectableItemIdx; idx < g_pRBRPluginMenuSystem->pluginsMenuObj->numOfItems - 1; idx++)
+				if (g_pRBRPluginMenuSystem->pluginsMenuObj == nullptr)
 				{
-					if (g_pRBRPluginMenuSystem->pluginsMenuObj->pItemObj[idx] != nullptr && strncmp(((PRBRPluginMenuSystemItemObj)g_pRBRPluginMenuSystem->pluginsMenuObj->pItemObj[idx])->szPluginName, C_RBRTM_PLUGIN_NAME, sizeof(C_RBRTM_PLUGIN_NAME) - 1) == 0)
+					//
+					// Identify "Plugins" RBR menuObj
+					//
+					PRBRPluginMenuItemObj3 pItemArr = (PRBRPluginMenuItemObj3)g_pRBRMenuSystem->currentMenuObj->pItemObj[g_pRBRMenuSystem->currentMenuObj->firstSelectableItemIdx - 2];
+					if ((DWORD)pItemArr->szMenuTitleID > 0x00001000)
 					{
-						// Check version before accepting the RBRTM plugin
-						std::string sRBRVersion = GetFileVersionInformationAsString(m_sRBRRootDirW + L"\\Plugins\\RBRTM.DLL");
-						LogPrint("RBRTM plugin version %s detected", sRBRVersion.c_str());
+						if (g_pRBRPluginMenuSystem->optionsMenuObj == nullptr && strncmp(pItemArr->szMenuTitleID, "OPT_MAIN", 8) == 0)
+							g_pRBRPluginMenuSystem->optionsMenuObj = g_pRBRMenuSystem->currentMenuObj;
+						
+						if (wcsncmp(pItemArr->wszMenuTitleID, L"Plugins", 7) == 0)
+						{
+							//
+							// Check that RBRTM plugin is installed and the RBRTM is a supported version
+							//
+							g_pRBRPluginMenuSystem->pluginsMenuObj = g_pRBRMenuSystem->currentMenuObj;
 
-						if (sRBRVersion.compare("0.8.8.0") == 0)
-							m_iRBRTMPluginMenuIdx = idx; // Plugins menu index to RBRTM plugin (ie. RBR may load plugins in random order, so certain plugin is not always in the same position in the Plugins menu list)
+							for (int idx = g_pRBRPluginMenuSystem->pluginsMenuObj->firstSelectableItemIdx; idx < g_pRBRPluginMenuSystem->pluginsMenuObj->numOfItems - 1; idx++)
+							{
+								pItemArr = (PRBRPluginMenuItemObj3)g_pRBRPluginMenuSystem->pluginsMenuObj->pItemObj[idx];
+								DebugPrint("MenuItemName=%s", pItemArr->szItemName);
 
-						break;
+								if (g_pRBRPluginMenuSystem->pluginsMenuObj->pItemObj[idx] != nullptr && strncmp(pItemArr->szItemName, C_RBRTM_PLUGIN_NAME, sizeof(C_RBRTM_PLUGIN_NAME) - 1) == 0)
+								{
+									// Check version before accepting the RBRTM plugin
+									std::string sRBRVersion = GetFileVersionInformationAsString(m_sRBRRootDirW + L"\\Plugins\\RBRTM.DLL");
+									LogPrint("RBRTM plugin version %s detected", sRBRVersion.c_str());
+
+									if (sRBRVersion.compare("0.8.8.0") == 0)
+									{
+										// Plugins menu index to RBRTM plugin (ie. RBR may load plugins in random order, so certain plugin is not always in the same position in the Plugins menu list)							
+										if (::ReadOpCodePtr((LPVOID)0x1597F128, (LPVOID*)&m_pRBRTMPlugin) && m_pRBRTMPlugin != nullptr)
+											m_iRBRTMPluginMenuIdx = idx;
+										else
+											m_pRBRTMPlugin = nullptr;
+									}
+
+									break;
+								}
+							}
+
+							if (m_pRBRTMPlugin != nullptr)
+							{
+								LogPrint("RBRTM plugin integration enabled");
+							}
+							else
+							{
+								LogPrint("RBRTM plugin integration disabled. The plugin is not loaded or the version was not the expected RBRTM v0.88.0");
+								m_iRBRTMPluginMenuIdx = -1;
+							}
+						}
 					}
 				}
 			}
-
-			if (m_iRBRTMPluginMenuIdx > 0 && ::ReadOpCodePtr((LPVOID)0x1597F128, (LPVOID*)&m_pRBRTMPlugin) && m_pRBRTMPlugin != nullptr)
+			else if (g_pRBRPluginMenuSystem->pluginsMenuObj != nullptr && g_pRBRPluginMenuSystem->customPluginMenuObj == nullptr)
 			{
-				LogPrint("RBRTM plugin integration enabled");
-			}
-			else
-			{
-				LogPrint("RBRTM plugin integration disabled. The plugin is not loaded or the version was not the expected RBRTM v0.88");
-				m_pRBRTMPlugin = nullptr;
-				m_iRBRTMPluginMenuIdx = -1;
+				//
+				// Identify custom plugin menuObj (ie. menuObj where the parent menu is Plugins menuObj)
+				//
+				if (g_pRBRMenuSystem->currentMenuObj->prevMenuObj == g_pRBRPluginMenuSystem->pluginsMenuObj)
+					g_pRBRPluginMenuSystem->customPluginMenuObj = g_pRBRMenuSystem->currentMenuObj;
 			}
 		}
+
+		m_pRBRPrevCurrentMenu = g_pRBRMenuSystem->currentMenuObj;
 	}
 	catch (...)
 	{
@@ -532,6 +618,8 @@ bool CNGPCarMenu::InitRBRTMPluginIntegration()
 		m_pRBRTMPlugin = nullptr;
 		m_iRBRTMPluginMenuIdx = -1;
 	}
+
+	//DebugPrint("Exit CNGPCarMenu.InitRBRTMPluginIntegration");
 
 	return m_pRBRTMPlugin != nullptr;
 }
@@ -795,6 +883,57 @@ void CNGPCarMenu::InitCarSpecData_EASYRBR()
 	}
 
 	DebugPrint("Exit CNGPCarMenu.InitCarSpecData_EASYRBR");
+}
+
+
+//-------------------------------------------------------------------------------------------------
+// AudioFMOD support: Init the custom name of the installed AudioFMOD sound bank
+// Step 1: Read rbr\AudioFMOD\AudioFMOD.ini and bankName attribute in [CarXX] INI section
+//
+void CNGPCarMenu::InitCarSpecAudio()
+{
+	DebugPrint("Enter CNGPCarMenu.InitCarSpecAudio");
+
+	CSimpleIniW audioFMODINIFile;
+	std::string sPath;
+	sPath = m_sRBRRootDir + "\\AudioFMOD\\AudioFMOD.ini";
+
+	try
+	{
+		if (fs::exists(sPath))
+		{
+			WCHAR wszCarINISection[8];
+			std::wstring sTextValue;
+
+			audioFMODINIFile.LoadFile(sPath.c_str());
+
+			sTextValue = audioFMODINIFile.GetValue(L"Settings", L"enableFMOD", L"");
+			_Trim(sTextValue);
+			if (sTextValue.compare(L"1") == 0 || _iStarts_With(sTextValue, L"true", true))
+			{
+				// The loop uses menu idx order, not in car slot# idx order
+				for (int idx = 0; idx < 8; idx++)
+				{
+					swprintf_s(wszCarINISection, COUNT_OF_ITEMS(wszCarINISection), L"Car0%d", RBRAPI_MenuIdxToCarID(idx));
+					sTextValue = audioFMODINIFile.GetValue(wszCarINISection, L"bankName", L"");
+					_Trim(sTextValue);
+					if (!sTextValue.empty())
+						wcsncpy_s(g_RBRCarSelectionMenuEntry[idx].wszCarFMODBank, (std::wstring(L"FMOD ") + sTextValue).c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[idx].wszCarFMODBank));
+				}
+			}
+		}
+	}
+	catch (const fs::filesystem_error& ex)
+	{
+		LogPrint("ERROR CNGPCarMenu.InitCarSpecAudio. %s %s", sPath.c_str(), ex.what());
+	}
+	catch (...)
+	{
+		// Hmmm... Something went wrong
+		LogPrint("ERROR CNGPCarMenu.InitCarSpecAudio. %s reading failed", sPath.c_str());
+	}
+
+	DebugPrint("Exit CNGPCarMenu.InitCarSpecAudio");
 }
 
 
@@ -1269,8 +1408,6 @@ bool CNGPCarMenu::PrepareScreenshotReplayFile(int carID)
 // 
 bool CNGPCarMenu::ReadCarPreviewImageFromFile(int selectedCarIdx, float x, float y, float cx, float cy, IMAGE_TEXTURE* pOutImageTexture, DWORD dwFlags)
 {
-	// TODO. Read image size and re-scale and center the image if it is not in native resolution folder
-
 	std::string imgExtension = ".";
 	imgExtension = imgExtension + g_NGPCarMenu_ImageOptions[this->m_iMenuImageOption];  // .PNG or .BMP img file format
 	_ToLowerCase(imgExtension);
@@ -1297,7 +1434,9 @@ const char* CNGPCarMenu::GetName(void)
 	// Re-route RBR DXEndScene function to our custom function
 	if (g_bRBRHooksInitialized == FALSE && m_PluginState == T_PLUGINSTATE::PLUGINSTATE_UNINITIALIZED)
 	{
-		DebugPrint("CNGPCarMenu.GetName. First time initialization of RBR hooks");
+		m_PluginState = T_PLUGINSTATE::PLUGINSTATE_INITIALIZING;
+
+		DebugPrint("CNGPCarMenu.GetName. First time initialization of NGPCarMenu options and RBR interfaces");
 
 		try
 		{
@@ -1321,6 +1460,22 @@ const char* CNGPCarMenu::GetName(void)
 			// Do nothing even when removal of the replay template file failed. This is not fatal error at this point.
 		}
 
+		// Pointers to various RBR objects
+		if (g_pRBRGameConfig == nullptr)  g_pRBRGameConfig = (PRBRGameConfig) * (DWORD*)(0x007EAC48);
+		if (g_pRBRGameMode == nullptr)    g_pRBRGameMode = (PRBRGameMode) * (DWORD*)(0x007EAC48);
+		if (g_pRBRGameModeExt == nullptr) g_pRBRGameModeExt = (PRBRGameModeExt) * (DWORD*)(0x00893634);
+
+		if (g_pRBRCarInfo == nullptr)     g_pRBRCarInfo = (PRBRCarInfo) * (DWORD*)(0x0165FC68);
+		if (g_pRBRCarControls == nullptr) g_pRBRCarControls = (PRBRCarControls) * (DWORD*)(0x007EAC48); // +0x738 + 0x5C;
+
+		//if (pRBRCarMovement == nullptr) pRBRCarMovement = (PRBRCarMovement) *(DWORD*)(0x008EF660);  // This pointer is valid only when replay or stage is starting
+		if (g_pRBRGhostCarMovement == nullptr) g_pRBRGhostCarMovement = (PRBRGhostCarMovement)(DWORD*)(0x00893060);
+
+		if (g_pRBRMenuSystem == nullptr)  g_pRBRMenuSystem = (PRBRMenuSystem) * (DWORD*)(0x0165FA48);
+
+		// Fixed location to mapSettings struct (ie. not a pointer reference). 
+		g_pRBRMapSettings = (PRBRMapSettings)(0x1660800);
+
 		// Get a pointer to DX9 device handler before re-routing the RBR function
 		g_pRBRIDirect3DDevice9 = (LPDIRECT3DDEVICE9) *(DWORD*)(*(DWORD*)(*(DWORD*)0x007EA990 + 0x28) + 0xF4);
 
@@ -1331,6 +1486,7 @@ const char* CNGPCarMenu::GetName(void)
 		RBRAPI_RefreshWndRect();
 		// Pointer 0x493980 -> rbrHwnd? Can it be used to re-route WM messages to our own windows handler and this way to "listen" RBR key presses if this plugin needs key controls?
 
+		RefreshSettingsFromPluginINIFile(true);
 
 		// Init font to draw custom car spec info text (3D model and custom livery text)
 		int iFontSize = 12;
@@ -1341,29 +1497,22 @@ const char* CNGPCarMenu::GetName(void)
 		g_pFontCarSpecCustom->InitDeviceObjects(g_pRBRIDirect3DDevice9);
 		g_pFontCarSpecCustom->RestoreDeviceObjects();	
 
+
+		// If EASYRBRPath is not set then assume cars have been setup using RBRCIT car manager tool
+		if (m_easyRBRFilePath.empty()) InitCarSpecData_RBRCIT();
+		else InitCarSpecData_EASYRBR();
+		CalculateMaxLenCarMenuName();
+
+		InitCarSpecAudio();
+
 		// Read and refresh INI values now when RBR DX9 object is initialized
-		RefreshSettingsFromPluginINIFile();
+		//RefreshSettingsFromPluginINIFile();
 
 #if USE_DEBUG == 1
 		g_pFontDebug = new CD3DFont(L"Courier New", 11, 0);
 		g_pFontDebug->InitDeviceObjects(g_pRBRIDirect3DDevice9);
 		g_pFontDebug->RestoreDeviceObjects();
 #endif 
-
-		if (g_pRBRGameConfig == nullptr)  g_pRBRGameConfig = (PRBRGameConfig) *(DWORD*)(0x007EAC48);
-		if (g_pRBRGameMode == nullptr)    g_pRBRGameMode = (PRBRGameMode) * (DWORD*)(0x007EAC48);
-		if (g_pRBRGameModeExt == nullptr) g_pRBRGameModeExt = (PRBRGameModeExt) * (DWORD*)(0x00893634);
-
-		if (g_pRBRCarInfo == nullptr)     g_pRBRCarInfo = (PRBRCarInfo)  *(DWORD*)(0x0165FC68);
-		if (g_pRBRCarControls == nullptr) g_pRBRCarControls = (PRBRCarControls) *(DWORD*)(0x007EAC48); // +0x738 + 0x5C;
-
-		//if (pRBRCarMovement == nullptr) pRBRCarMovement = (PRBRCarMovement) *(DWORD*)(0x008EF660);  // This pointer is valid only when replay or stage is starting
-		if (g_pRBRGhostCarMovement == nullptr) g_pRBRGhostCarMovement = (PRBRGhostCarMovement)(DWORD*)(0x00893060);
-
-		if (g_pRBRMenuSystem == nullptr)  g_pRBRMenuSystem = (PRBRMenuSystem) *(DWORD*)(0x0165FA48);
-
-		// Fixed location to mapSettings struct (ie. not a pointer reference). 
-		g_pRBRMapSettings = (PRBRMapSettings)(0x1660800);
 
 		// Initialize custom car selection menu name and model name strings (change RBR string pointer to our custom string)
 		int idx;
@@ -1885,33 +2034,11 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 				//
 				// Car 3D Model info textbo
 				//
-
-				// X pos of additional custom car spec data scaled per resolution
-				// TODO. Try to find better routine to handle in-game vs runtime screen resolution re-mapping. The current solution is veeeeery clumsy
-				//
-/*				switch (g_rectRBRWndClient.right)
-				{
-					case 640:
-					case 800:
-					case 1024: rbrPosX = 218; break;
-
-					case 1440:
-					case 1680: rbrPosX = 235; break;
-
-					case 1280:
-					case 1360:
-					case 1366:
-					case 1920: rbrPosX = 245; break;
-
-					default:   rbrPosX = -1; break; // Do not try to re-scale automatically. Use brute-force "half of RBR wnd width"
-				}
-*/
-				//rbrPosX = 218.0f;
 				iFontHeight = g_pFontCarSpecCustom->GetTextHeight();
 
 				//RBRAPI_MapRBRPointToScreenPoint(rbrPosX, g_pRBRMenuSystem->menuImagePosY, &posX, &posY);
 				RBRAPI_MapRBRPointToScreenPoint(218.0f, g_pRBRMenuSystem->menuImagePosY, &posX, &posY);
-				posY -= 5 * iFontHeight;
+				posY -= 6 * iFontHeight;
 
 				//if (g_pRBRPlugin->m_car3DModelInfoPosition.x != 0)
 				//	posX = g_pRBRPlugin->m_car3DModelInfoPosition.x;  // Custom X-position
@@ -1942,6 +2069,9 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 
 				if (pCarSelectionMenuEntry->wszCarPhysicsCustomTxt[0] != L'\0')
 					g_pFontCarSpecCustom->DrawText(posX, (iCarSpecPrintRow++) * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsCustomTxt, 0);
+
+				if (pCarSelectionMenuEntry->wszCarFMODBank[0] != L'\0')
+					g_pFontCarSpecCustom->DrawText(posX, (iCarSpecPrintRow++) * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarFMODBank, 0);
 			}
 		}
 		else if(g_pRBRPlugin->m_iMenuRBRTMOption == 1)
@@ -1952,13 +2082,13 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 
 			bool bRBRTMCarSelectionMenu = false;
 
-			if (g_pRBRPlugin->m_pRBRTMPlugin != nullptr && g_pRBRPluginMenuSystem != nullptr && g_pRBRPlugin->m_pRBRTMPlugin->pCurrentRBRTMMenuObj != nullptr)
+			if (g_pRBRPluginMenuSystem->customPluginMenuObj != nullptr && g_pRBRPlugin->m_pRBRTMPlugin != nullptr && g_pRBRPlugin->m_pRBRTMPlugin->pCurrentRBRTMMenuObj != nullptr)
 			{
 				if (!g_pRBRPlugin->m_bRBRTMPluginActive && g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->customPluginMenuObj && g_pRBRPluginMenuSystem->pluginsMenuObj->selectedItemIdx == g_pRBRPlugin->m_iRBRTMPluginMenuIdx)
 					// RBRTM plugin activated via RBR Plugins in-game menu
 					g_pRBRPlugin->m_bRBRTMPluginActive = true;
-				else if (g_pRBRPlugin->m_bRBRTMPluginActive && (g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->pluginsMenuObj || g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->optionsMenuObj))
-					// Menu is back to RBR "Plugins" or "Options" menu list, so RBRTM cannot be the foreground plugin anymore
+				else if (g_pRBRPlugin->m_bRBRTMPluginActive && (g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->optionsMenuObj || g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->pluginsMenuObj || g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN]) )
+					// Menu is back in RBR Plugins/Options/Main menu, so RBRTM cannot be the foreground plugin anymore
 					g_pRBRPlugin->m_bRBRTMPluginActive = false;
 
 				// If the active custom plugin is RBRTM and RBR shows a custom plugin menuObj and the internal RBRTM menu is the Shakedown "car selection" menuID then prepare to render a car preview image
@@ -2012,12 +2142,15 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 
 						if (pCarSelectionMenuEntry->wszCarPhysics3DModel[0] != L'\0')
 							g_pFontCarSpecCustom->DrawText(g_pRBRPlugin->m_carRBRTMPictureRect.left + 2, g_pRBRPlugin->m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysics3DModel, 0);
-
 					}
 
-					// FIACategory, HP, Year, Weight, Transmission
+					// FIACategory, HP, Year, Weight, Transmission, AudioFMOD
 					iCarSpecPrintRow = 0;
 					posX = g_pRBRPlugin->m_carRBRTMPictureRect.right + 16;
+
+					if (pCarSelectionMenuEntry->wszCarFMODBank[0] != L'\0')
+						g_pFontCarSpecCustom->DrawText(posX, g_pRBRPlugin->m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarFMODBank, 0);
+
 					if (pCarSelectionMenuEntry->wszCarYear[0] != L'\0')
 						g_pFontCarSpecCustom->DrawText(posX, g_pRBRPlugin->m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarYear, 0);
 
@@ -2038,10 +2171,10 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 
 				}
 			}
-			else if (g_pRBRPlugin->m_iRBRTMPluginMenuIdx == 0)
+			else if (g_pRBRPlugin->m_iRBRTMPluginMenuIdx >= 0 && g_pRBRPluginMenuSystem->customPluginMenuObj == nullptr)
 			{
-				// RBRTM integration is enabled, but the RBRTM linking is not yet initialized. Do it now when RBR has already loaded all custom plugins. This is done only once per RBR process runtime.
-				// If initialization succeeds then m_iRBRTMPluginMenuIdx > 0 and m_pRBRTMPlugig != NULL, otherwise -1 and NULL.
+				// RBRTM integration is enabled, but the RBRTM linking is not yet initialized. Do it now when RBR has already loaded all custom plugins.
+				// If initialization succeeds then m_iRBRTMPluginMenuIdx > 0 and m_pRBRTMPlugin != NULL and g_pRBRPluginMenuSystem->customPluginMenuObj != NULL, otherwise PluginMenuIdx=-1
 				g_pRBRPlugin->InitRBRTMPluginIntegration();
 			}
 		}
@@ -2069,43 +2202,13 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"Mode %d %d.  Img (%f,%f)(%f,%f)  hWnd=%x", g_pRBRGameMode->gameMode, g_pRBRGameModeExt->gameModeExt, g_pRBRMenuSystem->menuImagePosX, g_pRBRMenuSystem->menuImagePosY, g_pRBRMenuSystem->menuImageWidth, g_pRBRMenuSystem->menuImageHeight, (int)creationParameters.hFocusWindow);
 	g_pFontDebug->DrawText(1, 1 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, D3DFONT_CLEARTARGET);
 
-	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"Win=(%d,%d)(%d,%d) Client=(%d,%d)(%d,%d)", 
-		wndRect.left, wndRect.top, wndRect.right, wndRect.bottom,
-		wndClientRect.left, wndClientRect.top, wndClientRect.right, wndClientRect.bottom);
-	g_pFontDebug->DrawText(1, 2 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, D3DFONT_CLEARTARGET);
-
-
+/*
 	int x, y;
 	RBRAPI_MapRBRPointToScreenPoint(451.0f, 244.0f, &x, &y);
 	g_pFontDebug->DrawText(x, y, C_DEBUGTEXT_COLOR, "XX", D3DFONT_CLEARTARGET);
 	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"(451,244)=(%d,%d)", x, y);
 	g_pFontDebug->DrawText(x, y + (20 * 1), C_DEBUGTEXT_COLOR, szTxtBuffer, D3DFONT_CLEARTARGET);
-
-	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"ScreenCenter=(%d,%d)", wndClientRect.right / 2, wndClientRect.bottom / 2);
-	g_pFontDebug->DrawText(x, y + (20 * 3), C_DEBUGTEXT_COLOR, szTxtBuffer, D3DFONT_CLEARTARGET);
-
-	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"GameRes=(%d,%d)", g_pRBRGameConfig->resolutionX, g_pRBRGameConfig->resolutionY);
-	g_pFontDebug->DrawText(x, y + (20 * 4), C_DEBUGTEXT_COLOR, szTxtBuffer, D3DFONT_CLEARTARGET);
-
-
-	RBRAPI_MapRBRPointToScreenPoint(451.0f, 461.0f, &x, &y);
-	g_pFontDebug->DrawText(x, y, C_DEBUGTEXT_COLOR, "XX", D3DFONT_CLEARTARGET);
-	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"(451,461)=(%d,%d)", x, y);
-	g_pFontDebug->DrawText(x, y + (20 * 1), C_DEBUGTEXT_COLOR, szTxtBuffer, D3DFONT_CLEARTARGET);
-
-	RBRAPI_MapRBRPointToScreenPoint(0.0f, 240.0f, &x, &y);
-	g_pFontDebug->DrawText(x, y, C_DEBUGTEXT_COLOR, "XX", D3DFONT_CLEARTARGET);
-	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"(0,240)=(%d,%d)", x, y);
-	g_pFontDebug->DrawText(x, y + (20 * 1), C_DEBUGTEXT_COLOR, szTxtBuffer, D3DFONT_CLEARTARGET);
-
-	RBRAPI_MapRBRPointToScreenPoint(640.0f, 240.0f, &x, &y);
-	g_pFontDebug->DrawText(x-20, y, C_DEBUGTEXT_COLOR, "XX", D3DFONT_CLEARTARGET);
-	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"(0,240)=(%d,%d)", x, y);
-	g_pFontDebug->DrawText(x-200, y + (20 * 1), C_DEBUGTEXT_COLOR, szTxtBuffer, D3DFONT_CLEARTARGET);
-
-
-	//swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"Mapped=(%d,%d)(%d,%d) GameRes=(%d,%d)", wndMappedRect.left, wndMappedRect.top, wndMappedRect.right, wndMappedRect.bottom, g_pRBRGameConfig->resolutionX, g_pRBRGameConfig->resolutionY);
-	//g_pFontDebug->DrawText(1, 3 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, 0);
+*/
 
 #endif
 

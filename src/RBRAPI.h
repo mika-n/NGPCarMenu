@@ -369,6 +369,38 @@ typedef struct {
 typedef RBRMenuItemCarSelectionCarSpecTexts* PRBRMenuItemCarSelectionCarSpecTexts;
 
 
+// RBRMenuObj->pItemObj[3] obj (menu title)
+typedef struct {
+#pragma pack(push,1)
+	BYTE pad1[0x18];				// 0x00
+	union
+	{
+		LPCSTR szMenuTitleID;		// 0x18		(Title identifier, not localized. Example: Options="OPT_MAIN" Plugins=L"Plugins")
+		LPCWSTR wszMenuTitleID;
+	};
+	union
+	{
+		LPCWSTR wszMenuTitleName;	// 0x1C		(localised menuTitle. Example: Options=L"Main Options"  Plugins=dword 0x00000010)
+		DWORD  dwTitleAttribute;
+	};
+
+	LPCSTR szItemName;				// 0x20		(Name of the plugin in Plugins menuObj)
+#pragma pack(pop)
+} RBRPluginMenuItemObj3;
+typedef RBRPluginMenuItemObj3* PRBRPluginMenuItemObj3;
+
+
+// MenuObj->pItemObj pointer (obsolete?)
+typedef struct {
+#pragma pack(push,1)
+	BYTE pad1[0x24];       // 0x00
+	LPCSTR szMenuItemID;   // 0x24
+	LPCSTR szMenuItemName; // 0x28
+#pragma pack(pop)
+} RBRPluginMenuItemObj;
+typedef RBRPluginMenuItemObj* PRBRPluginMenuItemObj;
+
+
 // Menu object (RBRMenuPoint has references to these objects)
 struct RBRMenuObj;
 typedef struct RBRMenuObj* PRBRMenuObj;
@@ -379,8 +411,8 @@ struct RBRMenuObj {
 	BYTE pad1[0x04];
 	PRBRMenuObj rootMenuObj;			// 0x04 (always points to PRBRMenuPoint->rootMenuObj?)
 	PRBRMenuObj prevMenuObj;			// 0x08 (ESC menu navigation key returns to this menu)
-	LPVOID* pItemObj;                   // 0x0C (pointer to a array of menu item objects. Array of "numOfItems" items)
-	RBRMenuItemPosition* pItemPosition;	// 0x10 (pointer to a array of menu item display properties like x/y pos and width/height)
+	LPVOID* pItemObj;                    // 0x0C (pointer to a array of menu item objects. Array of "numOfItems" items)
+	PRBRMenuItemPosition pItemPosition;	// 0x10 (pointer to a array of menu item display properties like x/y pos and width/height)
 	__int32 numOfItems;					// 0x14 (numOfItems - firstSelectableItemIdx = total num of items. Sometimes some items may be hidden, so total num doesn't always match with the visible items)
 	__int32 selectedItemIdx;			// 0x18 (Index of the currently selected menu item if the firstItemIdx >=0, relative to firstItemIdx)
 	__int32 firstSelectableItemIdx;		// 0x1C (Index of the first selectable menu item or <0 if undefined. selectedItemIdx-firstItemIdx is the actual selected menu line in 0..N range)
@@ -503,26 +535,13 @@ typedef struct {
 typedef RBRMenuSystem* PRBRMenuSystem;
 
 
-// Offset 0x165FC48
+// Custom helper struct for plugins menu structure
 typedef struct {
-#pragma pack(push,1)
-	BYTE pad1[0x03E8];			// 0x00
-	PRBRMenuObj optionsMenuObj; // 0x3E8 (RBR Options menu)
-	BYTE pad2[0x43C - 0x3E8 - sizeof(PRBRMenuObj)];
-	LPVOID customPluginMenuObj; // 0x43C (RBRMenuSystem.currentMenuObj points to this value when a custom plugin menu is open and not a standard RBR in-game menu)
-	PRBRMenuObj pluginsMenuObj; // 0x440 (RBR Plugins menuObj. Lists all custom plugin names
-#pragma pack(pop)
+	PRBRMenuObj pluginsMenuObj;			// Plugins menuObj
+	PRBRMenuObj customPluginMenuObj;    // Custom menuObj managed by a plugin (shared by all plugins). This menu has pluginsMenuObj as a prevMenuObj value.
+	PRBRMenuObj optionsMenuObj;			// Options menuObj (pressing "ESC" in a plugin takes RBR back to this menu instead of Plugins menu even when custom plugin menu has Plugins obj as a parent menu. Weird)
 } RBRPluginMenuSystem;
 typedef RBRPluginMenuSystem* PRBRPluginMenuSystem;
-
-// pluginsMenuObj->pItemObj pointers
-typedef struct {
-#pragma pack(push,1)
-	BYTE pad1[0x20];     // 0x00
-	LPCSTR szPluginName; // 0x20
-#pragma pack(pop)
-} RBRPluginMenuSystemItemObj;
-typedef RBRPluginMenuSystemItemObj* PRBRPluginMenuSystemItemObj;
 
 
 // Global RBR object pointers

@@ -5,20 +5,21 @@ Custom plugin for **Richard Burns Rally game (RBR v1.02 SSE)** to improve the "S
 The original "Select Car" menu within the RBR game has various problems:
 - The preview image of the car (garage) doesn't match with the custom car model.
 - The car specification window shows information about original cars even when custom car models have been installed (engine, transmission, year).
-- The car specification window doesn't show additional information potentially available in custom car models (FIA category, creator and version of 3D car model).
+- The car specification window doesn't show additional information potentially available in custom car models (FIA category, creator and version of 3D car model, AudioFMOD sound bank).
 - The car menu name shows the original car name even when RBR would use custom cars published by WorkerBee (NGP models) or other custom 3D car models. 
 - The menu and model name has room for only short car model names (number of characters).
 
 This **NGPCarMenu RBR plugin solves these problems** by doing following enhancements to the built-in "Select Car" menu:
 - Shows a custom car preview image using the actual 3D model of custom car models.
 - Shows the actual car specs information from a NGP model (engine HP, number of gears, 4WD/FWD/RWD, FIA category, classification year, etc).
-- Shows more information about installed 3D car models, liveries and authors (3D car model creators definitely deserve more attention).
+- Shows more information about installed 3D car models, liveries, AudioFMOD sound banks and authors (3D car model creators definitely deserve more attention).
 - Generates new car preview images from the currently installed 3D car models (*Options/Plugins/NGPCarMenu/Create car image* in-game menu command).
 - Customized car and camera position to take automatic screenshots of 3D car models (well, not yet implemented in INI config file. Car and cam position is pre-set in the plugin code. Maybe the next version moves this setting to INI file).
 - Longer car model names in car specs window (as much there is room on the screen).
 - Longer car menu names (up to 30 chars).
+- RBRTM plugin integration (ie. show the information and a preview car image in RBRTM car selection menu).
 
-The plugin supports also **RBRTM Czech Tournament** plugin (V0.88). NGPCarMenu plugin shows the car preview image and car details in Shakedown and OnlineTournament "car selection" menus within RBRTM.
+The plugin supports **RBRTM Czech Tournament** plugin (V0.88) integration. Use NGPCarMenu in-game menu or INI file to enable/disable this integration.
 
 Note! NGPCarMenu supports only the latest RichardBurnsRally_SSE.exe v1.02 version for Windows OS (haven't tested this under Wine/Linux, but the plugin probably works there also).
 
@@ -41,7 +42,7 @@ Note! NGPCarMenu supports only the latest RichardBurnsRally_SSE.exe v1.02 versio
 - Now you are ready to race! Go to *"Quick Rally/Multiplayer/Season"* in-game menu and verify that you can see the new information and car preview images in *"Select Car"* menu.
 - If you use RBRTM online tournament plugin then enable RBRTM_Integration option. If the car preview image is drawn at wrong location in RBRTM menus then check resolution specific RBRTM_CarPictureRect option in NGPCarMenu.ini file. Set correct rectangle coordinates where the car preview image should be dran (pro tip. Take fullscreen screenshot and use Paint app to see the correct coordinates of the bottom left "empty rectangle area" in Shakedown menu).
 
-The NGPCarMenu.ini file has various screen resolution specific options. There are default values for the most common resolutions, but if the resolution you use is not there then you should add new resolution entry and set a value to at least ScreenshotCropping option. This option defines the rectangle area used in a car preview image screenshot. If you are upgrading from an old version then your existing NGPCarMenu.ini file remains as it is and all new INI options use a default value. Refer to NGPCarMenu.ini.sample for more information about new options.
+The NGPCarMenu.ini file has various screen resolution specific options. There are default values for the most common resolutions, but if the resolution you use is not there the plugin adds it there automatically with default values. Refer to NGPCarMenu.ini.sample for more information about new options.
 
 Note! If you use Windows Explorer integrated unzip tool to unzip the package then rbr\Plugins\NGPCarMenu.dll file may be in "blocked" state in some PC environments because the file was downloaded from Internet. To solve this issue choose properties of NGPCarMenu.dll file (right mouse button click and Properties popup menu) and untick "blocked" option. Or use better zip tools like 7-Zip.org or WinRAR to unzip packages.
 
@@ -84,8 +85,8 @@ rbr\Plugins\NGPCarMenu.ini options (see the INI file for more details):
 - **Can I use this plugin with the original RBR car models without NGP plugin?** Hmmm... Can't see a single reason why NGP car models are not used in RBR. Anyway, in that case you don't need this plugin because the original game has all the information needed for original car models.
 - **What are rbr\plugins\NGPCarMenu\preview\1920x1080 and 1366x768 folders?** This plugin saves new car preview images per resolution (the same preview image may not be the best one for all native resolutions). The *preview* folder has a subfolder which matches the resolution you use (the plugin creates the folder if it is missing). Also, NGPCarMenu.ini file should have a configuration entry block per resolution.
 - **Why the "Create car image" replay sometimes continues to run as a normal replay video after the last car?** It could happen if the last generated car is actually the same carID used while recording the replay video. In this case you can quit the replay by pressing ESC key.
-- **Why the car preview image is in wrong location in RBRTM menus?** The current version of NGPCarMenu has a crappy routine to map RBR in-game coordinates to native screen resolution coordinates. Some resolutions are not handled correctly. To fix the issue tweak RBRTM_CarPictureRect option in NGPCarMenu.ini file and set better coordinates (left top right bottom).
-- **Why the car preview image in RBRTM menu has wrong aspect ratio in some resolutions?** The current version of NGPCarMenu has a crappy routine to map RBR in-game coordinates to native screen resolution coordinates. Also, the RBRTM_CarPictureCropping option is not yet implemented which would help to scale portion of the original preview image in correct aspect ratio.
+- **Why the car preview image is in wrong location in RBRTM menus?** The The plugin uses default coordinates to draw the preview image. If the default value is not "perfect" then tweak RBRTM_CarPictureRect option in NGPCarMenu.ini file (left top right bottom screen coordinate values).
+- **Why the car preview image in RBRTM menu has wrong aspect ratio in some resolutions?** The plugin tries to fit the original image inside the speficied draw rectangle (RBRTM_CarPictureRect). If the original picture size is too big then the image is scaled to fit the draw area.
 
 - **What is the folder structure used by this plugin?** The DLL and INI plugin files must be in the Plugins directory under the RBR game root folder. Replays RBR folder should have a replay file set in *ScreenshotReplay* option. The file hierarchy is something like this:
    c:\apps\richardBurnsRally\plugins\NGPCarMenu.dll
