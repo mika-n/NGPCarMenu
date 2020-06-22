@@ -1,5 +1,7 @@
 #include "detourxs.h"
 
+// 
+
 DetourXS::DetourXS()
 {
 	m_detourLen = 0;
@@ -12,11 +14,11 @@ DetourXS::DetourXS()
 	m_lpbFuncDetour = nullptr;
 	m_OrigJmp = Absolute;
 	m_TrampJmp = Absolute;
+	m_hFirstHookEvent = nullptr;
 }
 
-DetourXS::DetourXS(LPVOID lpFuncOrig, LPVOID lpFuncDetour)
+DetourXS::DetourXS(LPVOID lpFuncOrig, LPVOID lpFuncDetour) : DetourXS()
 {
-	m_detourLen = 0;
 	Create(lpFuncOrig, lpFuncDetour);
 }
 
@@ -30,7 +32,7 @@ BOOL DetourXS::Create(const LPVOID lpFuncOrig, const LPVOID lpFuncDetour)
 	DWORD dwProt;
 
 	// Already created, need to Destroy() first
-	if(m_Created == TRUE)
+	if (m_Created == TRUE)
 	{
 		return FALSE;
 	}
@@ -47,7 +49,7 @@ BOOL DetourXS::Create(const LPVOID lpFuncOrig, const LPVOID lpFuncDetour)
 	m_TrampJmp = GetJmpType(m_trampoline.data(), m_lpbFuncOrig);
 
 	// Determine detour length
-	if(m_detourLen == 0 && (m_detourLen = GetDetourLenAuto(m_lpFuncOrig, m_OrigJmp)) == 0)
+	if (m_detourLen == 0 && (m_detourLen = GetDetourLenAuto(m_lpFuncOrig, m_OrigJmp)) == 0)
 	{
 		return FALSE;
 	}
@@ -62,16 +64,25 @@ BOOL DetourXS::Create(const LPVOID lpFuncOrig, const LPVOID lpFuncDetour)
 	m_trampoline.resize(m_detourLen + m_TrampJmp);
 
 	// Enable full access for when tramp is executed
-	if(VirtualProtect(m_trampoline.data(), m_trampoline.size(), PAGE_EXECUTE_READWRITE, &dwProt) == FALSE) { return FALSE; }
+	if (VirtualProtect(m_trampoline.data(), m_trampoline.size(), PAGE_EXECUTE_READWRITE, &dwProt) == FALSE) { return FALSE; }
 
 	// Write jump from orig to detour
-	if(VirtualProtect(m_lpFuncOrig, m_detourLen, PAGE_EXECUTE_READWRITE, &dwProt) == FALSE) { return FALSE; }
+	if (VirtualProtect(m_lpFuncOrig, m_detourLen, PAGE_EXECUTE_READWRITE, &dwProt) == FALSE) { return FALSE; }
 	memset(m_lpFuncOrig, 0x90, m_detourLen);
 	WriteJump(m_lpbFuncOrig, m_lpbFuncDetour);
 	VirtualProtect(m_lpFuncOrig, m_detourLen, dwProt, &dwProt);
 
 	// Flush cache to make sure CPU doesn't execute old instructions
 	FlushInstructionCache(GetCurrentProcess(), m_lpFuncOrig, m_detourLen);
+
+	// Check if this was the first hook to this lpFuncOrig pointer (if the named event with the speficied func pointer already exists then this was NOT the first hook in the original func)
+	char szBuffer[32];
+	snprintf(szBuffer, sizeof(szBuffer), "_RBR_DetourXSFuncPtr_%08x", (DWORD)lpFuncOrig);
+	HANDLE hEvent = CreateEvent(nullptr, FALSE, FALSE, szBuffer);
+	if (hEvent != nullptr && GetLastError() == ERROR_ALREADY_EXISTS)
+		CloseHandle(hEvent);			// Not the first hook. Release the handle because the first instance keeps it open until that hook is destroyed
+	else
+		m_hFirstHookEvent = hEvent;		// The first hook. Keep the handle open to let other RBR plugins hooking the same original func that those were not the first one
 
 	m_Created = TRUE;
 	return TRUE;
@@ -80,9 +91,18 @@ BOOL DetourXS::Create(const LPVOID lpFuncOrig, const LPVOID lpFuncDetour)
 BOOL DetourXS::Destroy()
 {
 	DWORD dwProt;
-	VirtualProtect(m_lpFuncOrig, m_detourLen, PAGE_EXECUTE_READWRITE, &dwProt);
-	memcpy(m_lpFuncOrig, m_trampoline.data(), m_detourLen);
-	VirtualProtect(m_lpFuncOrig, m_detourLen, dwProt, &dwProt);
+
+	// If this was the first hook in the lpFuncOrig function then restore the original RBR function code. If there are other hooks on top of 
+	// the first hook then those won't restore the JMP code because it would not restore the original RBR code (ie. trampoline points to the previous pluing doing a RBR detouring).
+	if (m_hFirstHookEvent != nullptr)
+	{
+		VirtualProtect(m_lpFuncOrig, m_detourLen, PAGE_EXECUTE_READWRITE, &dwProt);
+		memcpy(m_lpFuncOrig, m_trampoline.data(), m_detourLen);
+		VirtualProtect(m_lpFuncOrig, m_detourLen, dwProt, &dwProt);
+
+		CloseHandle(m_hFirstHookEvent);
+		m_hFirstHookEvent = nullptr;
+	}
 
 	m_trampoline.clear();
 	m_detourLen = 0;

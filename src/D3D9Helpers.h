@@ -18,8 +18,8 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 
-#ifndef _D3D9HELPERS_H
-#define _D3D9HELPERS_H
+#ifndef _D3D9HELPERS_H_
+#define _D3D9HELPERS_H_
 
 //#define WIN32_LEAN_AND_MEAN			// Exclude rarely-used stuff from Windows headers
 //#include <windows.h>
@@ -81,8 +81,10 @@ extern std::wstring _ToUTF8WString(const std::wstring & s);// Convert multibyte 
 
 extern std::wstring _DecodeUtf8String(const std::wstring & s_encoded); // Decode UTF8 encoded string to "normal" string value
 
-extern inline void _ToLowerCase(std::string & s);       // Convert string to lowercase letters (in-place, so the original str in the parameter is converted)
-extern inline void _ToLowerCase(std::wstring & s);      // Convert wstring to lowercase letters (in-place)
+extern inline void _ToLowerCase(std::string& s);       // Convert string to lowercase letters (in-place, so the original str in the parameter is converted)
+extern inline void _ToLowerCase(std::wstring& s);      // Convert wstring to lowercase letters (in-place)
+
+extern int _SplitString(const std::string& s, std::vector<std::string>& splittedTokens, std::string sep, bool caseInsensitiveSep = true, bool sepAlreadyLowercase = false, int maxTokens = 64); // Split string to several tokens by using sep string as separator
 
 extern std::string GetFileVersionInformationAsString(const std::wstring & fileName);
 

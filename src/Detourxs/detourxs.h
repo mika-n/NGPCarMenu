@@ -3,6 +3,8 @@
 	Revision 1 (29/03/2011): Fixed potential bug with relative near recursion in 64bit
 	Revision 2 (30/03/2011): Couple of semantic changes, added FlushInstructionCache
 	dominictobias.com
+
+	Revision 3 (06/2020) by mika-n: Modifications to support multiple hooks on the same function and restoring only the original hook (Richard Burns Rally plugin specific support)
 */
 
 #ifndef __DETOURXS_H
@@ -76,6 +78,11 @@ public:
 		m_detourLen = len;
 	}
 
+	BOOL IsFirstHook()
+	{
+		return m_hFirstHookEvent != nullptr;
+	}
+
 private:
 	LPVOID m_lpFuncOrig;
 	LPVOID m_lpFuncDetour;
@@ -86,6 +93,8 @@ private:
 	std::vector<BYTE> m_trampoline;
 	size_t m_detourLen;
 	BOOL m_Created;
+
+	HANDLE m_hFirstHookEvent;  // Event handle to keep track of if the lpFuncOrig was already hooked by another object in any of the other processes/DLL plugins. NULL = Not the first hook. NULL != The first hook.
 };
 
 #endif // __DETOURXS_H

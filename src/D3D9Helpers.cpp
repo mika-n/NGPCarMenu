@@ -47,9 +47,9 @@
 
 #include "D3D9Helpers.h"
 
-#if USE_DEBUG == 1
-#include "NGPCarMenu.h"
-#endif
+//#if USE_DEBUG == 1
+//#include "NGPCarMenu.h"
+//#endif
 
 namespace fs = std::filesystem;
 
@@ -198,7 +198,7 @@ std::string _ToUTF8String(const wchar_t* wszTextBuf, int iLen)
 	return sResult;
 }
 
-std::string _ToUTF8String(const std::wstring& s)
+inline std::string _ToUTF8String(const std::wstring& s)
 {
 	return ::_ToUTF8String(s.c_str(), (int)s.size());
 }
@@ -215,12 +215,12 @@ std::wstring _ToUTF8WString(const char* szTextBuf, int iLen)
 	return sResult;
 }
 
-std::wstring _ToUTF8WString(const std::string& s)
+inline std::wstring _ToUTF8WString(const std::string& s)
 {
 	return ::_ToUTF8WString(s.c_str(), (int)s.size());
 }
 
-std::wstring _ToUTF8WString(const std::wstring& s)
+inline std::wstring _ToUTF8WString(const std::wstring& s)
 {
 	//return ::_ToWString(::_ToUTF8String(s.c_str(), (int)s.size()));
 	return ::_ToWString(::_ToUTF8String(s));
@@ -281,6 +281,58 @@ inline void _ToLowerCase(std::string& s)
 inline void _ToLowerCase(std::wstring& s)
 {
 	transform(s.begin(), s.end(), s.begin(), ::tolower);
+}
+
+// Split string borrowed from the excellent PyString (Python string functions for std C++) string helper routine pack. Slightly modified version here.
+// PyString copyright notice: Copyright (c) 2008-2010, Sony Pictures Imageworks Inc. All rights reserved.
+// https://github.com/imageworks/pystring/blob/master/pystring.cpp
+int _SplitString(const std::string& s, std::vector<std::string>& splittedTokens, std::string sep, bool caseInsensitiveSep, bool sepAlreadyLowercase, int maxTokens)
+{
+	splittedTokens.clear();
+	if (s.empty())
+		return 0;
+
+	if (sep.size() == 0)
+	{
+		splittedTokens.push_back(s);
+		return 1;
+	}
+
+	if (caseInsensitiveSep && !sepAlreadyLowercase)
+		_ToLowerCase(sep);
+
+	std::string::size_type i, j, len = s.size(), n = sep.size();
+	std::string s_substr;
+	char s_char;
+
+	i = j = 0;
+	while (i + n <= len)
+	{
+		s_char = (caseInsensitiveSep ? tolower(s[i]) : s[i]);
+		if (s_char == sep[0])
+		{
+			s_substr = s.substr(i, n);
+			if (caseInsensitiveSep) 
+				_ToLowerCase(s_substr);
+
+			if (s_substr == sep)
+			{
+				if (maxTokens-- <= 0)
+					break;
+
+				splittedTokens.push_back(s.substr(j, i - j));
+				i = j = i + n;
+			}
+		}
+		else
+		{
+			i++;
+		}
+	}
+
+	splittedTokens.push_back(s.substr(j, len - j));
+
+	return splittedTokens.size();
 }
 
 
@@ -422,7 +474,7 @@ void DebugOpenFile(bool bOverwriteFile = false)
 				::PathRemoveFileSpecW(szModulePath);
 
 				g_sLogFileName = szModulePath;
-				g_sLogFileName = g_sLogFileName + L"\\Plugins\\NGPCarMenu\\NGPCarMenu.log";
+				g_sLogFileName = g_sLogFileName + L"\\Plugins\\" L"" VS_PROJECT_NAME L"\\" L"" VS_PROJECT_NAME L".log";
 
 #ifndef USE_DEBUG
 				// Release build creates always a new empty logfile when the logfile is opened for the first time during a process run
@@ -475,8 +527,8 @@ void DebugPrintFunc_CHAR_or_WCHAR(LPCSTR szTxtBuf, LPCWSTR wszTxtBuf, int iMaxCh
 			if (bFirstMessage)
 			{
 				// Mark the output debug logfile as UTF8 file (just in case some debug msg contains utf8 chars)
-				*g_fpLogFile << ::_ToUTF8String(std::wstring(L"NGPCarMenu.dll "));
-				*g_fpLogFile << (GetFileVersionInformationAsString(g_sLogFileName + L"\\..\\..\\NGPCarMenu.dll")).c_str() << std::endl;
+				*g_fpLogFile << ::_ToUTF8String(std::wstring(L"" VS_PROJECT_NAME " "));
+				*g_fpLogFile << (GetFileVersionInformationAsString(g_sLogFileName + L"\\..\\..\\" L"" VS_PROJECT_NAME L".dll")).c_str() << std::endl;
 			}
 				
 			*g_fpLogFile << szTxtTimeStampBuf;

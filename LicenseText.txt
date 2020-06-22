@@ -40,6 +40,9 @@ This work contains components with own licence texts. Please refer to those comp
  - DetourXS, Dominic Tobias. Re-routing function pointers. https://dominictobias.com
  - SharedFont, Agrippa1994. D3D9 compatible font class. https://github.com/agrippa1994/DX9-Overlay-API
  - SimpleINI, Brodie Thiesfield. Ascii and UTF8 INI file reading. https://github.com/brofield/simpleini
+ - PyString, Sony Pictures Imageworks Inc. Couple string helper routines. https://github.com/imageworks/pystring
  - The plugin interface files published by the original Richard Burns Rally author. Warthog Games and/or SCi Games
 
 Thank you for making and publishing such great components for open source community.
+
+https://github.com/mika-n/NGPCarMenu

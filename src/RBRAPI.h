@@ -39,7 +39,6 @@
 
 #include "IPlugin.h"
 #include "IRBRGame.h"
-
 #include "D3D9Font\D3DFont.h"		// D3DXVECTOR3
 
 
@@ -50,6 +49,7 @@ union BYTEBUFFER_FLOAT {
 #pragma pack(push,1)
 	float fValue;
 	BYTE byteBuffer[sizeof(float)];
+	DWORD dwordBuffer;
 #pragma pack(pop)
 };
 
@@ -85,11 +85,16 @@ extern RECT g_rectRBRWndMapped;		// RBR client area re-mapped to screen points (
 
 //--------------------------------------------------------------------------------------------------
 
+inline float DWordBufferToFloat(DWORD dwValue) { BYTEBUFFER_FLOAT byteFloat; byteFloat.dwordBuffer = dwValue; return byteFloat.fValue; }
+
 extern BOOL WriteOpCodeHexString(const LPVOID writeAddr, LPCSTR sHexText);
 extern BOOL WriteOpCodeBuffer(const LPVOID writeAddr, const BYTE* buffer, const int iBufLen);
 extern BOOL WriteOpCodePtr(const LPVOID writeAddr, const LPVOID ptrValue);
 
 extern BOOL ReadOpCodePtr(const LPVOID readAddr, LPVOID* ptrValue);
+
+extern BOOL RBRAPI_InitializeObjReferences();
+extern BOOL RBRAPI_InitializeRaceTimeObjReferences();
 
 extern int RBRAPI_MapCarIDToMenuIdx(int carID);     // 00..07 carID is not the same as order of car selection items
 extern int RBRAPI_MenuIdxToCarID(int menuIdx);
@@ -145,8 +150,8 @@ typedef struct {
 	__int32   raceStarted;   // 0x08 (1=Race started. Start countdown less than 5 secs, so false start possible, 0=Race not yet started or start countdown still more than 5 secs and gas pedal doesn't work yet)
 	float speed;			 // 0x0C
 	float rpm;				 // 0x10
-	float temp;				 // 0x14
-	float turbo;			 // 0x18. In Pascals?
+	float temp;				 // 0x14 (water temp in celsius?)
+	float turbo;			 // 0x18. (pressure, in Pascals?)
 	__int32 unknown2;		 // 0x1C
 	float distanceFromStartControl; // 0x20
 	float distanceTravelled; // 0x24
@@ -160,7 +165,7 @@ typedef struct {
 	__int32 unknown5;        // 0x14C
 	__int32 drivingDirection;// 0x150. 0=Correct direction, 1=Car driving to wrong direction
 	float fadeWrongWayMsg;   // 0x154. 1 when "wrong way" msg is shown
-
+							 //	TODO: 0x15C Some time attribute? Total race time? 
 	BYTE  pad3[0x170 - 0x154 - sizeof(float)];
 	__int32 gear;		     // 0x170. 0=Reverse,1=Neutral,2..6=Gear-1 (ie. value 3 means gear 2)
 
@@ -174,7 +179,7 @@ typedef struct {
 	float unknown6;			 // 0x260
 
 	BYTE pad6[0x2C4 - 0x260 - sizeof(float)];
-	float unknown7;			 // 0x2C4	stageFinished?  0=Stage not started or running, 1=Stage finished (int or float?) (?)
+	float unknown7;			 // 0x2C4	TODO: stageFinished?  0=Stage not started or running, 1=Stage finished (int or float?) (?)
 
 	BYTE pad7[0x758 - 0x2C4 - sizeof(float)];
 	PRBRCamera1	pCamera;	 // 0x758  Pointer to camera data
@@ -191,8 +196,8 @@ typedef RBRCarInfo* PRBRCarInfo;
 typedef struct {
 #pragma pack(push,1)
 	BYTE pad1[0x100];
-	D3DXQUATERNION carQuat;			// 0x100..0x10C (4 floats). Car look direction
-	D3DMATRIX      carMapLocation;	// 0x110..0x148 (4x4 matrix of floats). _41.._44 is the current map position of the car
+	D3DXQUATERNION carQuat;			// 0x100..0x10C (4 floats). Car look direction x,y,z,w
+	D3DMATRIX      carMapLocation;	// 0x110..0x14C (4x4 matrix of floats). _41.._44 is the current map position of the car
 
 	BYTE pad2[0x190 - 0x110 - sizeof(D3DMATRIX)];
 	D3DXVECTOR3 spin;				// 0x190  (Spin X,Y,Z)
@@ -306,12 +311,28 @@ typedef struct {
 typedef RBRMapSettings* PRBRMapSettings;
 
 
+// Offset 0x0x7EA678->+0x70->
+// (yes, the GameModeExt2 object name is a stupid name, but could not come up with a better name)
+typedef struct {
+#pragma pack(push,1)
+	BYTE pad1[0x10];		// 0x00
+	__int32 loadingMode;	// 0x10 (0..7=loading menu/track/replay, 8=completed loading a track, replay or menu)
+	__int32 racingPaused; 	// 0x14 (1=racing not active because RBR is in main menu, 0=racing or replying)
+	__int32 ghostCarID;	    // 0x18 (-1=No ghost, 0..7 carid. 1=MG slot, 3=Subaru slot. This is the carID used in a pacecar "replay video")
+	__int32 carID;			// 0x1C
+	__int32 trackID;		// 0x20
+#pragma pack(pop)
+} RBRGameModeExt2;
+typedef RBRGameModeExt2* PRBRGameModeExt2;
+
+
 // Offset 0x893060 RBRGhostCarMovement
 typedef struct {
 #pragma pack(push,1)
-	D3DXVECTOR3    carVect;  // 0x00, 0x04, 0x08 (x,y,z)
-	float unknown1;          // 0x0C
-	D3DXQUATERNION carQuat;  // 0x10, 0x14, 0x18, 0x1C (x,y,z,w)	
+	//D3DXVECTOR3    carVect;			// 0x00, 0x04, 0x08 (x,y,z,w)
+	//float unknown1;					// 0x0C
+	D3DXQUATERNION carMapLocation;  // 0x00, 0x04, 0x08, 0x0C (x,y,z,w) (old name carVect)
+	D3DXQUATERNION carQuat;			// 0x10, 0x14, 0x18, 0x1C (x,y,z,w)	
 #pragma pack(pop)
 } RBRGhostCarMovement;
 typedef RBRGhostCarMovement* PRBRGhostCarMovement;
@@ -544,18 +565,27 @@ typedef struct {
 typedef RBRPluginMenuSystem* PRBRPluginMenuSystem;
 
 
+//--------------------------------------------------------------------------------------------
 // Global RBR object pointers
+//
 extern PRBRGameConfig		g_pRBRGameConfig;
+
 extern PRBRGameMode			g_pRBRGameMode;
 extern PRBRGameModeExt		g_pRBRGameModeExt;
+extern PRBRGameModeExt2		g_pRBRGameModeExt2;
+
 extern PRBRCameraInfo		g_pRBRCameraInfo;
+
 extern PRBRCarInfo			g_pRBRCarInfo;
 extern PRBRCarControls		g_pRBRCarControls;
 extern PRBRMapSettings		g_pRBRMapSettings;
-extern PRBRGhostCarMovement g_pRBRGhostCarMovement;
 
+extern __int32*             g_pRBRGhostCarReplayMode; // 0=No ghost, 1=Saving ghost car movements (during racing), 2=Replying ghost car movements (0x892EEC)
+extern PRBRGhostCarMovement g_pRBRGhostCarMovement;
 extern PRBRCarMovement		g_pRBRCarMovement;	// Valid only when racing or replay is on
 extern PRBRMapInfo			g_pRBRMapInfo;		// Valid only when racing or replay is on
+
+extern PRBRMenuSystem		g_pRBRMenuSystem;
 
 
 //

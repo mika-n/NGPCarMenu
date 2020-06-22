@@ -30,7 +30,7 @@
 #include <fstream>				// std::ifstream
 #include <chrono>				// std::chrono::steady_clock
 
-#include <locale>			// UTF8 locales
+#include <locale>				// UTF8 locales
 #include <codecvt>
 
 #include <wincodec.h>			// GUID_ContainerFormatPng 
@@ -57,6 +57,7 @@ CD3DFont* g_pFontCarSpecCustom = nullptr;
 
 CNGPCarMenu*         g_pRBRPlugin = nullptr;				// The one and only RBRPlugin instance
 
+/*
 // TODO: Move to RBRAPI.cpp file
 PRBRGameConfig		 g_pRBRGameConfig = nullptr;			// Various RBR-API struct pointers
 PRBRGameMode		 g_pRBRGameMode = nullptr;
@@ -71,6 +72,7 @@ PRBRMapSettings		 g_pRBRMapSettings = nullptr;
 PRBRGhostCarMovement g_pRBRGhostCarMovement = nullptr;
 
 PRBRMenuSystem		 g_pRBRMenuSystem = nullptr;		// Pointer to RBR menu system (all standard menu objects)
+*/
 
 //PRBRMenuObj			 g_pRBRPluginsMenuObj = nullptr;	// Pointer to RBR Plugins menu obj
 //PRBRMenuObj			 g_pRBRCustomPlugins
@@ -191,9 +193,7 @@ IPlugin* RBR_CreatePlugin( IRBRGame* pGame )
 	DebugPrint("--------------------------------------------\nRBR_CreatePlugin");
 
 	if (g_pRBRPlugin == nullptr) g_pRBRPlugin = new CNGPCarMenu(pGame);
-
-	DebugPrint("NGPCarMenu=%08x", g_pRBRPlugin);
-
+	//DebugPrint("NGPCarMenu=%08x", g_pRBRPlugin);
 	return g_pRBRPlugin;
 }
 
@@ -217,7 +217,7 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 
 	// Init plugin title text with version tag of NGPCarMenu.dll file
 	char szTxtBuf[COUNT_OF_ITEMS(C_PLUGIN_TITLE_FORMATSTR) + 32];
-	if (sprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, C_PLUGIN_TITLE_FORMATSTR, GetFileVersionInformationAsString((m_sRBRRootDirW + L"\\Plugins\\NGPCarMenu.dll")).c_str()) <= 0)
+	if (sprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, C_PLUGIN_TITLE_FORMATSTR, GetFileVersionInformationAsString((m_sRBRRootDirW + L"\\Plugins\\" L"" VS_PROJECT_NAME L".dll")).c_str()) <= 0)
 		szTxtBuf[0] = '\0';
 	m_sPluginTitle = szTxtBuf;
 	
@@ -317,7 +317,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 	CSimpleIniW  pluginINIFile;
 	std::wstring sTextValue;
 
-	std::string  sIniFileName = CNGPCarMenu::m_sRBRRootDir + "\\Plugins\\NGPCarMenu.ini";
+	std::string  sIniFileName = CNGPCarMenu::m_sRBRRootDir + "\\Plugins\\" VS_PROJECT_NAME ".ini";
 
 	m_sMenuStatusText1.clear();
 
@@ -512,7 +512,7 @@ void CNGPCarMenu::SaveSettingsToPluginINIFile()
 
 	try
 	{
-		sIniFileName = CNGPCarMenu::m_sRBRRootDir + "\\Plugins\\NGPCarMenu.ini";
+		sIniFileName = CNGPCarMenu::m_sRBRRootDir + "\\Plugins\\" VS_PROJECT_NAME ".ini";
 		pluginINIFile.LoadFile(sIniFileName.c_str());
 
 		sOptionValue = g_NGPCarMenu_ImageOptions[this->m_iMenuImageOption];
@@ -662,7 +662,7 @@ void CNGPCarMenu::InitCarSpecData_RBRCIT()
 			wcsncpy_s(g_RBRCarSelectionMenuEntry[0].wszCarPhysicsCustomTxt, (m_rbrCITCarListFilePath + L" missing. Cannot show car specs").c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[0].wszCarPhysicsCustomTxt));
 
 		// Load std RBR cars list and custom carSpec file (fex original car specs are set here). These are used if the phystics\<CarFolder> doesn't have NGP car description file
-		customCarSpecsINIFile.LoadFile((m_sRBRRootDirW + L"\\Plugins\\NGPCarMenu\\CustomCarSpecs.ini").c_str());
+		customCarSpecsINIFile.LoadFile((m_sRBRRootDirW + L"\\Plugins\\" L"" VS_PROJECT_NAME L"\\CustomCarSpecs.ini").c_str());
 		stockCarListINIFile.LoadFile((m_sRBRRootDirW + L"\\cars\\Cars.ini").c_str());
 
 		// The loop uses menu idx order, not in car slot# idx order
@@ -758,7 +758,7 @@ void CNGPCarMenu::InitCarSpecData_EASYRBR()
 			wcsncpy_s(g_RBRCarSelectionMenuEntry[0].wszCarPhysicsCustomTxt, (m_rbrCITCarListFilePath + L" missing. Cannot show car specs").c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[0].wszCarPhysicsCustomTxt));
 
 		// Load std RBR cars list and custom carSpec file (fex original car specs are set here). These are used if the phystics\<CarFolder> doesn't have NGP car description file
-		customCarSpecsINIFile.LoadFile((m_sRBRRootDirW + L"\\Plugins\\NGPCarMenu\\CustomCarSpecs.ini").c_str());
+		customCarSpecsINIFile.LoadFile((m_sRBRRootDirW + L"\\Plugins\\" L"" VS_PROJECT_NAME L"\\CustomCarSpecs.ini").c_str());
 		stockCarListINIFile.LoadFile((m_sRBRRootDirW + L"\\cars\\Cars.ini").c_str());
 
 		// Load EasyRBR ini
@@ -998,7 +998,7 @@ std::wstring CNGPCarMenu::InitCarModelNameFromCarsFile(CSimpleIniW* stockCarList
 
 
 //-------------------------------------------------------------------------------------------------
-// Read rbr\phystics\<carSlotNameFolder>\ngpCarNameFile file and init revision/3dModel/SpecYear attributes
+// Read rbr\physics\<carSlotNameFolder>\ngpCarNameFile file and init revision/3dModel/SpecYear attributes
 //
 bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, PRBRCarSelectionMenuEntry pRBRCarSelectionMenuEntry, int* outNumOfGears)
 {
@@ -1055,7 +1055,7 @@ bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, 
 		for (const auto& entry : fs::directory_iterator(fsFolderName))
 		{
 			if (entry.is_regular_file() && entry.path().extension().compare(".lsp") != 0 )
-			{
+			{			
 				fsFileName = entry.path().filename().string();
 				//DebugPrint(fsFileName.c_str());
 				//wfsFileName = _ToWString(fsFileName);
@@ -1088,7 +1088,8 @@ bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, 
 					*/
 
 					// Remove double whitechars from the string value
-					wsTextLine.erase(std::unique(wsTextLine.begin(), wsTextLine.end(), [](WCHAR a, WCHAR b) { return isspace(a) && isspace(b); }), wsTextLine.end());
+					if(wsTextLine.length() >= 2)
+						wsTextLine.erase(std::unique(wsTextLine.begin(), wsTextLine.end(), [](WCHAR a, WCHAR b) { return iswspace(a) && iswspace(b); }), wsTextLine.end());
 
 					if (_iStarts_With(wsTextLine, L"revision", TRUE))
 					{						
@@ -1107,7 +1108,7 @@ bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, 
 					else if (_iStarts_With(wsTextLine, L"3d model", TRUE))
 					{
 						bResult = TRUE;
-
+					
 						wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel, wsTextLine.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel));
 						pRBRCarSelectionMenuEntry->wszCarPhysics3DModel[COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel) - 1] = '\0';
 					}
@@ -1342,7 +1343,7 @@ bool CNGPCarMenu::PrepareScreenshotReplayFile(int carID)
 
 	int carMenuIdx = RBRAPI_MapCarIDToMenuIdx(carID);
 
-	inputReplayFilePath  = g_pRBRPlugin->m_sRBRRootDirW + L"\\Plugins\\NGPCarMenu\\Replays"; // NGPCarMenu replay template folder
+	inputReplayFilePath  = g_pRBRPlugin->m_sRBRRootDirW + L"\\Plugins\\" L"" VS_PROJECT_NAME L"\\Replays"; // NGPCarMenu replay template folder
 	outputReplayFileName = g_pRBRPlugin->m_sRBRRootDirW + L"\\Replays\\" + C_REPLAYFILENAME_SCREENSHOTW;  // RBR replay folder and temporary output filename
 	
 	carModelName = g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(carID)].wszCarModel;
@@ -1448,7 +1449,7 @@ const char* CNGPCarMenu::GetName(void)
 
 			// NGPCarMenu V1.0.4 and older had a replay template file rbr\Replays\NGPCarMenu.rpl. This no longer used in V1.0.5+ versions, so remove the old rpl file.
 			// Nowadays the plugin uses rbr\Plugins\NGPCarMenu\Replays\ folder to read rpl template files.
-			sReplayTemplateFileName = g_pRBRPlugin->m_sRBRRootDir + "\\Replays\\NGPCarMenu.rpl";
+			sReplayTemplateFileName = g_pRBRPlugin->m_sRBRRootDir + "\\Replays\\" VS_PROJECT_NAME ".rpl";
 			if (fs::exists(sReplayTemplateFileName))
 			{
 					DebugPrint("CNGPCarMenu.GetName. The old obsolete %s replay template file from V1.0.4 and older versions was deleted.", sReplayTemplateFileName.c_str());
@@ -1460,6 +1461,7 @@ const char* CNGPCarMenu::GetName(void)
 			// Do nothing even when removal of the replay template file failed. This is not fatal error at this point.
 		}
 
+/*
 		// Pointers to various RBR objects
 		if (g_pRBRGameConfig == nullptr)  g_pRBRGameConfig = (PRBRGameConfig) * (DWORD*)(0x007EAC48);
 		if (g_pRBRGameMode == nullptr)    g_pRBRGameMode = (PRBRGameMode) * (DWORD*)(0x007EAC48);
@@ -1485,6 +1487,8 @@ const char* CNGPCarMenu::GetName(void)
 		g_hRBRWnd = d3dCreationParameters.hFocusWindow;
 		RBRAPI_RefreshWndRect();
 		// Pointer 0x493980 -> rbrHwnd? Can it be used to re-route WM messages to our own windows handler and this way to "listen" RBR key presses if this plugin needs key controls?
+*/
+		RBRAPI_InitializeObjReferences();
 
 		RefreshSettingsFromPluginINIFile(true);
 
@@ -1497,13 +1501,12 @@ const char* CNGPCarMenu::GetName(void)
 		g_pFontCarSpecCustom->InitDeviceObjects(g_pRBRIDirect3DDevice9);
 		g_pFontCarSpecCustom->RestoreDeviceObjects();	
 
-
 		// If EASYRBRPath is not set then assume cars have been setup using RBRCIT car manager tool
 		if (m_easyRBRFilePath.empty()) InitCarSpecData_RBRCIT();
 		else InitCarSpecData_EASYRBR();
 		CalculateMaxLenCarMenuName();
 
-		InitCarSpecAudio();
+		InitCarSpecAudio();		// FMOD bank names per car
 
 		// Read and refresh INI values now when RBR DX9 object is initialized
 		//RefreshSettingsFromPluginINIFile();
@@ -1548,7 +1551,9 @@ const char* CNGPCarMenu::GetName(void)
 		Func_OrigRBRDirectXBeginScene = (tRBRDirectXBeginScene)gtcDirect3DBeginScene->GetTrampoline();
 
 		gtcDirect3DEndScene = new DetourXS((LPVOID)0x0040E890, CustomRBRDirectXEndScene);
-		Func_OrigRBRDirectXEndScene = (tRBRDirectXEndScene)gtcDirect3DEndScene->GetTrampoline();
+		Func_OrigRBRDirectXEndScene = (tRBRDirectXEndScene)gtcDirect3DEndScene->GetTrampoline();	 
+
+		DebugPrint("CRBRNetTNG.GetName. BeginSceneIsFirst=%d  EndSceneIsFirst=%d", gtcDirect3DBeginScene->IsFirstHook(), gtcDirect3DEndScene->IsFirstHook());
 
 		// RBR memory and DX9 function hooks in place. Ready to do customized RBR logic
 		g_bRBRHooksInitialized = TRUE;
@@ -1775,8 +1780,7 @@ void CNGPCarMenu::HandleResults(float fCheckPoint1, float fCheckPoint2,	float fF
 //
 void CNGPCarMenu::StageStarted(int iMap, const char* ptxtPlayerName, bool bWasFalseStart)
 {
-	//g_pRBRMapInfo     = (PRBRMapInfo) *(DWORD*)(0x1659184);
-	//g_pRBRCarMovement = (PRBRCarMovement) *(DWORD*)(0x008EF660);
+	// Do nothing
 }
 
 

@@ -57,6 +57,24 @@ RECT			  g_rectRBRWnd;					  // RBR wnd top,left,right,bottom coordinates (inclu
 RECT			  g_rectRBRWndClient;		      // RBR client area coordinates (resolutionX=right-left, resolutionY=bottom-top)
 RECT			  g_rectRBRWndMapped;			  // RBR client area re-mapped to screen points (normally client area top,left is always relative to physical wndRect coordinates)
 
+PRBRGameConfig		 g_pRBRGameConfig = nullptr;			// Various RBR-API struct pointers
+PRBRGameMode		 g_pRBRGameMode = nullptr;
+PRBRGameModeExt		 g_pRBRGameModeExt = nullptr;
+PRBRGameModeExt2	 g_pRBRGameModeExt2 = nullptr;
+
+PRBRCarInfo			 g_pRBRCarInfo = nullptr;
+PRBRCameraInfo		 g_pRBRCameraInfo = nullptr;
+PRBRCarControls		 g_pRBRCarControls = nullptr;
+
+PRBRCarMovement		 g_pRBRCarMovement = nullptr;
+PRBRMapInfo			 g_pRBRMapInfo = nullptr;
+PRBRMapSettings		 g_pRBRMapSettings = nullptr;
+
+__int32*			 g_pRBRGhostCarReplayMode = nullptr; 
+PRBRGhostCarMovement g_pRBRGhostCarMovement = nullptr;
+
+PRBRMenuSystem		 g_pRBRMenuSystem = nullptr;		// Pointer to RBR menu system (all standard menu objects)
+
 
 //----------------------------------------------------------------------------------------------------------------------------
 // Helper functions to modify RBR memory locations on the fly
@@ -196,6 +214,53 @@ BOOL ReadOpCodeByte(const LPVOID readAddr, BYTE byteValue)
 
 
 //-------------------------------------------------------------------------------------
+// Initialize RBR object references
+//
+BOOL RBRAPI_InitializeObjReferences()
+{
+	// Pointers to various RBR objects
+	if (g_pRBRGameConfig == nullptr)  g_pRBRGameConfig = (PRBRGameConfig) * (DWORD*)(0x007EAC48);
+	if (g_pRBRGameMode == nullptr)    g_pRBRGameMode = (PRBRGameMode) * (DWORD*)(0x007EAC48);
+	if (g_pRBRGameModeExt == nullptr) g_pRBRGameModeExt = (PRBRGameModeExt) * (DWORD*)(0x00893634);
+	if (g_pRBRGameModeExt2 == nullptr) g_pRBRGameModeExt2 = (PRBRGameModeExt2) * (DWORD*)(0x007EA678) + 0x70;
+
+	if (g_pRBRCarInfo == nullptr)     g_pRBRCarInfo = (PRBRCarInfo) * (DWORD*)(0x0165FC68);
+	if (g_pRBRCarControls == nullptr) g_pRBRCarControls = (PRBRCarControls) * (DWORD*)(0x007EAC48); // +0x738 + 0x5C;
+
+	//if (pRBRCarMovement == nullptr) pRBRCarMovement = (PRBRCarMovement) *(DWORD*)(0x008EF660);  // This pointer is valid only when replay or stage is starting
+	if (g_pRBRGhostCarMovement == nullptr) g_pRBRGhostCarMovement = (PRBRGhostCarMovement)(DWORD*)(0x00893060);
+	if (g_pRBRGhostCarReplayMode == nullptr) g_pRBRGhostCarReplayMode = (__int32*)(0x892EEC);
+
+	if (g_pRBRMenuSystem == nullptr)  g_pRBRMenuSystem = (PRBRMenuSystem) * (DWORD*)(0x0165FA48);
+
+	// Fixed location to mapSettings struct (ie. not a pointer reference). 
+	g_pRBRMapSettings = (PRBRMapSettings)(0x1660800);
+
+	// Get a pointer to DX9 device handler before re-routing the RBR function
+	if(g_pRBRIDirect3DDevice9 == nullptr) g_pRBRIDirect3DDevice9 = (LPDIRECT3DDEVICE9) * (DWORD*)(*(DWORD*)(*(DWORD*)0x007EA990 + 0x28) + 0xF4);
+
+	// Initialize true screen resolutions. Internally RBR uses 640x480 4:3 resolution and aspect ratio
+	if (g_pRBRIDirect3DDevice9 != nullptr)
+	{
+		D3DDEVICE_CREATION_PARAMETERS d3dCreationParameters;
+		g_pRBRIDirect3DDevice9->GetCreationParameters(&d3dCreationParameters);
+		g_hRBRWnd = d3dCreationParameters.hFocusWindow;
+		RBRAPI_RefreshWndRect();
+	}
+
+	// Pointer 0x493980 -> rbrHwnd? Can it be used to re-route WM messages to our own windows handler and this way to "listen" RBR key presses if this plugin needs key controls?
+
+	return g_pRBRIDirect3DDevice9 != nullptr;
+}
+
+BOOL RBRAPI_InitializeRaceTimeObjReferences()
+{
+	// Objects which are valid only when a race or replay is started
+	g_pRBRMapInfo     = (PRBRMapInfo) *(DWORD*)(0x1659184);
+	g_pRBRCarMovement = (PRBRCarMovement) *(DWORD*)(0x008EF660);
+
+	return g_pRBRCarMovement != nullptr;
+}
 
 
 // Map RBR carID to menu order index (ie. internal RBR car slot numbers are not in the same order as "Select car" menu items)
