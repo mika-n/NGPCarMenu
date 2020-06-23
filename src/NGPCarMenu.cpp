@@ -236,9 +236,16 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	ZeroMemory(&m_carSelectLeftBlackBarRect, sizeof(m_carSelectLeftBlackBarRect));
 	ZeroMemory(&m_carSelectRightBlackBarRect, sizeof(m_carSelectRightBlackBarRect));
 	ZeroMemory(&m_car3DModelInfoPosition, sizeof(m_car3DModelInfoPosition));
+	
+	// Default is the old behaviour not doing any scaling or stretching (the built-in RBR car selection
+	// screen has a different default than RBRTM_CarPictureScale option because of historical reasons. Don't want to break anything in old INI settings)
+	m_carPictureScale = -1;
 
 	ZeroMemory(&m_carRBRTMPictureRect, sizeof(m_carRBRTMPictureRect));
 	ZeroMemory(&m_carRBRTMPictureCropping, sizeof(m_carRBRTMPictureCropping));
+	
+	// The default is to scale while keeping the aspect ratio and placing the image on the bottom of the rect area
+	m_carRBRTMPictureScale = IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO | IMAGE_TEXTURE_POSITION_BOTTOM;
 
 	g_pRBRPluginMenuSystem = new RBRPluginMenuSystem;
 	ZeroMemory(g_pRBRPluginMenuSystem, sizeof(RBRPluginMenuSystem));
@@ -423,6 +430,13 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		sTextValue = pluginINIFile.GetValue(szResolutionText, L"Car3DModelInfoPosition", L"");
 		_StringToPoint(sTextValue, &this->m_car3DModelInfoPosition);
 
+		// Scale the car picture in a car selection screen (0=no scale, stretch to fill the picture rect area, bit 1 = keep aspect ratio, bit 2 = place the pic to the bottom of the rect area)
+		// Default 0 is to stretch the image to fill the drawing rect area (or if the original pic is already in the same size then scaling is not necessary)
+		sTextValue = pluginINIFile.GetValue(szResolutionText, L"CarPictureScale", L"-1");
+		_Trim(sTextValue);
+		if (sTextValue.empty()) this->m_carPictureScale = -1;
+		else this->m_carPictureScale = std::stoi(sTextValue);
+
 
 		// DirectX (0) or GDI (1) screenshot logic
 		sTextValue = pluginINIFile.GetValue(L"Default", L"ScreenshotAPIType", L"0");
@@ -476,6 +490,11 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		// RBRTM_CarPictureCropping (not yet implemented)
 		sTextValue = pluginINIFile.GetValue(szResolutionText, L"RBRTM_CarPictureCropping", L"");
 		_StringToRect(sTextValue, &this->m_carRBRTMPictureCropping);
+
+		// Scale the car picture in RBRTM screen (0=no scale, stretch to fill the picture rect area, bit 1 = keep aspect ratio, bit 2 = place the pic to the bottom of the rect area)
+		// Default 3 is to keep the aspect ratio and place the pic to bottom of the rect area.
+		sTextValue = pluginINIFile.GetValue(szResolutionText, L"RBRTM_CarPictureScale", L"3");
+		this->m_carRBRTMPictureScale = std::stoi(sTextValue);
 
 
 /*		sTextValue = pluginINIFile.GetValue(szResolutionText, L"RBRTM_Car3DModelInfoPosition", L"");
@@ -2008,8 +2027,35 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 				if (g_pRBRPlugin->m_carPreviewTexture[selectedCarIdx].pTexture == nullptr && g_pRBRPlugin->m_carPreviewTexture[selectedCarIdx].imgSize.cx >= 0 && g_RBRCarSelectionMenuEntry[selectedCarIdx].wszCarModel[0] != '\0')
 				{
 					float posYf;
+					float cx, cy;
+
 					RBRAPI_MapRBRPointToScreenPoint(0.0f, g_pRBRMenuSystem->menuImagePosY - 1.0f, nullptr, &posYf);
-					g_pRBRPlugin->ReadCarPreviewImageFromFile(selectedCarIdx, (float)g_pRBRPlugin->m_carSelectLeftBlackBarRect.left, posYf, 0, 0, &g_pRBRPlugin->m_carPreviewTexture[selectedCarIdx]);
+
+					if (g_pRBRPlugin->m_carPictureScale == -1)
+					{
+						// The old default behaviour when CarPictureScale is not set. The image is draw using the original size without scaling and stretching
+						cx = cy = 0.0f;
+					}
+					else
+					{
+						// Define the exact drawing area rect and optionally scale the picture within the rect or stretch it to fill the area
+						if(g_pRBRPlugin->m_carSelectRightBlackBarRect.right != 0)
+							cx = (float)(g_pRBRPlugin->m_carSelectRightBlackBarRect.right - g_pRBRPlugin->m_carSelectLeftBlackBarRect.left);
+						else
+							cx = (float)(g_rectRBRWndClient.right - g_pRBRPlugin->m_carSelectLeftBlackBarRect.left);
+
+						if (g_pRBRPlugin->m_carSelectRightBlackBarRect.bottom != 0)
+							cy = (float)(g_pRBRPlugin->m_carSelectLeftBlackBarRect.bottom - posYf);
+						else
+							cy = (float)(g_rectRBRWndClient.bottom - posYf);
+					}
+
+					g_pRBRPlugin->ReadCarPreviewImageFromFile(selectedCarIdx, 
+						(float)g_pRBRPlugin->m_carSelectLeftBlackBarRect.left, 
+						posYf, 
+						cx, cy, //0, 0, 
+						&g_pRBRPlugin->m_carPreviewTexture[selectedCarIdx], 
+						(g_pRBRPlugin->m_carPictureScale == -1 ? 0 : g_pRBRPlugin->m_carPictureScale));
 				}
 
 				// If the car preview image is successfully initialized (imgSize.cx >= 0) and texture (=image) is prepared then draw it on the screen
@@ -2130,7 +2176,7 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 							(float)(g_pRBRPlugin->m_carRBRTMPictureRect.right - g_pRBRPlugin->m_carRBRTMPictureRect.left), 
 							(float)(g_pRBRPlugin->m_carRBRTMPictureRect.bottom - g_pRBRPlugin->m_carRBRTMPictureRect.top),
 							&g_pRBRPlugin->m_carRBRTMPreviewTexture[selectedCarIdx],
-							IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO | IMAGE_TEXTURE_POSITION_BOTTOM);
+							g_pRBRPlugin->m_carRBRTMPictureScale /*IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO | IMAGE_TEXTURE_POSITION_BOTTOM*/ );
 					}
 
 					// If the car preview image is successfully initialized (imgSize.cx >= 0) and texture (=image) is prepared then draw it on the screen
