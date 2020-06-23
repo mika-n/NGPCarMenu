@@ -566,7 +566,7 @@ bool CNGPCarMenu::InitRBRTMPluginIntegration()
 							for (int idx = g_pRBRPluginMenuSystem->pluginsMenuObj->firstSelectableItemIdx; idx < g_pRBRPluginMenuSystem->pluginsMenuObj->numOfItems - 1; idx++)
 							{
 								pItemArr = (PRBRPluginMenuItemObj3)g_pRBRPluginMenuSystem->pluginsMenuObj->pItemObj[idx];
-								DebugPrint("MenuItemName=%s", pItemArr->szItemName);
+								//DebugPrint("MenuItemName=%s", pItemArr->szItemName);
 
 								if (g_pRBRPluginMenuSystem->pluginsMenuObj->pItemObj[idx] != nullptr && strncmp(pItemArr->szItemName, C_RBRTM_PLUGIN_NAME, sizeof(C_RBRTM_PLUGIN_NAME) - 1) == 0)
 								{
