@@ -494,7 +494,9 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		// Scale the car picture in RBRTM screen (0=no scale, stretch to fill the picture rect area, bit 1 = keep aspect ratio, bit 2 = place the pic to the bottom of the rect area)
 		// Default 3 is to keep the aspect ratio and place the pic to bottom of the rect area.
 		sTextValue = pluginINIFile.GetValue(szResolutionText, L"RBRTM_CarPictureScale", L"3");
-		this->m_carRBRTMPictureScale = std::stoi(sTextValue);
+		_Trim(sTextValue);
+		if (sTextValue.empty()) this->m_carRBRTMPictureScale = 3;
+		else this->m_carRBRTMPictureScale = std::stoi(sTextValue);
 
 
 /*		sTextValue = pluginINIFile.GetValue(szResolutionText, L"RBRTM_Car3DModelInfoPosition", L"");
