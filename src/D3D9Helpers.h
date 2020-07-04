@@ -44,6 +44,7 @@
 
 #define LogPrint DebugPrintFunc   // LogPrint prints out a txt message both in retail and debug builds
 
+extern void DebugReleaseResources();
 extern void DebugCloseFile();
 extern void DebugClearFile();
 extern void DebugPrintFunc(LPCSTR lpszFormat, ...);
@@ -85,6 +86,8 @@ extern inline void _ToLowerCase(std::string& s);       // Convert string to lowe
 extern inline void _ToLowerCase(std::wstring& s);      // Convert wstring to lowercase letters (in-place)
 
 extern int _SplitString(const std::string& s, std::vector<std::string>& splittedTokens, std::string sep, bool caseInsensitiveSep = true, bool sepAlreadyLowercase = false, int maxTokens = 64); // Split string to several tokens by using sep string as separator
+
+extern std::string _ToBinaryBitString(BYTE byteValue); // Convert BYTE value to binary "bit field" string (usually some log messages want to show an integer as binary bit field)
 
 extern std::string GetFileVersionInformationAsString(const std::wstring & fileName);
 

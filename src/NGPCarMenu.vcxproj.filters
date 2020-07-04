@@ -50,6 +50,9 @@
     <None Include="NGPCarMenu.ini" />
     <None Include="NGPCarMenu_Group R1.rpl" />
     <None Include="NGPCarMenu.rpl" />
+    <None Include="NGPCarMenu_fi.ini" />
+    <None Include="NGPCarMenu_en.ini" />
+    <None Include="NGPCarMenu_se.ini" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="PluginHelpers.h">

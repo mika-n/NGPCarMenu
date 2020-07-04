@@ -80,6 +80,7 @@ PRBRPluginMenuSystem g_pRBRPluginMenuSystem = nullptr;   // Pointer to RBR plugi
 
 WCHAR* g_pOrigCarSpecTitleWeight = nullptr;				// The original RBR Weight and Transmission title string values
 WCHAR* g_pOrigCarSpecTitleTransmission = nullptr;
+WCHAR* g_pOrigCarSpecTitleHorsepower = nullptr;
 
 //
 // Car details:
@@ -220,7 +221,9 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	if (sprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, C_PLUGIN_TITLE_FORMATSTR, GetFileVersionInformationAsString((m_sRBRRootDirW + L"\\Plugins\\" L"" VS_PROJECT_NAME L".dll")).c_str()) <= 0)
 		szTxtBuf[0] = '\0';
 	m_sPluginTitle = szTxtBuf;
-	
+
+	m_pLangIniFile = nullptr;
+
 	m_iCarMenuNameLen = 0;
 	
 	m_iCustomReplayCarID = 0;
@@ -292,6 +295,8 @@ CNGPCarMenu::~CNGPCarMenu(void)
 	ClearCachedCarPreviewImages();
 
 	SAFE_DELETE(g_pRBRPluginMenuSystem);
+
+	SAFE_DELETE(m_pLangIniFile);
 
 	DebugPrint("Exit CNGPCarMenu.Destructor");
 	DebugCloseFile();
@@ -467,6 +472,33 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		try
 		{
 			m_iMenuRBRTMOption = (std::stoi(sTextValue) >= 1 ? 1 : 0);
+
+			// Initialize "RBRTM Tournament" title value in case user has localized it via a RBRTM language ile
+			if (m_sRBRTMPluginTitle.empty())
+			{
+				CSimpleIni rbrINI;
+				std::string sRBRTMLangFile;
+
+				rbrINI.SetUnicode(true);
+				rbrINI.LoadFile((m_sRBRRootDir + "\\RichardBurnsRally.ini").c_str());
+				sRBRTMLangFile = rbrINI.GetValue("RBRTMSettings", "LanguageFile", "");
+				if (!sRBRTMLangFile.empty())
+				{
+					if (sRBRTMLangFile.length() >= 2 && sRBRTMLangFile[0] != '\\' && sRBRTMLangFile[1] != ':')
+						sRBRTMLangFile = this->m_sRBRRootDir + "\\" + sRBRTMLangFile;
+
+					if (fs::exists(sRBRTMLangFile))
+					{
+						CSimpleIni rbrTMLangINI;
+						rbrTMLangINI.SetUnicode(true);
+						rbrTMLangINI.LoadFile(sRBRTMLangFile.c_str());
+						m_sRBRTMPluginTitle = rbrTMLangINI.GetValue("Strings", "1", "");
+					}
+				}
+
+				if(m_sRBRTMPluginTitle.empty())
+					m_sRBRTMPluginTitle = C_RBRTM_PLUGIN_NAME; // The default name of RBRTM
+			}
 		}
 		catch (...)
 		{
@@ -497,6 +529,29 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		_Trim(sTextValue);
 		if (sTextValue.empty()) this->m_carRBRTMPictureScale = 3;
 		else this->m_carRBRTMPictureScale = std::stoi(sTextValue);
+
+
+		// Optional language file to customize label texts (English by default). 
+		// Initialize the language dictionary only once when this method is called for the first time (changes to language translation strings take effect when RBR game is restarted)
+		if (m_pLangIniFile == nullptr)
+		{
+			sTextValue = pluginINIFile.GetValue(L"Default", L"LanguageFile", L"");
+			_Trim(sTextValue);
+			if (!sTextValue.empty())
+			{
+				// Append the root of RBR game location if the path is relative value
+				if (sTextValue.length() >= 2 && sTextValue[0] != '\\' && sTextValue[1] != ':')
+					sTextValue = this->m_sRBRRootDirW + L"\\" + sTextValue;
+
+				if (fs::exists(sTextValue))
+				{
+					// Load customized language translation strings
+					m_pLangIniFile = new CSimpleIniW();
+					m_pLangIniFile->SetUnicode(true);
+					m_pLangIniFile->LoadFile(sTextValue.c_str());
+				}
+			}
+		}
 
 
 /*		sTextValue = pluginINIFile.GetValue(szResolutionText, L"RBRTM_Car3DModelInfoPosition", L"");
@@ -587,9 +642,8 @@ bool CNGPCarMenu::InitRBRTMPluginIntegration()
 							for (int idx = g_pRBRPluginMenuSystem->pluginsMenuObj->firstSelectableItemIdx; idx < g_pRBRPluginMenuSystem->pluginsMenuObj->numOfItems - 1; idx++)
 							{
 								pItemArr = (PRBRPluginMenuItemObj3)g_pRBRPluginMenuSystem->pluginsMenuObj->pItemObj[idx];
-								//DebugPrint("MenuItemName=%s", pItemArr->szItemName);
-
-								if (g_pRBRPluginMenuSystem->pluginsMenuObj->pItemObj[idx] != nullptr && strncmp(pItemArr->szItemName, C_RBRTM_PLUGIN_NAME, sizeof(C_RBRTM_PLUGIN_NAME) - 1) == 0)
+								
+								if (g_pRBRPluginMenuSystem->pluginsMenuObj->pItemObj[idx] != nullptr && strncmp(pItemArr->szItemName, m_sRBRTMPluginTitle.c_str(), m_sRBRTMPluginTitle.length()) == 0)
 								{
 									// Check version before accepting the RBRTM plugin
 									std::string sRBRVersion = GetFileVersionInformationAsString(m_sRBRRootDirW + L"\\Plugins\\RBRTM.DLL");
@@ -816,7 +870,7 @@ void CNGPCarMenu::InitCarSpecData_EASYRBR()
 			if (!sEasyRBRLiveryName.empty())
 			{
 				// EasyRBR encodes unicode chars as \xXX hex values. Decode those back to "normal" chars
-				sTextValue = L"livery " + ::_DecodeUtf8String(sEasyRBRLiveryName);
+				sTextValue = std::wstring(GetLangStr(L"livery")) + L" " + ::_DecodeUtf8String(sEasyRBRLiveryName);
 				wcsncpy_s(g_RBRCarSelectionMenuEntry[idx].wszCarPhysicsLivery, sTextValue.c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[idx].wszCarPhysicsLivery));
 			}
 
@@ -939,7 +993,8 @@ void CNGPCarMenu::InitCarSpecAudio()
 					sTextValue = audioFMODINIFile.GetValue(wszCarINISection, L"bankName", L"");
 					_Trim(sTextValue);
 					if (!sTextValue.empty())
-						wcsncpy_s(g_RBRCarSelectionMenuEntry[idx].wszCarFMODBank, (std::wstring(L"FMOD ") + sTextValue).c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[idx].wszCarFMODBank));
+						wcsncpy_s(g_RBRCarSelectionMenuEntry[idx].wszCarFMODBank, (std::wstring(g_pRBRPlugin->GetLangStr(L"FMOD")) + L" " + sTextValue).c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[idx].wszCarFMODBank));
+						
 				}
 			}
 		}
@@ -1116,6 +1171,10 @@ bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, 
 					{						
 						bResult = TRUE;
 
+						// Remove the revision tag and replace it with a language translated str version (or if missing then re-add the original "revision" text)
+						wsTextLine.erase(0, COUNT_OF_ITEMS(L"revision")-1);
+						wsTextLine.insert(0, GetLangStr(L"revision"));
+
 						wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysicsRevision, wsTextLine.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsRevision));
 						pRBRCarSelectionMenuEntry->wszCarPhysicsRevision[COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsRevision) - 1] = '\0';
 					}
@@ -1123,13 +1182,19 @@ bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, 
 					{
 						bResult = TRUE;
 
+						wsTextLine.erase(0, COUNT_OF_ITEMS(L"specification date") - 1);
+						wsTextLine.insert(0, GetLangStr(L"specification date"));
+
 						wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysicsSpecYear, wsTextLine.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsSpecYear));
 						pRBRCarSelectionMenuEntry->wszCarPhysicsSpecYear[COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsSpecYear) - 1] = '\0';
 					}
 					else if (_iStarts_With(wsTextLine, L"3d model", TRUE))
 					{
 						bResult = TRUE;
-					
+
+						wsTextLine.erase(0, COUNT_OF_ITEMS(L"3d model") - 1);
+						wsTextLine.insert(0, GetLangStr(L"3d model"));
+
 						wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel, wsTextLine.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel));
 						pRBRCarSelectionMenuEntry->wszCarPhysics3DModel[COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel) - 1] = '\0';
 					}
@@ -1225,7 +1290,7 @@ bool CNGPCarMenu::InitCarSpecDataFromNGPFile(CSimpleIniW* ngpCarListINIFile, PRB
 				// TODO. Localize "gears" label
 				wszIniItemValue = ngpCarListINIFile->GetValue(iter->pItem, L"trans", nullptr);
 				if (numOfGears > 0)
-					swprintf_s(pRBRCarSelectionMenuEntry->wszCarTrans, COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarTrans), L"%d gears, %s", numOfGears, wszIniItemValue);
+					swprintf_s(pRBRCarSelectionMenuEntry->wszCarTrans, COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarTrans), GetLangStr(L"%d gears, %s"), numOfGears, wszIniItemValue);
 				else
 					wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarTrans, wszIniItemValue, COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarTrans));
 
@@ -1624,6 +1689,8 @@ void CNGPCarMenu::DrawResultsUI(void)
 void CNGPCarMenu::DrawFrontEndPage(void)
 {
 	char szTextBuf[128]; // This should be enough to hold the longest g_RBRPlugin menu string + the logest g_RBRPluginMenu_xxxOptions option string
+	float posY;
+	int iRow;
 
 	// Draw blackout (coordinates specify the 'window' where you don't want black)
 	m_pGame->DrawBlackOut(420.0f, 0.0f, 420.0f, 480.0f);
@@ -1651,23 +1718,17 @@ void CNGPCarMenu::DrawFrontEndPage(void)
 		m_pGame->WriteText(65.0f, 70.0f + (static_cast< float >(i) * 21.0f), szTextBuf);
 	}
 
-	if (!m_sMenuStatusText1.empty())
-	{
-		m_pGame->SetFont(IRBRGame::FONT_SMALL);
-		m_pGame->WriteText(10.0f, 70.0f + (static_cast<float>(COUNT_OF_ITEMS(g_NGPCarMenu_PluginMenu) + 3) * 21.0f), m_sMenuStatusText1.c_str());
-	}
+	m_pGame->SetFont(IRBRGame::FONT_SMALL);
 
-	if (!m_sMenuStatusText2.empty())
-	{
-		m_pGame->SetFont(IRBRGame::FONT_SMALL);
-		m_pGame->WriteText(10.0f, 70.0f + (static_cast<float>(COUNT_OF_ITEMS(g_NGPCarMenu_PluginMenu) + 4) * 21.0f), m_sMenuStatusText2.c_str());
-	}
+	posY = 70.0f + (static_cast<float>COUNT_OF_ITEMS(g_NGPCarMenu_PluginMenu)) * 21.0f;
+	iRow = 3;
 
-	if (!m_sMenuStatusText3.empty())
-	{
-		m_pGame->SetFont(IRBRGame::FONT_SMALL);
-		m_pGame->WriteText(10.0f, 70.0f + (static_cast<float>(COUNT_OF_ITEMS(g_NGPCarMenu_PluginMenu) + 5) * 21.0f), m_sMenuStatusText3.c_str());
-	}
+	if (!m_sMenuStatusText1.empty()) m_pGame->WriteText(10.0f, posY + (static_cast<float>(iRow++) * 18.0f), m_sMenuStatusText1.c_str());
+	if (!m_sMenuStatusText2.empty()) m_pGame->WriteText(10.0f, posY + (static_cast<float>(iRow++) * 18.0f), m_sMenuStatusText2.c_str());
+	if (!m_sMenuStatusText3.empty()) m_pGame->WriteText(10.0f, posY + (static_cast<float>(iRow++) * 18.0f), m_sMenuStatusText3.c_str());
+
+	iRow += 3;
+	m_pGame->WriteText(10.0f, posY + (static_cast<float>(iRow++) * 18.0f), C_PLUGIN_FOOTER_STR);
 }
 
 
@@ -1850,18 +1911,20 @@ HRESULT __fastcall CustomRBRDirectXBeginScene(void* objPointer)
 						{
 							DebugPrint("CustomRBRDirectXBeginScene. First time customization of SelectCar menu");
 
-							// Store the original localized weight and transmission title values. These titles are re-used in customized carSpec info screen.
+							// Store the original RBR localized weight, horsepower and transmission title values. These titles are re-used in customized carSpec info screen.
 							g_pOrigCarSpecTitleWeight = pCarMenuSpecTexts->wszWeightTitle;
 							g_pOrigCarSpecTitleTransmission = pCarMenuSpecTexts->wszTransmissionTitle;
+							g_pOrigCarSpecTitleHorsepower = pCarMenuSpecTexts->wszHorsepowerTitle;
 						}
 
 						// Move carSpec text block few lines up to align "Select Car" and "car model" specLine text. 0x01701B20  (default carSpec pos-y value 0x06201B20)
 						g_pRBRMenuSystem->currentMenuObj->pItemPosition[12].y = 0x0170;
 
-						pCarMenuSpecTexts->wszModelTitle = L"FIA Category:";   // TODO: Localize FIACategory label
-						pCarMenuSpecTexts->wszTorqueTitle = g_pOrigCarSpecTitleWeight;		 // Re-use localized Weight title in Torque spec line
-						pCarMenuSpecTexts->wszEngineTitle = g_pOrigCarSpecTitleTransmission; // Re-use localized transmission title in Weight spec line
-						pCarMenuSpecTexts->wszTyresTitle = L"Year:"; // TODO: Localized Year text
+						pCarMenuSpecTexts->wszModelTitle = (WCHAR*)g_pRBRPlugin->GetLangStr(L"FIA Category:");                // FIACategory label
+						pCarMenuSpecTexts->wszHorsepowerTitle = (WCHAR*)g_pRBRPlugin->GetLangStr(g_pOrigCarSpecTitleHorsepower); // Horsepower text
+						pCarMenuSpecTexts->wszTorqueTitle = (WCHAR*)g_pRBRPlugin->GetLangStr(g_pOrigCarSpecTitleWeight);	     // Re-use rbr localized Weight title in Torque spec line
+						pCarMenuSpecTexts->wszEngineTitle = (WCHAR*)g_pRBRPlugin->GetLangStr(g_pOrigCarSpecTitleTransmission);// Re-use rbr localized transmission title in Weight spec line
+						pCarMenuSpecTexts->wszTyresTitle = (WCHAR*)g_pRBRPlugin->GetLangStr(L"Year:");						 // Year text
 
 						// Original Weight and Transmission title and value lines are hidden
 						pCarMenuSpecTexts->wszWeightTitle = pCarMenuSpecTexts->wszWeightValue =

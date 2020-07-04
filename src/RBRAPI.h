@@ -313,6 +313,7 @@ typedef RBRMapSettings* PRBRMapSettings;
 
 // Offset 0x0x7EA678->+0x70->
 // (yes, the GameModeExt2 object name is a stupid name, but could not come up with a better name)
+// TODO. Hmm.. this pointer doesn't seem to be available until stage is loading and other than ghostCarID fields are not there?
 typedef struct {
 #pragma pack(push,1)
 	BYTE pad1[0x10];		// 0x00

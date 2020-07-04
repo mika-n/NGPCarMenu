@@ -45,7 +45,7 @@
 
 
 #define C_PLUGIN_TITLE_FORMATSTR "NGPCarMenu Plugin (%s) by MIKA-N"	// %s is replaced with version tag strign. Remember to tweak it in NGPCarMenu.rc when making a new release
-
+#define C_PLUGIN_FOOTER_STR      "https://github.com/mika-n/NGPCarMenu"
 
 #define C_DEBUGTEXT_COLOR   D3DCOLOR_ARGB(255, 255,255,255)      // White
 
@@ -143,7 +143,10 @@ extern HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer);
 class CNGPCarMenu : public IPlugin
 {
 protected:
+	CSimpleIniW* m_pLangIniFile;
 	std::string m_sPluginTitle;
+	std::string m_sRBRTMPluginTitle; // "RBR Tournament" is the RBRTM plugin name by default, but in theory it is possible that this str is translated in RBRTM language files. The plugin name in use is stored here because the RBRTM integration routine needs this name.
+
 
 	int	m_iCarMenuNameLen; // Max char space reserved for the current car menu name menu items (calculated in CalculateMaxLenCarMenuName method)
 
@@ -229,6 +232,23 @@ public:
 
 	void RefreshSettingsFromPluginINIFile(bool addMissingSections = false);
 	void SaveSettingsToPluginINIFile();
+
+	const WCHAR* GetLangStr(const WCHAR* szStrKey) 
+	{ 
+		// Return localized version of the strKey string value (or the original value if no localization available)
+		if (m_pLangIniFile == nullptr) 
+			return szStrKey; 
+
+		const WCHAR* szResult = m_pLangIniFile->GetValue(L"Strings", szStrKey, nullptr);
+		if (szResult == nullptr && szStrKey != nullptr)
+		{
+			// No match, but let's try again without potenial leading and/or trailing whitespace chars
+			std::wstring sStrWithoutTrailingWhitespace(szStrKey);
+			_Trim(sStrWithoutTrailingWhitespace);
+			szResult = m_pLangIniFile->GetValue(L"Strings", sStrWithoutTrailingWhitespace.c_str(), szStrKey);
+		}
+		return szResult;
+	}
 
 	//------------------------------------------------------------------------------------------------
 	virtual const char* GetName(void);

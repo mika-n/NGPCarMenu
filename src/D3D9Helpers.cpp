@@ -284,7 +284,7 @@ inline void _ToLowerCase(std::wstring& s)
 }
 
 // Split string borrowed from the excellent PyString (Python string functions for std C++) string helper routine pack. Slightly modified version here.
-// PyString copyright notice: Copyright (c) 2008-2010, Sony Pictures Imageworks Inc. All rights reserved.
+// PyString copyright notice: Copyright (c) 2008-2010, Sony Pictures Imageworks Inc. All rights reserved. The source code is licensed to public domain by SonyPictures.
 // https://github.com/imageworks/pystring/blob/master/pystring.cpp
 int _SplitString(const std::string& s, std::vector<std::string>& splittedTokens, std::string sep, bool caseInsensitiveSep, bool sepAlreadyLowercase, int maxTokens)
 {
@@ -333,6 +333,20 @@ int _SplitString(const std::string& s, std::vector<std::string>& splittedTokens,
 	splittedTokens.push_back(s.substr(j, len - j));
 
 	return splittedTokens.size();
+}
+
+
+// Convert BYTE integer to bit field string (fex. byte value 0x05 is printed as "00000101"
+std::string _ToBinaryBitString(BYTE byteValue)
+{
+	std::string sResult;
+	sResult.reserve(8);
+	for (int bitIdx = 0; bitIdx < 8; bitIdx++)
+	{
+		sResult += ((byteValue & 0x80) ? "1" : "0"); // Start from the highest bit because otherwise the bit string field would be in reverse order
+		byteValue <<= 1;
+	}
+	return sResult;
 }
 
 
@@ -460,6 +474,7 @@ std::string GetFileVersionInformationAsString(const std::wstring& fileName)
 unsigned long g_iLogMsgCount = 0;  // Safety precaution in debug logger to avoid flooding the logfile. One process running prints out only max N debug lines (more than that then the plugin is probably in some infinite loop lock)
 std::wstring g_sLogFileName;
 std::ofstream* g_fpLogFile = nullptr;
+CRITICAL_SECTION g_hLogCriticalSection;
 
 void DebugOpenFile(bool bOverwriteFile = false)
 {
@@ -475,6 +490,8 @@ void DebugOpenFile(bool bOverwriteFile = false)
 
 				g_sLogFileName = szModulePath;
 				g_sLogFileName = g_sLogFileName + L"\\Plugins\\" L"" VS_PROJECT_NAME L"\\" L"" VS_PROJECT_NAME L".log";
+
+				InitializeCriticalSectionAndSpinCount(&g_hLogCriticalSection, 0x00000400);
 
 #ifndef USE_DEBUG
 				// Release build creates always a new empty logfile when the logfile is opened for the first time during a process run
@@ -493,14 +510,21 @@ void DebugOpenFile(bool bOverwriteFile = false)
 	}
 }
 
+void DebugReleaseResources()
+{
+	DeleteCriticalSection(&g_hLogCriticalSection);
+}
+
 void DebugCloseFile()
 {
 	std::ofstream* fpLogFile = g_fpLogFile;	
 	g_fpLogFile = nullptr;
 	if (fpLogFile != nullptr)
 	{
+		EnterCriticalSection(&g_hLogCriticalSection);
 		fpLogFile->close();
 		delete fpLogFile;
+		LeaveCriticalSection(&g_hLogCriticalSection);
 	}
 }
 
@@ -530,12 +554,23 @@ void DebugPrintFunc_CHAR_or_WCHAR(LPCSTR szTxtBuf, LPCWSTR wszTxtBuf, int iMaxCh
 				*g_fpLogFile << ::_ToUTF8String(std::wstring(L"" VS_PROJECT_NAME " "));
 				*g_fpLogFile << (GetFileVersionInformationAsString(g_sLogFileName + L"\\..\\..\\" L"" VS_PROJECT_NAME L".dll")).c_str() << std::endl;
 			}
-				
-			*g_fpLogFile << szTxtTimeStampBuf;
-			if (szTxtBuf != nullptr)  *g_fpLogFile << szTxtBuf;
-			if (wszTxtBuf != nullptr) *g_fpLogFile << ::_ToUTF8String(wszTxtBuf, iMaxCharsInBuf).c_str();
-			*g_fpLogFile << std::endl;
-			//DebugCloseFile();
+
+			try
+			{
+				EnterCriticalSection(&g_hLogCriticalSection);
+
+				*g_fpLogFile << szTxtTimeStampBuf;
+				if (szTxtBuf != nullptr)  *g_fpLogFile << szTxtBuf;
+				if (wszTxtBuf != nullptr) *g_fpLogFile << ::_ToUTF8String(wszTxtBuf, iMaxCharsInBuf).c_str();
+				*g_fpLogFile << std::endl;
+				//DebugCloseFile();
+
+				LeaveCriticalSection(&g_hLogCriticalSection);
+			}
+			catch (...)
+			{
+				LeaveCriticalSection(&g_hLogCriticalSection);
+			}
 		}
 	}
 	catch (...)

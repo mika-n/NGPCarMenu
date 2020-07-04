@@ -54,6 +54,10 @@ copy "%RELEASE_FOLDER%\Plugins\%APPNAME%\preview\1920x1080\carImages.txt" "%RELE
 copy "Release\%APPNAME%.dll" "%RELEASE_FOLDER%\Plugins\"
 
 copy "%APPNAME%.ini"         "%RELEASE_FOLDER%\Plugins\%APPNAME%.ini.sample"
+copy "%APPNAME%_fi.ini"      "%RELEASE_FOLDER%\Plugins\%APPNAME%\"
+copy "%APPNAME%_en.ini"      "%RELEASE_FOLDER%\Plugins\%APPNAME%\"
+copy "%APPNAME%_se.ini"      "%RELEASE_FOLDER%\Plugins\%APPNAME%\"
+
 copy "%APPNAME%*.rpl"        "%RELEASE_FOLDER%\Plugins\%APPNAME%\Replays\"
 
 copy "CustomCarSpecs.ini"    "%RELEASE_FOLDER%\Plugins\%APPNAME%\"
