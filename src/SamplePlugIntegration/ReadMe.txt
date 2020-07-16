@@ -1,5 +1,5 @@
 // Richard Burns Rally, Sample dummy plugin to demonstrate how to use NGPCarMenu API functions to draw custom images in a plugin menu.
-
+ 
 Files
 	- IPlugin.h / IRBRGame.h/ PluginHelpers.h / RBRTestPlugin.cpp - Standard RBR plugin headers and source files
 	- TestPlugin.h - Standard RBR plugin sample file WITH few additional code lines to draw custom images
