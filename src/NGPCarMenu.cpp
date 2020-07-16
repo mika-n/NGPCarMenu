@@ -200,7 +200,7 @@ DWORD APIENTRY API_InitializePluginIntegration(LPCSTR szPluginName)
 		
 		g_bNewCustomPluginIntegrations = TRUE;
 		
-		DebugPrint("API_InitializePluginIntegration. %s", szPluginName);
+		//DebugPrint("API_InitializePluginIntegration. %s", szPluginName);
 	}
 
 	return (DWORD)pPluginIntegrationLink;
@@ -664,6 +664,9 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 				if(m_sRBRTMPluginTitle.empty())
 					m_sRBRTMPluginTitle = C_RBRTM_PLUGIN_NAME; // The default name of RBRTM
 			}
+
+			if (m_iMenuRBRTMOption)
+				g_bNewCustomPluginIntegrations = TRUE;  // If RBRTM integration is enabled then signal initialization of "custom plugin integration"
 		}
 		catch (...)
 		{
@@ -783,7 +786,7 @@ int CNGPCarMenu::InitPluginIntegration(const std::string& customPluginName, bool
 	try
 	{
 		// Try to lookup custom (or RBRTM) plugin pointer only when all plugins have been loaded into RBR memory and RBR DX9 device is already initialized
-		if (/*m_iRBRTMPluginMenuIdx >= 0 &&*/ g_pRBRMenuSystem->currentMenuObj != m_pRBRPrevCurrentMenu && g_pRBRMenuSystem->currentMenuObj != nullptr)
+		if (/*m_iRBRTMPluginMenuIdx >= 0 &&*/ /*g_pRBRMenuSystem->currentMenuObj != m_pRBRPrevCurrentMenu &&*/ g_pRBRMenuSystem->currentMenuObj != nullptr)
 		{		
 			if (g_pRBRMenuSystem->currentMenuObj->numOfItems >= 7 && g_pRBRMenuSystem->currentMenuObj->firstSelectableItemIdx >= 4 && g_pRBRMenuSystem->currentMenuObj->pItemObj != nullptr)
 			{
@@ -805,7 +808,7 @@ int CNGPCarMenu::InitPluginIntegration(const std::string& customPluginName, bool
 					}
 				}
 				
-				if(g_pRBRPluginMenuSystem->pluginsMenuObj != nullptr && ( (bInitRBRTM && m_iRBRTMPluginMenuIdx == 0) || !bInitRBRTM) )
+				if(g_pRBRPluginMenuSystem->pluginsMenuObj != nullptr && ( (bInitRBRTM && m_iRBRTMPluginMenuIdx == 0) || !bInitRBRTM) && !customPluginName.empty())
 				{
 					//
 					// Check if custom plugin is installed. If this is "RBRTM" integration call then check that RBRTM is a supported version
@@ -899,38 +902,46 @@ int CNGPCarMenu::InitAllNewCustomPluginIntegrations()
 	int iInitCount = 0;			// Num of plugins initialized
 	int iStillWaitingInit = 0;	// Num of plugins still waiting for to be initialized
 
-	if(!g_bNewCustomPluginIntegrations || g_pRBRPluginIntegratorLinkList == nullptr)
+	if (g_pRBRMenuSystem->currentMenuObj == m_pRBRPrevCurrentMenu)
 		return 0;
 
 	try
 	{
-		// Go through all custom plugin integration links and initialize those which are not yet initialized
-		for (auto& item : *g_pRBRPluginIntegratorLinkList)
+		if (g_pRBRPlugin->m_iMenuRBRTMOption == 1 && g_pRBRPlugin->m_iRBRTMPluginMenuIdx == 0)
+			// RBRTM integration is enabled, but the RBRTM linking is not yet initialized. Do it now when RBR has already loaded all custom plugins.
+			// If initialization succeeds then m_iRBRTMPluginMenuIdx > 0 and m_pRBRTMPlugin != NULL and g_pRBRPluginMenuSystem->customPluginMenuObj != NULL, otherwise PluginMenuIdx=-1
+			if (InitPluginIntegration(g_pRBRPlugin->m_sRBRTMPluginTitle, TRUE) != 0)
+				iInitCount++;
+			else
+				iStillWaitingInit++;
+
+		if (g_pRBRPluginIntegratorLinkList != nullptr)
 		{
-			//DebugPrint("CNGPCarMenu::InitAllNewCustomPluginIntegrations. PluginIntegration=%s Idx=%d", item->m_sCustomPluginName.c_str(), item->m_iCustomPluginMenuIdx);
-
-			if (item->m_iCustomPluginMenuIdx == 0)
+			// Go through all custom plugin integration links and initialize those which are not yet initialized
+			for (auto& item : *g_pRBRPluginIntegratorLinkList)
 			{
-				// Plugin integration not yet initialized. Try to do it now.
-				// Return value 0=still waiting to be initialized, >0=successully initialied, <0=init failed ignore the plugin integration
-				m_pRBRPrevCurrentMenu = nullptr;
-				item->m_iCustomPluginMenuIdx = InitPluginIntegration(item->m_sCustomPluginName, FALSE);
-				m_pRBRPrevCurrentMenu = nullptr;
+				//DebugPrint("CNGPCarMenu::InitAllNewCustomPluginIntegrations. PluginIntegration=%s Idx=%d", item->m_sCustomPluginName.c_str(), item->m_iCustomPluginMenuIdx);
 
-				if (item->m_iCustomPluginMenuIdx > 0)
+				if (item->m_iCustomPluginMenuIdx == 0)
 				{
-					iInitCount++;
-					//DebugPrint("CNGPCarMenu::InitAllNewCustomPluginIntegrations. %s link initialized. MenuIdx=%d", item->m_sCustomPluginName.c_str(), item->m_iCustomPluginMenuIdx);
-				}
-				else if (item->m_iCustomPluginMenuIdx == 0)
-				{
-					iStillWaitingInit++;
+					// Plugin integration not yet initialized. Try to do it now.
+					// Return value 0=still waiting to be initialized, >0=successully initialied, <0=init failed ignore the plugin integration
+					item->m_iCustomPluginMenuIdx = InitPluginIntegration(item->m_sCustomPluginName, FALSE);
+
+					if (item->m_iCustomPluginMenuIdx != 0)
+						iInitCount++;
+					else
+						iStillWaitingInit++;
 				}
 			}
 		}
 
+		// If custom plugin integration is not yet fully initialized then try to initialize it now even when all integrated custom plugins have been found
+		if (iInitCount == 0 && iStillWaitingInit == 0 && g_pRBRPluginMenuSystem->customPluginMenuObj == nullptr)
+			InitPluginIntegration("", FALSE);
+
 		// If there are no more plugins waiting for to be initialized then set the flag value to FALSE to avoid repeated (unncessary) initialization calls
-		if(iStillWaitingInit == 0)
+		if(iStillWaitingInit == 0 && g_pRBRPluginMenuSystem->customPluginMenuObj != nullptr)
 			g_bNewCustomPluginIntegrations = FALSE;
 	}
 	catch (...)
@@ -2068,6 +2079,9 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 
 	int iPrevMenuRMRTMOptionValue = m_iMenuRBRTMOption;
 	DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_RBRTMOPTION, m_iMenuRBRTMOption, g_NGPCarMenu_EnableDisableOptions);
+	
+	if (m_iMenuRBRTMOption == 1 && iPrevMenuRMRTMOptionValue != m_iMenuRBRTMOption)
+		g_bNewCustomPluginIntegrations = TRUE;
 
 	if(iPrevMenuImageOptionValue != m_iMenuImageOption || iPrevMenuRMRTMOptionValue != m_iMenuRBRTMOption)
 		SaveSettingsToPluginINIFile();
@@ -2544,12 +2558,6 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 						g_pFontCarSpecCustom->DrawText(posX, g_pRBRPlugin->m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARMODELTITLETEXT_COLOR, pCarSelectionMenuEntry->wszCarModel, 0);
 
 				}
-			}
-			else if (g_pRBRPlugin->m_iRBRTMPluginMenuIdx >= 0 && g_pRBRPluginMenuSystem->customPluginMenuObj == nullptr)
-			{
-				// RBRTM integration is enabled, but the RBRTM linking is not yet initialized. Do it now when RBR has already loaded all custom plugins.
-				// If initialization succeeds then m_iRBRTMPluginMenuIdx > 0 and m_pRBRTMPlugin != NULL and g_pRBRPluginMenuSystem->customPluginMenuObj != NULL, otherwise PluginMenuIdx=-1
-				g_pRBRPlugin->InitPluginIntegration(g_pRBRPlugin->m_sRBRTMPluginTitle, TRUE);
 			}
 		}
 
