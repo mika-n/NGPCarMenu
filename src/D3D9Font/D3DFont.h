@@ -243,6 +243,36 @@ inline D3DXQUATERNION* D3DXQuaternionSlerp(D3DXQUATERNION *pOut, const D3DXQUATE
 */
 }
 
+// Implement deprecated DX9 D3DXMatrixIdentity function because the D3dx9.lib is no longer available in newer DirectX SDK libraries.
+// Specs https://docs.microsoft.com/en-us/windows/win32/direct3d9/d3dxmatrixidentity
+inline D3DMATRIX* D3DXMatrixIdentity(D3DMATRIX* pout)
+{
+	//pout->m[0][1] = pout->m[0][2] = pout->m[0][3] = pout->m[1][0] = pout->m[1][2] = 
+	//pout->m[1][3] = pout->m[2][0] = pout->m[2][1] = pout->m[2][3] = pout->m[3][0] = 
+	//pout->m[3][1] = pout->m[3][2] = 0.0f;
+	ZeroMemory(pout, sizeof(D3DMATRIX));	
+	pout->m[0][0] = pout->m[1][1] = pout->m[2][2] = pout->m[3][3] = 1.0f;
+
+	return pout;
+}
+
+// Implement deprecated DX9 D3DXMatrixIdentity function because the D3dx9.lib is no longer available in newer DirectX SDK libraries.
+// Borrowed from ReactOS sources. https://doxygen.reactos.org/
+inline D3DMATRIX* D3DXMatrixRotationQuaternion(D3DMATRIX* pout, const D3DXQUATERNION* pq)
+{
+	D3DXMatrixIdentity(pout);
+	pout->m[0][0] = 1.0f - 2.0f * (pq->y * pq->y + pq->z * pq->z);
+	pout->m[0][1] = 2.0f * (pq->x * pq->y + pq->z * pq->w);
+	pout->m[0][2] = 2.0f * (pq->x * pq->z - pq->y * pq->w);
+	pout->m[1][0] = 2.0f * (pq->x * pq->y - pq->z * pq->w);
+	pout->m[1][1] = 1.0f - 2.0f * (pq->x * pq->x + pq->z * pq->z);
+	pout->m[1][2] = 2.0f * (pq->y * pq->z + pq->x * pq->w);
+	pout->m[2][0] = 2.0f * (pq->x * pq->z + pq->y * pq->w);
+	pout->m[2][1] = 2.0f * (pq->y * pq->z - pq->x * pq->w);
+	pout->m[2][2] = 1.0f - 2.0f * (pq->x * pq->x + pq->y * pq->y);
+	return pout;
+}
+
 
 //-----------------------------------------------------------------------------
 // Name: class CD3DFont

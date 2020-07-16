@@ -67,7 +67,8 @@ extern bool _iEnds_With(std::wstring s1, std::wstring s2, bool s2AlreadyInLowerc
 extern bool _iStarts_With(std::string s1, std::string s2, bool s2AlreadyInLowercase = FALSE);    // Case-insensitive starts_with string comparison
 extern bool _iEnds_With(std::string s1, std::string s2, bool s2AlreadyInLowercase = FALSE);      // Case-insensitive ends_with string comparison
 
-//extern bool _iEqual(std::wstring const& s1, std::wstring const& s2, bool s2AlreadyInLowercase = FALSE); // Case-insensitive string comparison
+extern bool _iEqual(std::string const& s1, std::string const& s2, bool s2AlreadyInLowercase = FALSE);   // Case-insensitive string comparison
+extern bool _iEqual(std::wstring const& s1, std::wstring const& s2, bool s2AlreadyInLowercase = FALSE); // Case-insensitive string comparison
 
 extern void _Trim(std::wstring & s);  // Trim wstring (in-place, modify the s)
 extern void _Trim(std::string & s);  // Trim string (in-place, modify the s)
@@ -98,9 +99,12 @@ extern bool _StringToPoint(const std::wstring & s, POINT * outPoint, const wchar
 //-----------------------------------------------------------------------------------------------------------------------
 // Special flags for D3D9CreateRectangleVertexTexBufferFromFile method to scale or re-position the image within the specifier rectangle area
 //
-#define IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO 0x01		// Bit1: 1=KeepAspectRatio, 0=Stretch the imaeg to fill the rendering rectangle area
+#define IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO 0x01		// Bit1: 1=KeepAspectRatio, 0=Stretch the img to fill the rendering rectangle area
 #define IMAGE_TEXTURE_POSITION_BOTTOM			 0x02		// Bit2: 1=Image positioned on the bottom of the area, 0=Top of the area
 
+#define IMAGE_TEXTURE_STRETCH_TO_FILL			 0x00  // Default behaviour is to stretch the image to fill the specified draw area
+#define IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_TOP	  (IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO)
+#define IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_BOTTOM (IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO | IMAGE_TEXTURE_POSITION_BOTTOM)
 
 
 //-----------------------------------------------------------------------------------------------------------------------

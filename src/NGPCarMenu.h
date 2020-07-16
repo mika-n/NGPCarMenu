@@ -34,6 +34,7 @@
 //#include <assert.h>
 //#include <stdio.h>
 #include <d3d9.h>
+#include <memory>					// unique_ptr and smart_ptr
 
 #include "PluginHelpers.h"
 
@@ -138,15 +139,72 @@ extern CNGPCarMenu* g_pRBRPlugin;
 extern HRESULT __fastcall CustomRBRDirectXBeginScene(void* objPointer);
 extern HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer);
 
-//------------------------------------------------------------------------------------------------//
 
+//------------------------------------------------------------------------------------------------//
+// CRBRPluginIntegratorLink. Integrates the custom image drawing with a specified plugin.
+// The linked "other plugin" doesn't have to worry about directX textures, vertex, surface and bitmap objects because this NGPCarMenu plugin takes care of those.
+// DrawFrontEndPage method of the "other plugin" can use simple API functions exported by NGPCarMenu 
+// plugin to load and draw custom images at specified location with or without scaling (PNG and BMP files).
+//
+class CRBRPluginIntegratorLinkImage
+{
+public:
+	int m_iImageID;
+	std::string m_sImageFileName;
+	bool  m_bShowImage;
+	POINT m_imagePos;
+	SIZE  m_imageSize;
+	DWORD m_dwImageFlags;
+	
+	IMAGE_TEXTURE m_imageTexture;
+
+	CRBRPluginIntegratorLinkImage()
+	{
+		m_iImageID = -1;
+		m_bShowImage = false;
+		m_imagePos.x = m_imagePos.y = 0;
+		m_imageSize.cx = m_imageSize.cy = 0;
+		m_dwImageFlags = 0;
+		ZeroMemory(&m_imageTexture, sizeof(m_imageTexture));
+	}
+
+	~CRBRPluginIntegratorLinkImage()
+	{
+		SAFE_RELEASE(m_imageTexture.pTexture);
+	}
+};
+
+class CRBRPluginIntegratorLink
+{
+public:
+	int m_iCustomPluginMenuIdx;			// Index to custom plugin
+	bool m_bCustomPluginActive;			// Is the custom plugin active in RBR menu system?
+	std::string m_sCustomPluginName;	// Name of the custom plugin (as shown in RBR Plugins menu)
+	std::vector<std::unique_ptr<CRBRPluginIntegratorLinkImage>> m_imageList; // Image cache (DX9 textures)
+
+	CRBRPluginIntegratorLink() 
+	{ 
+		m_iCustomPluginMenuIdx = 0; 
+		m_bCustomPluginActive = FALSE;
+	}
+
+	~CRBRPluginIntegratorLink()
+	{
+		m_iCustomPluginMenuIdx = -1;
+		m_bCustomPluginActive = FALSE;
+		m_imageList.clear();
+	}
+};
+
+
+//------------------------------------------------------------------------------------------------//
+// CNGPCarMenu class. Custom car preview images in RBR and RBRTM "select a car" menus.
+//
 class CNGPCarMenu : public IPlugin
 {
 protected:
 	CSimpleIniW* m_pLangIniFile;
 	std::string m_sPluginTitle;
-	std::string m_sRBRTMPluginTitle; // "RBR Tournament" is the RBRTM plugin name by default, but in theory it is possible that this str is translated in RBRTM language files. The plugin name in use is stored here because the RBRTM integration routine needs this name.
-
 
 	int	m_iCarMenuNameLen; // Max char space reserved for the current car menu name menu items (calculated in CalculateMaxLenCarMenuName method)
 
@@ -212,6 +270,7 @@ public:
 	IMAGE_TEXTURE m_carPreviewTexture[8];		// 0..7 car preview image data (or NULL if missing/not loaded yet)	
 	IMAGE_TEXTURE m_carRBRTMPreviewTexture[8];  // 0..7 car preview image for RBRTM plugin integration if RBRTM integration is enabled (the same pic as in standard preview image texture, but re-scaled to fit the smaller picture are in RBRTM screen)
 
+	std::string m_sRBRTMPluginTitle;			// "RBR Tournament" is the RBRTM plugin name by default, but in theory it is possible that this str is translated in RBRTM language files. The plugin name in use is stored here because the RBRTM integration routine needs this name.
 	int    m_iRBRTMPluginMenuIdx;				// Index of the RBRTM plugin in the RBR Plugins menu list (this way we know when RBRTM custom plugin in Nth index position is activated)
 	bool   m_bRBRTMPluginActive;				// TRUE/FALSE if the current active custom plugin is RBRTM (active = The RBRTM plugin handler is running in foreground)
 	int    m_iRBRTMCarSelectionType;			// 0=No car selection menu shown, 1=Online Tournament selection, 2=Shakedown car selection
@@ -228,7 +287,8 @@ public:
 
 	bool ReadCarPreviewImageFromFile(int selectedCarIdx, float x, float y, float cx, float cy, IMAGE_TEXTURE* pOutImageTexture, DWORD dwFlags = 0);
 
-	bool InitRBRTMPluginIntegration();
+	int InitPluginIntegration(const std::string& customPluginName, bool bInitRBRTM);
+	int InitAllNewCustomPluginIntegrations();
 
 	void RefreshSettingsFromPluginINIFile(bool addMissingSections = false);
 	void SaveSettingsToPluginINIFile();

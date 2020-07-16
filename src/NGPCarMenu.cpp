@@ -55,28 +55,13 @@ CD3DFont* g_pFontDebug = nullptr;
 
 CD3DFont* g_pFontCarSpecCustom = nullptr;
 
-CNGPCarMenu*         g_pRBRPlugin = nullptr;				// The one and only RBRPlugin instance
+CNGPCarMenu*         g_pRBRPlugin = nullptr;			// The one and only RBRPlugin instance
+PRBRPluginMenuSystem g_pRBRPluginMenuSystem = nullptr;  // Pointer to RBR plugin menu system (for some reason Plugins menu is not part of the std menu arrays)
 
-/*
-// TODO: Move to RBRAPI.cpp file
-PRBRGameConfig		 g_pRBRGameConfig = nullptr;			// Various RBR-API struct pointers
-PRBRGameMode		 g_pRBRGameMode = nullptr;
-PRBRGameModeExt		 g_pRBRGameModeExt = nullptr;
-PRBRCarInfo			 g_pRBRCarInfo = nullptr;
-PRBRCameraInfo		 g_pRBRCameraInfo = nullptr;
-PRBRCarControls		 g_pRBRCarControls = nullptr;
 
-PRBRCarMovement		 g_pRBRCarMovement = nullptr;
-PRBRMapInfo			 g_pRBRMapInfo = nullptr;
-PRBRMapSettings		 g_pRBRMapSettings = nullptr;
-PRBRGhostCarMovement g_pRBRGhostCarMovement = nullptr;
+std::vector<std::unique_ptr<CRBRPluginIntegratorLink>>* g_pRBRPluginIntegratorLinkList = nullptr; // List of custom plugin integration definitions (other plugin can use NGPCarMenu API to draw custom images)
+bool g_bNewCustomPluginIntegrations = false;  // TRUE if there are new custom plugin integrations waiting for to be initialized
 
-PRBRMenuSystem		 g_pRBRMenuSystem = nullptr;		// Pointer to RBR menu system (all standard menu objects)
-*/
-
-//PRBRMenuObj			 g_pRBRPluginsMenuObj = nullptr;	// Pointer to RBR Plugins menu obj
-//PRBRMenuObj			 g_pRBRCustomPlugins
-PRBRPluginMenuSystem g_pRBRPluginMenuSystem = nullptr;   // Pointer to RBR plugin menu system (for some reason Plugins menu is not part of the std menu arrays)
 
 WCHAR* g_pOrigCarSpecTitleWeight = nullptr;				// The original RBR Weight and Transmission title string values
 WCHAR* g_pOrigCarSpecTitleTransmission = nullptr;
@@ -178,6 +163,180 @@ void DebugDumpBufferToScreen(byte* pBuffer, int iPreOffset = 0, int iBytesToDump
 	}
 }
 #endif
+
+
+//-----------------------------------------------------------------------------------------------------------------------------
+// DLL exported API functions to draw custom images in other plugins. Other plugins can use these API functions to re-use directx 
+// services from NGPCarMenu plugin.
+//
+DWORD APIENTRY API_InitializePluginIntegration(LPCSTR szPluginName)
+{
+	if (szPluginName == nullptr || szPluginName[0] == '\0')
+		return 0;
+
+	if (g_pRBRPluginIntegratorLinkList == nullptr)
+		g_pRBRPluginIntegratorLinkList = new std::vector<std::unique_ptr<CRBRPluginIntegratorLink>>();
+
+	CRBRPluginIntegratorLink* pPluginIntegrationLink = nullptr;
+	std::string sPluginName = szPluginName;
+	_ToLowerCase(sPluginName);
+
+	// Check if the plugin integration with the same name already exists
+	for (auto& item : *g_pRBRPluginIntegratorLinkList)
+	{
+		if(_iEqual(item->m_sCustomPluginName, sPluginName, true))
+		{
+			pPluginIntegrationLink = item.get();
+			break;
+		}
+	}
+
+	if (pPluginIntegrationLink == nullptr)
+	{
+		auto newLink = std::make_unique<CRBRPluginIntegratorLink>();
+		newLink->m_sCustomPluginName = szPluginName;
+		pPluginIntegrationLink = newLink.get();
+		g_pRBRPluginIntegratorLinkList->push_back(std::move(newLink));
+		
+		g_bNewCustomPluginIntegrations = TRUE;
+		
+		DebugPrint("API_InitializePluginIntegration. %s", szPluginName);
+	}
+
+	return (DWORD)pPluginIntegrationLink;
+}
+
+BOOL APIENTRY API_LoadCustomImage(DWORD pluginID, int imageID, LPCSTR szFileName, const POINT* pImagePos, const SIZE* pImageSize, DWORD dwImageFlags)
+{
+	BOOL bRetValue = TRUE;
+	CRBRPluginIntegratorLink* pPluginIntegrationLink = nullptr;
+
+	if (pImagePos == nullptr || pImageSize == nullptr)
+		return FALSE;
+
+	for (auto& item : *g_pRBRPluginIntegratorLinkList)
+	{
+		if ((DWORD)item.get() == pluginID)
+		{
+			pPluginIntegrationLink = item.get();
+			break;
+		}
+	}
+
+	if (pPluginIntegrationLink == nullptr)
+		return FALSE;
+
+	CRBRPluginIntegratorLinkImage* pPluginLinkImage = nullptr;
+	for (auto& item : pPluginIntegrationLink->m_imageList)
+	{
+		if (item->m_iImageID == imageID)
+		{
+			pPluginLinkImage = item.get();
+			break;
+		}
+	}
+
+	if (pPluginLinkImage == nullptr)
+	{
+		auto newImage = std::make_unique<CRBRPluginIntegratorLinkImage>();
+		newImage->m_iImageID = imageID;
+		pPluginLinkImage = newImage.get();
+		pPluginIntegrationLink->m_imageList.push_back(std::move(newImage));
+	}
+
+	bool bRefeshImage = false;
+	std::string sFileName = szFileName;
+	_ToLowerCase(sFileName);
+
+	if (pPluginLinkImage->m_sImageFileName.compare(sFileName) != 0)
+		bRefeshImage = true;
+	else if (pPluginLinkImage->m_imagePos.x != pImagePos->x || pPluginLinkImage->m_imagePos.y != pImagePos->y)
+		bRefeshImage = true;
+	else if (pPluginLinkImage->m_imageSize.cx != pImageSize->cx || pPluginLinkImage->m_imageSize.cy != pImageSize->cy)
+		bRefeshImage = true;
+	else if (pPluginLinkImage->m_dwImageFlags != dwImageFlags)
+		bRefeshImage = true;
+
+	if (bRefeshImage == true)
+	{
+		SAFE_RELEASE(pPluginLinkImage->m_imageTexture.pTexture);
+
+		pPluginLinkImage->m_sImageFileName = sFileName;
+		pPluginLinkImage->m_imagePos = *pImagePos;
+		pPluginLinkImage->m_imageSize = *pImageSize;
+		pPluginLinkImage->m_dwImageFlags = dwImageFlags;
+
+		if (szFileName != nullptr)
+		{
+			try
+			{
+				HRESULT hResult = D3D9CreateRectangleVertexTexBufferFromFile(g_pRBRIDirect3DDevice9,
+					_ToWString(sFileName),
+					(float)pImagePos->x, (float)pImagePos->y, (float)pImageSize->cx, (float)pImageSize->cy,
+					&pPluginLinkImage->m_imageTexture,
+					dwImageFlags);
+
+				// Image not available. Do not try to re-load it again (set cx=-1 to indicate that the image loading failed, so no need to try to re-load it in every frame even when texture is null)
+				if (!SUCCEEDED(hResult))
+				{
+					pPluginLinkImage->m_imageTexture.imgSize.cx = -1;
+					SAFE_RELEASE(pPluginLinkImage->m_imageTexture.pTexture);
+					bRetValue = FALSE;
+				}
+			}
+			catch (...)
+			{
+				pPluginLinkImage->m_imageTexture.imgSize.cx = -1;
+				SAFE_RELEASE(pPluginLinkImage->m_imageTexture.pTexture);
+				bRetValue = FALSE;
+			}
+		}
+	}
+
+	return bRetValue;
+}
+
+void APIENTRY API_ShowHideImage(DWORD pluginID, int imageID, bool showImage)
+{
+	if (g_pRBRPluginIntegratorLinkList == nullptr || pluginID == 0)
+		return;
+
+	for (auto& linkItem : *g_pRBRPluginIntegratorLinkList)
+	{
+		if ((DWORD)linkItem.get() == pluginID)
+		{
+			for (auto& imageItem : linkItem->m_imageList)
+			{
+				if (imageItem->m_iImageID == imageID)
+				{
+					imageItem->m_bShowImage = showImage;
+					break;
+				}
+			}
+			break;
+		}
+	}
+}
+
+void APIENTRY API_RemovePluginIntegration(DWORD pluginID)
+{
+	if (g_pRBRPluginIntegratorLinkList == nullptr || pluginID == 0)
+		return;
+
+	for (auto& item : *g_pRBRPluginIntegratorLinkList)
+	{
+		if ((DWORD)item.get() == pluginID)
+		{
+			g_pRBRPluginIntegratorLinkList->erase(std::remove(g_pRBRPluginIntegratorLinkList->begin(), g_pRBRPluginIntegratorLinkList->end(), item), g_pRBRPluginIntegratorLinkList->end());
+			break;
+		}
+	}
+}
+
+void APIENTRY API_MapRBRPointToScreenPoint(const float srcX, const float srcY, float* trgX, float* trgY)
+{
+	RBRAPI_MapRBRPointToScreenPoint(srcX, srcY, trgX, trgY);
+}
 
 
 //-----------------------------------------------------------------------------------------------------------------------------
@@ -297,6 +456,12 @@ CNGPCarMenu::~CNGPCarMenu(void)
 	SAFE_DELETE(g_pRBRPluginMenuSystem);
 
 	SAFE_DELETE(m_pLangIniFile);
+
+	if (g_pRBRPluginIntegratorLinkList != nullptr)
+	{
+		g_pRBRPluginIntegratorLinkList->clear();
+		SAFE_DELETE(g_pRBRPluginIntegratorLinkList);
+	}
 
 	DebugPrint("Exit CNGPCarMenu.Destructor");
 	DebugCloseFile();
@@ -608,71 +773,90 @@ void CNGPCarMenu::SaveSettingsToPluginINIFile()
 
 
 //-------------------------------------------------------------------------------------------------
-// Initialize RBRTM plugin integration
+// Initialize RBRTM or custom plugin integration
 //
-bool CNGPCarMenu::InitRBRTMPluginIntegration()
+int CNGPCarMenu::InitPluginIntegration(const std::string& customPluginName, bool bInitRBRTM)
 {
-	//DebugPrint("Enter CNGPCarMenu.InitRBRTMPluginIntegration");
+	//DebugPrint("Enter CNGPCarMenu.InitPluginIntegration");
+	int iResultPluginIdx = 0;
 
 	try
 	{
-		// Try to lookup RBRTM plugin pointer only when all plugins have been loaded into RBR memory and RBR DX9 device is already initialized
-		if (m_iRBRTMPluginMenuIdx >= 0 && g_pRBRMenuSystem->currentMenuObj != m_pRBRPrevCurrentMenu && g_pRBRMenuSystem->currentMenuObj != nullptr)
+		// Try to lookup custom (or RBRTM) plugin pointer only when all plugins have been loaded into RBR memory and RBR DX9 device is already initialized
+		if (/*m_iRBRTMPluginMenuIdx >= 0 &&*/ g_pRBRMenuSystem->currentMenuObj != m_pRBRPrevCurrentMenu && g_pRBRMenuSystem->currentMenuObj != nullptr)
 		{		
 			if (g_pRBRMenuSystem->currentMenuObj->numOfItems >= 7 && g_pRBRMenuSystem->currentMenuObj->firstSelectableItemIdx >= 4 && g_pRBRMenuSystem->currentMenuObj->pItemObj != nullptr)
 			{
+				PRBRPluginMenuItemObj3 pItemArr;
+
 				if (g_pRBRPluginMenuSystem->pluginsMenuObj == nullptr)
 				{
 					//
-					// Identify "Plugins" RBR menuObj
+					// Identify "Options" and "Plugins" RBR menuObjs
 					//
-					PRBRPluginMenuItemObj3 pItemArr = (PRBRPluginMenuItemObj3)g_pRBRMenuSystem->currentMenuObj->pItemObj[g_pRBRMenuSystem->currentMenuObj->firstSelectableItemIdx - 2];
+					pItemArr = (PRBRPluginMenuItemObj3)g_pRBRMenuSystem->currentMenuObj->pItemObj[g_pRBRMenuSystem->currentMenuObj->firstSelectableItemIdx - 2];
 					if ((DWORD)pItemArr->szMenuTitleID > 0x00001000)
 					{
 						if (g_pRBRPluginMenuSystem->optionsMenuObj == nullptr && strncmp(pItemArr->szMenuTitleID, "OPT_MAIN", 8) == 0)
 							g_pRBRPluginMenuSystem->optionsMenuObj = g_pRBRMenuSystem->currentMenuObj;
-						
+
 						if (wcsncmp(pItemArr->wszMenuTitleID, L"Plugins", 7) == 0)
-						{
-							//
-							// Check that RBRTM plugin is installed and the RBRTM is a supported version
-							//
 							g_pRBRPluginMenuSystem->pluginsMenuObj = g_pRBRMenuSystem->currentMenuObj;
+					}
+				}
+				
+				if(g_pRBRPluginMenuSystem->pluginsMenuObj != nullptr && ( (bInitRBRTM && m_iRBRTMPluginMenuIdx == 0) || !bInitRBRTM) )
+				{
+					//
+					// Check if custom plugin is installed. If this is "RBRTM" integration call then check that RBRTM is a supported version
+					//
+					for (int idx = g_pRBRPluginMenuSystem->pluginsMenuObj->firstSelectableItemIdx; idx < g_pRBRPluginMenuSystem->pluginsMenuObj->numOfItems - 1; idx++)
+					{
+						pItemArr = (PRBRPluginMenuItemObj3)g_pRBRPluginMenuSystem->pluginsMenuObj->pItemObj[idx];
 
-							for (int idx = g_pRBRPluginMenuSystem->pluginsMenuObj->firstSelectableItemIdx; idx < g_pRBRPluginMenuSystem->pluginsMenuObj->numOfItems - 1; idx++)
+						//DebugPrint("MenuIdx=%d %s", idx, pItemArr->szItemName);
+
+						if (g_pRBRPluginMenuSystem->pluginsMenuObj->pItemObj[idx] != nullptr && strncmp(pItemArr->szItemName, customPluginName.c_str(), customPluginName.length()) == 0)
+						{
+							iResultPluginIdx = idx; // Index to custom plugin obj within the "Plugins" menu
+
+							if (bInitRBRTM)
 							{
-								pItemArr = (PRBRPluginMenuItemObj3)g_pRBRPluginMenuSystem->pluginsMenuObj->pItemObj[idx];
-								
-								if (g_pRBRPluginMenuSystem->pluginsMenuObj->pItemObj[idx] != nullptr && strncmp(pItemArr->szItemName, m_sRBRTMPluginTitle.c_str(), m_sRBRTMPluginTitle.length()) == 0)
+								// If this was a special "RBRTM" integration then check the version of RBRTM before accepting the RBRTM plugin
+								std::string sRBRVersion = GetFileVersionInformationAsString(m_sRBRRootDirW + L"\\Plugins\\RBRTM.DLL");
+								LogPrint("RBRTM plugin version %s detected", sRBRVersion.c_str());
+
+								if (sRBRVersion.compare("0.8.8.0") == 0)
 								{
-									// Check version before accepting the RBRTM plugin
-									std::string sRBRVersion = GetFileVersionInformationAsString(m_sRBRRootDirW + L"\\Plugins\\RBRTM.DLL");
-									LogPrint("RBRTM plugin version %s detected", sRBRVersion.c_str());
-
-									if (sRBRVersion.compare("0.8.8.0") == 0)
-									{
-										// Plugins menu index to RBRTM plugin (ie. RBR may load plugins in random order, so certain plugin is not always in the same position in the Plugins menu list)							
-										if (::ReadOpCodePtr((LPVOID)0x1597F128, (LPVOID*)&m_pRBRTMPlugin) && m_pRBRTMPlugin != nullptr)
-											m_iRBRTMPluginMenuIdx = idx;
-										else
-											m_pRBRTMPlugin = nullptr;
-									}
-
-									break;
+									// Plugins menu index to RBRTM plugin (ie. RBR may load plugins in random order, so certain plugin is not always in the same position in the Plugins menu list)							
+									if (::ReadOpCodePtr((LPVOID)0x1597F128, (LPVOID*)&m_pRBRTMPlugin) && m_pRBRTMPlugin != nullptr)
+										m_iRBRTMPluginMenuIdx = idx;
+									else
+										m_pRBRTMPlugin = nullptr;
 								}
 							}
 
-							if (m_pRBRTMPlugin != nullptr)
-							{
-								LogPrint("RBRTM plugin integration enabled");
-							}
-							else
-							{
-								LogPrint("RBRTM plugin integration disabled. The plugin is not loaded or the version was not the expected RBRTM v0.88.0");
-								m_iRBRTMPluginMenuIdx = -1;
-							}
+							break;
 						}
 					}
+
+					if ( (bInitRBRTM && m_pRBRTMPlugin != nullptr) || (!bInitRBRTM && iResultPluginIdx > 0) )
+					{
+						LogPrint("%s plugin integration enabled", customPluginName.c_str());
+
+						if (bInitRBRTM)
+							LogPrint("RBRTM plugin is loaded and the version is supported RBRTM v0.88.0");
+					}
+					else
+					{
+						LogPrint("%s plugin integration disabled. Plugin not found", customPluginName.c_str());
+
+						if (bInitRBRTM)
+						{
+							LogPrint("RBRTM plugin is not loaded or the version was not the expected RBRTM v0.88.0");
+							m_iRBRTMPluginMenuIdx = -1;
+						}
+					}										
 				}
 			}
 			else if (g_pRBRPluginMenuSystem->pluginsMenuObj != nullptr && g_pRBRPluginMenuSystem->customPluginMenuObj == nullptr)
@@ -689,14 +873,72 @@ bool CNGPCarMenu::InitRBRTMPluginIntegration()
 	}
 	catch (...)
 	{
-		LogPrint("ERROR CNGPCarMenu::InitRBRTMPluginIntegration. Failed to initialize RBRTM integration");
-		m_pRBRTMPlugin = nullptr;
-		m_iRBRTMPluginMenuIdx = -1;
+		iResultPluginIdx = -1;
+
+		LogPrint("ERROR CNGPCarMenu::InitPluginIntegration. Failed to initialize %s integration", customPluginName.c_str());
+
+		if (bInitRBRTM)
+		{
+			m_pRBRTMPlugin = nullptr;
+			m_iRBRTMPluginMenuIdx = -1;
+		}
 	}
 
-	//DebugPrint("Exit CNGPCarMenu.InitRBRTMPluginIntegration");
+	if(bInitRBRTM)
+		iResultPluginIdx = m_iRBRTMPluginMenuIdx;
 
-	return m_pRBRTMPlugin != nullptr;
+	//DebugPrint("Exit CNGPCarMenu.InitPluginIntegration");
+
+	return iResultPluginIdx; //  m_pRBRTMPlugin != nullptr;
+}
+
+
+// Initialize all new plugin integrations
+int CNGPCarMenu::InitAllNewCustomPluginIntegrations()
+{
+	int iInitCount = 0;			// Num of plugins initialized
+	int iStillWaitingInit = 0;	// Num of plugins still waiting for to be initialized
+
+	if(!g_bNewCustomPluginIntegrations || g_pRBRPluginIntegratorLinkList == nullptr)
+		return 0;
+
+	try
+	{
+		// Go through all custom plugin integration links and initialize those which are not yet initialized
+		for (auto& item : *g_pRBRPluginIntegratorLinkList)
+		{
+			//DebugPrint("CNGPCarMenu::InitAllNewCustomPluginIntegrations. PluginIntegration=%s Idx=%d", item->m_sCustomPluginName.c_str(), item->m_iCustomPluginMenuIdx);
+
+			if (item->m_iCustomPluginMenuIdx == 0)
+			{
+				// Plugin integration not yet initialized. Try to do it now.
+				// Return value 0=still waiting to be initialized, >0=successully initialied, <0=init failed ignore the plugin integration
+				m_pRBRPrevCurrentMenu = nullptr;
+				item->m_iCustomPluginMenuIdx = InitPluginIntegration(item->m_sCustomPluginName, FALSE);
+				m_pRBRPrevCurrentMenu = nullptr;
+
+				if (item->m_iCustomPluginMenuIdx > 0)
+				{
+					iInitCount++;
+					//DebugPrint("CNGPCarMenu::InitAllNewCustomPluginIntegrations. %s link initialized. MenuIdx=%d", item->m_sCustomPluginName.c_str(), item->m_iCustomPluginMenuIdx);
+				}
+				else if (item->m_iCustomPluginMenuIdx == 0)
+				{
+					iStillWaitingInit++;
+				}
+			}
+		}
+
+		// If there are no more plugins waiting for to be initialized then set the flag value to FALSE to avoid repeated (unncessary) initialization calls
+		if(iStillWaitingInit == 0)
+			g_bNewCustomPluginIntegrations = FALSE;
+	}
+	catch (...)
+	{
+		g_bNewCustomPluginIntegrations = FALSE;
+	}
+
+	return iInitCount;
 }
 
 
@@ -1965,6 +2207,23 @@ HRESULT __fastcall CustomRBRDirectXBeginScene(void* objPointer)
 
 			g_pRBRPlugin->m_bMenuSelectCarCustomized = false;
 		}
+
+
+		// If there are new custom plugin integration requests then initialize those now
+		if (g_bNewCustomPluginIntegrations)
+			g_pRBRPlugin->InitAllNewCustomPluginIntegrations();
+
+		// Check if any of the custom plugins is active
+		if (g_pRBRPluginIntegratorLinkList != nullptr && g_pRBRPluginMenuSystem->customPluginMenuObj != nullptr)
+		{
+			for (auto& item : *g_pRBRPluginIntegratorLinkList)
+			{
+				if (!item->m_bCustomPluginActive && g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->customPluginMenuObj && item->m_iCustomPluginMenuIdx == g_pRBRPluginMenuSystem->pluginsMenuObj->selectedItemIdx)
+					item->m_bCustomPluginActive = true;
+				else if (item->m_bCustomPluginActive && (g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->optionsMenuObj || g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->pluginsMenuObj || g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN]))
+					item->m_bCustomPluginActive = false;
+			}
+		}
 	}
 	else if (g_pRBRPlugin->m_iCustomReplayState > 0)
 	{	
@@ -2290,7 +2549,24 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 			{
 				// RBRTM integration is enabled, but the RBRTM linking is not yet initialized. Do it now when RBR has already loaded all custom plugins.
 				// If initialization succeeds then m_iRBRTMPluginMenuIdx > 0 and m_pRBRTMPlugin != NULL and g_pRBRPluginMenuSystem->customPluginMenuObj != NULL, otherwise PluginMenuIdx=-1
-				g_pRBRPlugin->InitRBRTMPluginIntegration();
+				g_pRBRPlugin->InitPluginIntegration(g_pRBRPlugin->m_sRBRTMPluginTitle, TRUE);
+			}
+		}
+
+
+		// Draw images set by custom plugins (if the custom plugin is activated)
+		if (g_pRBRPluginIntegratorLinkList != nullptr)
+		{
+			for (auto& item : *g_pRBRPluginIntegratorLinkList)
+			{
+				if (item->m_bCustomPluginActive)
+				{
+					for (auto& imageItem : item->m_imageList)
+					{
+						if (imageItem->m_bShowImage && imageItem->m_imageTexture.pTexture != nullptr && imageItem->m_imageSize.cx != -1)
+							D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, imageItem->m_imageTexture.pTexture, imageItem->m_imageTexture.vertexes2D);
+					}
+				}
 			}
 		}
 	}

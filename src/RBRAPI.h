@@ -244,7 +244,7 @@ typedef struct {
 	//		10 = Before starting a race start countdown (the camera is moving around the car at starting line or in replay)
 	//		11 = ? (black out)
 	//		12 = go to the main or plugin menu (stage finished or retired at this point)
-	//		13 = switch screen from menu to field
+	//		13 = switch screen from menu to something else
 	//		14-255 = ?
 	__int32 gameMode; // 0x728
 #pragma pack(pop)

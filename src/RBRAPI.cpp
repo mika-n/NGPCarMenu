@@ -304,19 +304,21 @@ void RBRAPI_MapRBRPointToScreenPoint(const float srcX, const float srcY, int* tr
 {
 	if (trgX != nullptr)
 	{
-		//*trgX = static_cast<int>(srcX * (g_rectRBRWndClient.right / 640.0f /*g_pRBRGameConfig->resolutionX*/));c
 		int offset_x = (g_rectRBRWndClient.right - g_pRBRGameConfig->resolutionX) / 2;
 		*trgX = offset_x + static_cast<int>(srcX * (g_pRBRGameConfig->resolutionX / 640.0f));
 	}
 
 	if (trgY != nullptr)
-		*trgY = static_cast<int>( srcY  * (g_rectRBRWndClient.bottom / 480.0f  /*g_pRBRGameConfig->resolutionY*/ ) );
+		*trgY = static_cast<int>( srcY  * (g_rectRBRWndClient.bottom / 480.0f  /*g_pRBRGameConfig->resolutionY*/));
 }
 
 void RBRAPI_MapRBRPointToScreenPoint(const float srcX, const float srcY, float* trgX, float* trgY)
 {
 	if (trgX != nullptr)
-		*trgX = static_cast<float>(srcX * (g_rectRBRWndClient.right / 640.0f /*g_pRBRGameConfig->resolutionX*/));
+	{
+		float offset_x = (g_rectRBRWndClient.right - g_pRBRGameConfig->resolutionX) / 2.0f;
+		*trgX = offset_x + static_cast<float>(srcX * (g_rectRBRWndClient.right / 640.0f));
+	}
 
 	if (trgY != nullptr)
 		*trgY = static_cast<float>(srcY * (g_rectRBRWndClient.bottom / 480.0f  /*g_pRBRGameConfig->resolutionY*/));

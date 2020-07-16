@@ -1,0 +1,3 @@
+LIBRARY	SamplePlug1
+EXPORTS 
+	RBR_CreatePlugin

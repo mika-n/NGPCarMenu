@@ -93,13 +93,22 @@ inline bool _iEnds_With(std::string s1, std::string s2, bool s2AlreadyInLowercas
 		return false;
 }
 
-/*
 inline bool _iEqual_wchar(wchar_t c1, wchar_t c2)
 {
 	return std::tolower(c1) == std::tolower(c2);
 }
 
 inline bool _iEqualS2Lower_wchar(wchar_t c1, wchar_t c2)
+{
+	return std::tolower(c1) == c2;
+}
+
+inline bool _iEqual_char(char c1, char c2)
+{
+	return std::tolower(c1) == std::tolower(c2);
+}
+
+inline bool _iEqualS2Lower_char(char c1, char c2)
 {
 	return std::tolower(c1) == c2;
 }
@@ -111,7 +120,15 @@ inline bool _iEqual(std::wstring const& s1, std::wstring const& s2, bool s2Alrea
 	else
 		return (s1.size() == s2.size() && std::equal(s1.begin(), s1.end(), s2.begin(), _iEqual_wchar));
 }
-*/
+
+inline bool _iEqual(std::string const& s1, std::string const& s2, bool s2AlreadyInLowercase)
+{
+	if (s2AlreadyInLowercase)
+		return (s1.size() == s2.size() && std::equal(s1.begin(), s1.end(), s2.begin(), _iEqualS2Lower_char));
+	else
+		return (s1.size() == s2.size() && std::equal(s1.begin(), s1.end(), s2.begin(), _iEqual_char));
+}
+
 
 //
 // Trim/LTrim/RTrim wstring objects (the string obj is trimmed in-place, the original string modified)

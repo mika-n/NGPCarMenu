@@ -1,3 +1,8 @@
 LIBRARY	NGPCarMenu
 EXPORTS 
 	RBR_CreatePlugin
+    API_InitializePluginIntegration
+	API_LoadCustomImage
+	API_ShowHideImage
+	API_RemovePluginIntegration
+	API_MapRBRPointToScreenPoint
