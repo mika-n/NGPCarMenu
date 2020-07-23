@@ -53,10 +53,10 @@ Note! If you use Windows Explorer integrated unzip tool to unzip the package the
 - You won't loose your existing rbr\Plugins\NGPCarMenu.ini settings because the new version overwrites NGPCarMenu.ini.sample file. If you want to read more about new options then take a look at this NGPCarMenu.ini.sample file or Readme.txt file. However, the new version will initialize all new options with de1ault values, so the old INI file continues to work.
 
 ## Configuration
-rbr\Plugins\NGPCarMenu.ini options (see the INI file for more details):
+rbr\Plugins\NGPCarMenu.ini options (see the NGPCarMenu.ini.sample file for more details):
 | Option                 | Comment                                                                                |
 |------------------------|----------------------------------------------------------------------------------------|
-| ScreenshotPath         | Location of car preview images (relative to RBR executable location or absolute path). |
+| ScreenshotPath         | Location of car preview images (relative to RBR executable location or absolute path). Supports various runtime variables (see NGPCarMenu.ini.sample for more details) |
 | ScreenshotReplay       | Replay filename the plugin uses to generate preview images. |
 | ScreenshotFileType     | PNG or BMP file format in car preview image files. There is also in-game plugin option to set this value. |
 | ScreenshotAPIType      | 0 or 1. 0=DirectX framebuffer capture while creating preview images. 1=GDI capture. Some Win7 PCs seemed to have issues with DX9 framebuffer captures (wrong colors), so this option 1 (GDI) may help in those scenarios. |
@@ -68,12 +68,14 @@ rbr\Plugins\NGPCarMenu.ini options (see the INI file for more details):
 | CarSelectRightBlackBar | (the same as above) |
 | Car3DModelInfoPosition | 3D model into textbox X Y position. Empty or missing uses the default position. 320 200 would set both X and Y positions, but having just 320 value would set X position only and Y would be at default position. |
 | CarPictureScale        | Scaling of the car picture in the built-in RBR car selection menus (-1=no scaling or stretching (default), 0=Stretch to fill the picture area (ignore aspect ratio), 3=Scale while keeping the aspect ratio and place the image on the bottom of the picture rectangle area. |
+| CarPictureUseTransparent | 0 or 1. 0=No transparent support with PNG files. 1=If PNG file has a transparent background then use it (alpha channel) |
 | ScreenshotCarPosition  | Car position within the replay video while taking the car preview screenshot. *(not yet implemented)* |
 | ScreenshotCamPosition  | Camera position while taking the screenshot. *(not yet implemented)* |
 | RBRTM_Integration      | 0 or 1. 0=RBRTM integration disabled. 1=RBRTM integration enabled (if the RBRTM plugin is installed and it is V0.88 version) |
 | RBRTM_CarPictureRect   | Rectangle coordinates where the car preview image is drawn in RBRTM Shakedown and OnlineTournament menus (left top right bottom). Tweak this value if the image is drawn at wrong location |
 | RBRTM_CarPictureCropping | Rectangle coordinates of cropping area of the preview image shown in RBRTM menus *(not yet implemented)* |
 | RBRTM_CarPictureScale  | Scaling of the car picture in the RBRTM car selection menus (0=Stretch to fill the picture area, 3=Scale while keeping the aspect ratio and place the image on the bottom of the picture rectangle area (default). |
+| RBRTM_CarPictureUseTransparent | 0 or 1. 0=No transparent support with PNG files. 1=If PNG file has a transparent background then use it (alpha channel) |
 
 ## Questions and Answers
 - **Does "Create car image" command overwrite existing car preview images?** No, the plugin uses *"Create only missing images"* option by default. However, you can change this option in the plugin's in-game menu to *"All car images"* option. This option re-creates all car images.
