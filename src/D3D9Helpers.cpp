@@ -113,7 +113,7 @@ inline bool _iEqualS2Lower_char(char c1, char c2)
 	return std::tolower(c1) == c2;
 }
 
-inline bool _iEqual(std::wstring const& s1, std::wstring const& s2, bool s2AlreadyInLowercase)
+inline bool _iEqual(const std::wstring& s1, const std::wstring& s2, bool s2AlreadyInLowercase)
 {
 	if (s2AlreadyInLowercase)
 		return (s1.size() == s2.size() && std::equal(s1.begin(), s1.end(), s2.begin(), _iEqualS2Lower_wchar));
@@ -121,7 +121,7 @@ inline bool _iEqual(std::wstring const& s1, std::wstring const& s2, bool s2Alrea
 		return (s1.size() == s2.size() && std::equal(s1.begin(), s1.end(), s2.begin(), _iEqual_wchar));
 }
 
-inline bool _iEqual(std::string const& s1, std::string const& s2, bool s2AlreadyInLowercase)
+inline bool _iEqual(const std::string& s1, const std::string& s2, bool s2AlreadyInLowercase)
 {
 	if (s2AlreadyInLowercase)
 		return (s1.size() == s2.size() && std::equal(s1.begin(), s1.end(), s2.begin(), _iEqualS2Lower_char));
@@ -184,6 +184,106 @@ inline std::wstring _TrimCopy(std::wstring s)
 	return s;
 }
 */
+
+
+//
+// Search all occurences of keywords in a string and replace the keyword with another value. Optionally case-insenstive search
+//
+template<typename T>
+T _ReplaceStr_T(const T& str, const T& searchKeyword, const T& replaceValue, bool caseInsensitive)
+{
+	T sResult;	
+	T _str;
+	T _searchKeyword = searchKeyword;
+	T _replaceValue = replaceValue;
+	const size_t searchKeywordLen = searchKeyword.length();
+
+	if (caseInsensitive)
+	{
+		_ToLowerCase(_searchKeyword);
+		_ToLowerCase(_replaceValue);
+	}
+
+	// If the searchKeyword is longer than the original string then there cannot be any search matches. Return the original string value.
+	if (searchKeywordLen > str.length() || searchKeywordLen < 1 || _searchKeyword.compare(_replaceValue) == 0)
+		return str;
+
+	size_t pos;
+	const size_t replaceSize = replaceValue.length();
+
+	pos = 0;
+	sResult = str;
+	while(true)
+	{
+		// Locate the next searchKeyword substring (exit if no more matches)
+		_str = sResult;
+		if (caseInsensitive)
+			_ToLowerCase(_str);
+
+		if (pos >= _str.length())
+			break;
+
+		pos = _str.find(_searchKeyword, pos);
+		if (pos == T::npos)
+			break;
+
+		if (searchKeywordLen == replaceSize)
+			// If the search keyword and replace value have the same length then use replace method to replace the value without copying the whole string
+			sResult.replace(pos, searchKeywordLen, replaceValue);
+		else
+		{
+			sResult.erase(pos, searchKeywordLen);
+			sResult.insert(pos, replaceValue);
+		}
+
+		pos += replaceValue.length();
+	}
+
+	return sResult;
+}
+
+inline std::string _ReplaceStr(const std::string& str, const std::string& searchKeyword, const std::string& replaceValue, bool caseInsensitive)
+{
+	return _ReplaceStr_T<std::string>(str, searchKeyword, replaceValue, caseInsensitive);
+}
+
+inline std::wstring _ReplaceStr(const std::wstring& str, const std::wstring& searchKeyword, const std::wstring& replaceValue, bool caseInsensitive)
+{
+	return _ReplaceStr_T<std::wstring>(str, searchKeyword, replaceValue, caseInsensitive);
+}
+
+template<typename T, typename TC>
+T _RemoveEnclosingChar_T(const T& str, const TC searchChar, bool caseInsensitive)
+{
+	T sResult = str;
+
+	// Remove leading "enclosing" char
+	if (sResult.length() >= 1 && ( (caseInsensitive && ::tolower(sResult[0]) == ::tolower(searchChar)) || (!caseInsensitive && sResult[0] == searchChar) ))
+	{
+		sResult.erase(0, 1);
+		_Trim(sResult);
+	}
+
+	// Remove trailing "enclosing" char
+	if (sResult.length() >= 1 && ((caseInsensitive && ::tolower(sResult[sResult.length() - 1]) == ::tolower(searchChar)) || (!caseInsensitive && sResult[sResult.length() - 1] == searchChar) ))
+	{
+		sResult.erase(sResult.length()-1, 1);
+		_Trim(sResult);
+	}
+
+	return sResult;
+}
+
+inline std::wstring _RemoveEnclosingChar(const std::wstring& str, const WCHAR searchChar, bool caseInsensitive)
+{
+	return _RemoveEnclosingChar_T<std::wstring, WCHAR>(str, searchChar, caseInsensitive);
+}
+
+inline std::string _RemoveEnclosingChar(const std::string& str, const char searchChar, bool caseInsensitive)
+{
+	return _RemoveEnclosingChar_T<std::string, char>(str, searchChar, caseInsensitive);
+}
+
 
 //
 // Convert ASCII char string to WCHAR string object or vice-versa
@@ -1176,9 +1276,15 @@ HRESULT D3D9CreateRectangleVertexTexBufferFromFile(const LPDIRECT3DDEVICE9 pD3De
 	HRESULT hResult = D3D9LoadTextureFromFile(pD3Device, fileName, &pTempTexture, &pOutImageTexture->imgSize);
 	if (SUCCEEDED(hResult))
 	{		
-		if (cx == 0 && cy == 0)
+		if ((cx == 0 && cy == 0) || (dwFlags & IMAGE_TEXTURE_SCALE_PRESERVE_ORIGSIZE))
 		{
 			// If cx/cy is all zero then use the original image size instead of the supplied custom size (re-scaled image rect texture)
+			if ((dwFlags & IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER) && cx > (float)pOutImageTexture->imgSize.cx)
+				x = x + ((cx - (float)pOutImageTexture->imgSize.cx) / 2.0f);
+
+			if ((dwFlags & IMAGE_TEXTURE_POSITION_VERTICAL_CENTER) && cy > (float)pOutImageTexture->imgSize.cy)
+				y = y + ((cy - (float)pOutImageTexture->imgSize.cy) / 2.0f);
+
 			hResult = D3D9CreateRectangleVertexTex2D(x, y, (float)pOutImageTexture->imgSize.cx, (float)pOutImageTexture->imgSize.cy, pOutImageTexture->vertexes2D, sizeof(pOutImageTexture->vertexes2D));
 		}
 		else if (dwFlags & IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO && pOutImageTexture->imgSize.cx > 0)
@@ -1187,6 +1293,7 @@ HRESULT D3D9CreateRectangleVertexTexBufferFromFile(const LPDIRECT3DDEVICE9 pD3De
 			float scale_factor = cx / ((float)pOutImageTexture->imgSize.cx);
 			float scaled_cy = ((float)pOutImageTexture->imgSize.cy) * scale_factor;
 			float scaled_cx = cx;
+			float scaled_x = x;
 			float scaled_y = y;
 
 			if (scaled_cy > cy)
@@ -1199,7 +1306,13 @@ HRESULT D3D9CreateRectangleVertexTexBufferFromFile(const LPDIRECT3DDEVICE9 pD3De
 			if (dwFlags & IMAGE_TEXTURE_POSITION_BOTTOM)
 				scaled_y = (y + cy) - scaled_cy;
 
-			hResult = D3D9CreateRectangleVertexTex2D(x, scaled_y, scaled_cx, scaled_cy, pOutImageTexture->vertexes2D, sizeof(pOutImageTexture->vertexes2D));
+			if (dwFlags & IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER)
+				scaled_x = x + ((cx - scaled_cx) / 2.0f);
+
+			if (dwFlags & IMAGE_TEXTURE_POSITION_VERTICAL_CENTER)
+				scaled_y = y + ((cy - scaled_cy) / 2.0f);
+
+			hResult = D3D9CreateRectangleVertexTex2D(scaled_x, scaled_y, scaled_cx, scaled_cy, pOutImageTexture->vertexes2D, sizeof(pOutImageTexture->vertexes2D));
 		}
 		else
 			// Re-scale the image to fill the target area

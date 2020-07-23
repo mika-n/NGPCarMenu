@@ -24,10 +24,15 @@ typedef void  (APIENTRY *tAPI_MapRBRPointToScreenPoint)(const float srcX, const 
 // Value 3 = Keep the aspect ratio and place the img to bottom of the rectangle area
 #define IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO 0x01  // Bit1: 1=KeepAspectRatio, 0=Stretch the imaeg to fill the rendering rectangle area
 #define IMAGE_TEXTURE_POSITION_BOTTOM			 0x02  // Bit2: 1=Image positioned on the bottom of the area, 0=Top of the area
+#define IMAGE_TEXTURE_ALPHA_BLEND				 0x04  // Bit3: 1=Use alpha blending if PNG has alpha channel (usually transparent background color), 0=No alpha blending
+#define IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER 0x08  // Bit4: 1=Align the picture horizontally in center position in the drawing rectangle area. 0=Left align
+#define IMAGE_TEXTURE_POSITION_VERTICAL_CENTER   0x10  // Bit5: 1=Align the picture vertically in center position in the drawing rectangle area. 0=Top align (unless POSITION_BOTTOM is set)
+#define IMAGE_TEXTURE_SCALE_PRESERVE_ORIGSIZE    0x20  // Bit6: 1=Keep the original picture size but optionally center it in drawing rectangle. 0=If drawing rect is defined then scale the picture (keeping aspect ratio or ignoring aspect ratio)
 
-#define IMAGE_TEXTURE_STRETCH_TO_FILL			 0x00  // Default behaviour is to stretch the image to fill the specified draw area
+#define IMAGE_TEXTURE_STRETCH_TO_FILL			 0x00  // Default behaviour is to stretch the image to fill the specified draw area, no alpha blending
 #define IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_TOP	  (IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO)
 #define IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_BOTTOM (IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO | IMAGE_TEXTURE_POSITION_BOTTOM)
+#define IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_CENTER (IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO | IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER | IMAGE_TEXTURE_POSITION_VERTICAL_CENTER)
 
 class CNGPCarMenuAPI
 {

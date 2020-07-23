@@ -45,21 +45,25 @@ typedef struct D3DXVECTOR4 {
 
 // Defined deprecated D3Dx9.h struct
 typedef struct D3DXVECTOR3 {
+#pragma pack(push,1)
 	FLOAT x;
 	FLOAT y;
 	FLOAT z;
+#pragma pack(pop)
 
-	D3DXVECTOR3() { x = y = z = 0; }
+	//D3DXVECTOR3() { x = y = z = 0; }
 
 } D3DXVECTOR3, *LPD3DXVECTOR3;
 
 
 // Defined deprecated D3Dx9math.h struct
 typedef struct D3DXQUATERNION {
+#pragma pack(push,1)
 	FLOAT x;
 	FLOAT y;
 	FLOAT z;
 	FLOAT w;
+#pragma pack(pop)
 } D3DXQUATERNION, *LPD3DXQUATERNION;
 
 // Defined deprecated D3Dx9math.h D3DXVec3Lerp implementation
@@ -94,13 +98,8 @@ inline D3DXQUATERNION* D3DXQuaternionNormalize(D3DXQUATERNION *pOut, CONST D3DXQ
 {
 	FLOAT norm = D3DXQuaternionLength(pq);
 	if (!norm)
-	{
 		// Zero length, so let's just return zero quat instead of running into "divided by zero" error
-		pOut->x = 0.0f;
-		pOut->y = 0.0f;
-		pOut->z = 0.0f;
-		pOut->w = 0.0f;
-	}
+		pOut->x = pOut->y = pOut->z = pOut->w = 0.0f;
 	else
 	{
 		pOut->x = pq->x / norm;
@@ -111,16 +110,12 @@ inline D3DXQUATERNION* D3DXQuaternionNormalize(D3DXQUATERNION *pOut, CONST D3DXQ
 	return pOut;
 }
 
+
 inline D3DXQUATERNION* D3DXQuaternionNormalize(D3DXQUATERNION *pInOut)
 {
 	FLOAT norm = D3DXQuaternionLength(pInOut);
 	if (!norm)
-	{
-		pInOut->x = 0.0f;
-		pInOut->y = 0.0f;
-		pInOut->z = 0.0f;
-		pInOut->w = 0.0f;
-	}
+		pInOut->x = pInOut->y = pInOut->z = pInOut->w = 0.0f;
 	else
 	{
 		pInOut->x /= norm;
@@ -243,7 +238,7 @@ inline D3DXQUATERNION* D3DXQuaternionSlerp(D3DXQUATERNION *pOut, const D3DXQUATE
 */
 }
 
-// Implement deprecated DX9 D3DXMatrixIdentity function because the D3dx9.lib is no longer available in newer DirectX SDK libraries.
+// Implement deprecated DX9 D3DXMatrixIdentity function because the D3dx9.lib is no longer available in newer DirectX SDK libraries. DX12 has new libraries, but RBR is DX9 game.
 // Specs https://docs.microsoft.com/en-us/windows/win32/direct3d9/d3dxmatrixidentity
 inline D3DMATRIX* D3DXMatrixIdentity(D3DMATRIX* pout)
 {
@@ -256,7 +251,7 @@ inline D3DMATRIX* D3DXMatrixIdentity(D3DMATRIX* pout)
 	return pout;
 }
 
-// Implement deprecated DX9 D3DXMatrixIdentity function because the D3dx9.lib is no longer available in newer DirectX SDK libraries.
+// Implement deprecated DX9 D3DXMatrixRotationQuaternion function because the D3dx9.lib is no longer available in newer DirectX SDK libraries. DX12 has new libraries, but RBR is DX9 game.
 // Borrowed from ReactOS sources. https://doxygen.reactos.org/
 inline D3DMATRIX* D3DXMatrixRotationQuaternion(D3DMATRIX* pout, const D3DXQUATERNION* pq)
 {

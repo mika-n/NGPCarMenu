@@ -252,11 +252,13 @@ public:
 	RECT  m_carSelectRightBlackBarRect;			// (see above)
 	POINT m_car3DModelInfoPosition;				// X Y position of the car 3D info textbox. If Y is 0 then the plugin uses the default Y location (few lines above the car preview image).
 	int   m_carPictureScale;					// Keep aspect ratio or stretch the image to fill the picture rectangle area (1=keep aspect, 0=stretch to fill)
+	BOOL  m_carPictureUseTransparent;			// 0=Do not try to draw alpha channel (transparency), 1=If PNG file has an alpha channel then draw the image using the alpha channel blending
 
 	RECT  m_carRBRTMPictureRect;				// Output rect of RBRTM car preview image (re-scaled pic area)
 	RECT  m_carRBRTMPictureCropping;			// Optional cropping area of the normal car preview image to be used as RBRTM preview image (0 0 0 0 = Re-scales the whole picture to fit the RBRTM pic rect)
 	int   m_carRBRTMPictureScale;				// Keep aspect ratio or stretch the image to fill the picture rectangle area (1=keep aspect, 0=stretch to fill)
 	//POINT m_carRBRTM3DModelInfoPosition;		// X Y position of the car info textbox (FIA Category, HP, Transmission, Weight, Year)
+	BOOL  m_carRBRTMPictureUseTransparent;		// 0=Do not try to draw alpha channel (transparency), 1=If PNG file has an alpha channel then draw the image using the alpha channel blending
 
 	LPDIRECT3DVERTEXBUFFER9 m_screenshotCroppingRectVertexBuffer; // Screeshot rect vertex to highlight the current capture area on screen while capturing preview img
 
@@ -277,6 +279,8 @@ public:
 	PRBRMenuObj  m_pRBRPrevCurrentMenu;			// If RBRTM integration is enabled then NGPCarMenu must try to identify Plugins and RBRTM plugin. This is just a "previous currentMenu" in order to optimize the check routine (ie. don't re-check if the plugin is RBRTM until new menu/plugin is activated)
 	PRBRTMPlugin m_pRBRTMPlugin;				// Pointer to RBRTM plugin or nullptr if not found or RBRTM integration is disabled
 
+	CD3D9RenderStateCache* m_pD3D9RenderStateCache; // DirectX cache class to restore DX9 render state back to original settings after tweaking render state
+
 	//------------------------------------------------------------------------------------------------
 
 	CNGPCarMenu(IRBRGame* pGame);
@@ -285,13 +289,15 @@ public:
 	int GetNextScreenshotCarID(int currentCarID);
 	static bool PrepareScreenshotReplayFile(int carID);
 
-	bool ReadCarPreviewImageFromFile(int selectedCarIdx, float x, float y, float cx, float cy, IMAGE_TEXTURE* pOutImageTexture, DWORD dwFlags = 0);
+	std::wstring ReplacePathVariables(const std::wstring& sPath, int selectedCarIdx = -1, bool rbrtmplugin = false);
+	bool ReadCarPreviewImageFromFile(int selectedCarIdx, float x, float y, float cx, float cy, IMAGE_TEXTURE* pOutImageTexture, DWORD dwFlags = 0, bool isRBRTMPlugin = false);
 
 	int InitPluginIntegration(const std::string& customPluginName, bool bInitRBRTM);
 	int InitAllNewCustomPluginIntegrations();
 
 	void RefreshSettingsFromPluginINIFile(bool addMissingSections = false);
 	void SaveSettingsToPluginINIFile();
+
 
 	const WCHAR* GetLangStr(const WCHAR* szStrKey) 
 	{ 

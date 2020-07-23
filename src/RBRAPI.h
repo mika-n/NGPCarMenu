@@ -97,7 +97,7 @@ extern BOOL RBRAPI_InitializeObjReferences();
 extern BOOL RBRAPI_InitializeRaceTimeObjReferences();
 
 extern int RBRAPI_MapCarIDToMenuIdx(int carID);     // 00..07 carID is not the same as order of car selection items
-extern int RBRAPI_MenuIdxToCarID(int menuIdx);
+extern int RBRAPI_MapMenuIdxToCarID(int menuIdx);
 
 extern BOOL RBRAPI_Replay(const std::string rbrAppFolder, LPCSTR szReplayFileName);
 

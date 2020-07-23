@@ -67,12 +67,18 @@ extern bool _iEnds_With(std::wstring s1, std::wstring s2, bool s2AlreadyInLowerc
 extern bool _iStarts_With(std::string s1, std::string s2, bool s2AlreadyInLowercase = FALSE);    // Case-insensitive starts_with string comparison
 extern bool _iEnds_With(std::string s1, std::string s2, bool s2AlreadyInLowercase = FALSE);      // Case-insensitive ends_with string comparison
 
-extern bool _iEqual(std::string const& s1, std::string const& s2, bool s2AlreadyInLowercase = FALSE);   // Case-insensitive string comparison
-extern bool _iEqual(std::wstring const& s1, std::wstring const& s2, bool s2AlreadyInLowercase = FALSE); // Case-insensitive string comparison
+extern bool _iEqual(const std::string& s1, const std::string& s2, bool s2AlreadyInLowercase = FALSE);   // Case-insensitive string comparison
+extern bool _iEqual(const std::wstring& s1, const std::wstring& s2, bool s2AlreadyInLowercase = FALSE); // Case-insensitive string comparison
 
 extern void _Trim(std::wstring & s);  // Trim wstring (in-place, modify the s)
 extern void _Trim(std::string & s);  // Trim string (in-place, modify the s)
 //extern std::wstring _TrimCopy(std::wstring s);  // Trim wstring (return new string, the s unmodified)
+
+extern std::wstring _ReplaceStr(const std::wstring& str, const std::wstring& searchKeyword, const std::wstring& replaceValue, bool caseInsensitive = TRUE);
+extern std::string  _ReplaceStr(const std::string& str, const std::string& searchKeyword, const std::string& replaceValue, bool caseInsensitive = TRUE);
+
+extern std::wstring _RemoveEnclosingChar(const std::wstring& str, const WCHAR searchChar, bool caseInsensitive = TRUE);
+extern std::string  _RemoveEnclosingChar(const std::string& str, const char searchChar, bool caseInsensitive = TRUE);
 
 extern std::wstring _ToWString(const std::string & s);	   // Convert std::string to std::wstring
 extern std::string  _ToString(const std::wstring & s);     // Convert std::wstring to std:string
@@ -97,15 +103,71 @@ extern bool _StringToPoint(const std::wstring & s, POINT * outPoint, const wchar
 
 
 //-----------------------------------------------------------------------------------------------------------------------
+// Simple DX9 render state change cache and restoration class
+//
+typedef struct {
+	D3DRENDERSTATETYPE stateType;
+	DWORD value;
+}D3D9RENDERSTATECACHEITEM;
+typedef D3D9RENDERSTATECACHEITEM* PD3D9RENDERSTATECACHEITEM;
+
+class CD3D9RenderStateCache
+{
+protected:
+	LPDIRECT3DDEVICE9 m_pD3Device;
+	BOOL m_bAutoRestore;
+	std::vector<D3D9RENDERSTATECACHEITEM> m_stateCacheList;
+
+public:
+	CD3D9RenderStateCache(LPDIRECT3DDEVICE9 pD3Device, BOOL autoRestore = true)
+	{
+		m_pD3Device = pD3Device;
+		m_bAutoRestore = autoRestore; // Restore DX9 render state automatically in destructor if the state is not yet restored
+	}
+
+	HRESULT SetRenderState(D3DRENDERSTATETYPE stateType, DWORD value)
+	{
+		DWORD oldValue;
+		if (SUCCEEDED(m_pD3Device->GetRenderState(stateType, &oldValue)))
+			m_stateCacheList.push_back({ stateType, oldValue });
+
+		return m_pD3Device->SetRenderState(stateType, value);
+	}
+
+	void Clear()
+	{
+		m_stateCacheList.clear();
+	}
+
+	void RestoreState()
+	{
+		for (auto& cacheItem: m_stateCacheList)
+			m_pD3Device->SetRenderState(cacheItem.stateType, cacheItem.value);
+
+		m_stateCacheList.clear();
+	}
+
+	~CD3D9RenderStateCache()
+	{
+		if (m_bAutoRestore) RestoreState();
+	}
+};
+
+
+//-----------------------------------------------------------------------------------------------------------------------
 // Special flags for D3D9CreateRectangleVertexTexBufferFromFile method to scale or re-position the image within the specifier rectangle area
 //
 #define IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO 0x01		// Bit1: 1=KeepAspectRatio, 0=Stretch the img to fill the rendering rectangle area
 #define IMAGE_TEXTURE_POSITION_BOTTOM			 0x02		// Bit2: 1=Image positioned on the bottom of the area, 0=Top of the area
+#define IMAGE_TEXTURE_ALPHA_BLEND				 0x04		// Bit3: 1=Use alpha blending if PNG has alpha channel (usually transparent background color), 0=No alpha blending
+#define IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER 0x08		// Bit4: 1=Align the picture horizontally in center position in the drawing rectangle area. 0=Left align
+#define IMAGE_TEXTURE_POSITION_VERTICAL_CENTER   0x10		// Bit5: 1=Align the picture vertically in center position in the drawing rectangle area. 0=Top align (unless POSITION_BOTTOM is set)
+#define IMAGE_TEXTURE_SCALE_PRESERVE_ORIGSIZE    0x20		// Bit6: 1=Keep the original picture size but optionally center it in drawing rectangle. 0=If drawing rect is defined then scale the picture (keeping aspect ratio or ignoring aspect ratio)
 
 #define IMAGE_TEXTURE_STRETCH_TO_FILL			 0x00  // Default behaviour is to stretch the image to fill the specified draw area
 #define IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_TOP	  (IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO)
 #define IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_BOTTOM (IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO | IMAGE_TEXTURE_POSITION_BOTTOM)
-
+#define IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_CENTER (IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO | IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER | IMAGE_TEXTURE_POSITION_VERTICAL_CENTER)
 
 //-----------------------------------------------------------------------------------------------------------------------
 //

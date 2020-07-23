@@ -281,7 +281,7 @@ int RBRAPI_MapCarIDToMenuIdx(int carID)
 	}
 }
 
-int RBRAPI_MenuIdxToCarID(int menuIdx)
+int RBRAPI_MapMenuIdxToCarID(int menuIdx)
 {
 	// Map menu order idx to carID (slot#) 0..7
 	switch (menuIdx)
@@ -317,11 +317,11 @@ void RBRAPI_MapRBRPointToScreenPoint(const float srcX, const float srcY, float* 
 	if (trgX != nullptr)
 	{
 		float offset_x = (g_rectRBRWndClient.right - g_pRBRGameConfig->resolutionX) / 2.0f;
-		*trgX = offset_x + static_cast<float>(srcX * (g_rectRBRWndClient.right / 640.0f));
+		*trgX = offset_x + static_cast<float>(srcX * (g_pRBRGameConfig->resolutionX / 640.0f));
 	}
 
 	if (trgY != nullptr)
-		*trgY = static_cast<float>(srcY * (g_rectRBRWndClient.bottom / 480.0f  /*g_pRBRGameConfig->resolutionY*/));
+		*trgY = static_cast<float>(srcY * (g_rectRBRWndClient.bottom / 480.0f));
 }
 
 
