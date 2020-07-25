@@ -147,6 +147,19 @@ public:
 		m_stateCacheList.clear();
 	}
 
+	void EnableTransparentAlphaBlending()
+	{
+/*		this->SetRenderState(D3DRS_ALPHAREF, (DWORD)0x000000F0);
+		this->SetRenderState(D3DRS_ALPHAFUNC, D3DCMP_GREATEREQUAL);
+		this->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE);
+		this->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ZERO);
+		this->SetRenderState(D3DRS_ALPHATESTENABLE, TRUE);
+*/
+		this->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+		this->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+		this->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+	}
+
 	~CD3D9RenderStateCache()
 	{
 		if (m_bAutoRestore) RestoreState();

@@ -2468,13 +2468,8 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 
 					// Draw car preview image (use transparent alpha channel bits if those are set in PNG file)
 					if (g_pRBRPlugin->m_carPictureUseTransparent)
-					{
-						g_pRBRPlugin->m_pD3D9RenderStateCache->SetRenderState(D3DRS_ALPHAREF, (DWORD)0x0000008f);
-						g_pRBRPlugin->m_pD3D9RenderStateCache->SetRenderState(D3DRS_ALPHAFUNC, D3DCMP_GREATEREQUAL);
-						g_pRBRPlugin->m_pD3D9RenderStateCache->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE);
-						g_pRBRPlugin->m_pD3D9RenderStateCache->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ZERO);
-						g_pRBRPlugin->m_pD3D9RenderStateCache->SetRenderState(D3DRS_ALPHATESTENABLE, TRUE);
-					}
+						g_pRBRPlugin->m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
+
 					D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, g_pRBRPlugin->m_carPreviewTexture[selectedCarIdx].pTexture, g_pRBRPlugin->m_carPreviewTexture[selectedCarIdx].vertexes2D);					
 
 					if (g_pRBRPlugin->m_carPictureUseTransparent) 
@@ -2587,13 +2582,8 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 						iCarSpecPrintRow = 0;				
 
 						if (g_pRBRPlugin->m_carRBRTMPictureUseTransparent)
-						{
-							g_pRBRPlugin->m_pD3D9RenderStateCache->SetRenderState(D3DRS_ALPHAREF, (DWORD)0x0000008f);
-							g_pRBRPlugin->m_pD3D9RenderStateCache->SetRenderState(D3DRS_ALPHAFUNC, D3DCMP_GREATEREQUAL);
-							g_pRBRPlugin->m_pD3D9RenderStateCache->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE);
-							g_pRBRPlugin->m_pD3D9RenderStateCache->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ZERO);
-							g_pRBRPlugin->m_pD3D9RenderStateCache->SetRenderState(D3DRS_ALPHATESTENABLE, TRUE);
-						}
+							g_pRBRPlugin->m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
+
 						D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, g_pRBRPlugin->m_carRBRTMPreviewTexture[selectedCarIdx].pTexture, g_pRBRPlugin->m_carRBRTMPreviewTexture[selectedCarIdx].vertexes2D);
 
 						if (g_pRBRPlugin->m_carRBRTMPictureUseTransparent)
@@ -2650,13 +2640,7 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 						if (imageItem->m_bShowImage && imageItem->m_imageTexture.pTexture != nullptr && imageItem->m_imageSize.cx != -1)
 						{
 							if (imageItem->m_dwImageFlags & IMAGE_TEXTURE_ALPHA_BLEND)
-							{
-								g_pRBRPlugin->m_pD3D9RenderStateCache->SetRenderState(D3DRS_ALPHAREF, (DWORD)0x0000008f);
-								g_pRBRPlugin->m_pD3D9RenderStateCache->SetRenderState(D3DRS_ALPHAFUNC, D3DCMP_GREATEREQUAL);
-								g_pRBRPlugin->m_pD3D9RenderStateCache->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE);
-								g_pRBRPlugin->m_pD3D9RenderStateCache->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_ZERO);
-								g_pRBRPlugin->m_pD3D9RenderStateCache->SetRenderState(D3DRS_ALPHATESTENABLE, TRUE);
-							}
+								g_pRBRPlugin->m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
 
 							D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, imageItem->m_imageTexture.pTexture, imageItem->m_imageTexture.vertexes2D);
 
