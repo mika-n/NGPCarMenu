@@ -342,7 +342,7 @@ void APIENTRY API_MapRBRPointToScreenPoint(const float srcX, const float srcY, f
 //-----------------------------------------------------------------------------------------------------------------------------
 BOOL APIENTRY DllMain( HANDLE hModule,  DWORD  ul_reason_for_call, LPVOID lpReserved)
 {
-    return TRUE;
+	return TRUE;
 }
 
 IPlugin* RBR_CreatePlugin( IRBRGame* pGame )
@@ -374,6 +374,8 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 
 	CNGPCarMenu::m_sRBRRootDir = szTmpRBRRootDir;
 	CNGPCarMenu::m_sRBRRootDirW = _ToWString(CNGPCarMenu::m_sRBRRootDir);
+
+	m_bPacenotePluginInstalled = m_bRBRFullscreenDX9 = FALSE;
 
 	// Init plugin title text with version tag of NGPCarMenu.dll file
 	char szTxtBuf[COUNT_OF_ITEMS(C_PLUGIN_TITLE_FORMATSTR) + 32];
@@ -431,6 +433,8 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_iRBRTMCarSelectionType = 0;   // If RBRTM is activated then is it at 1=Shakedown or 2=OnlineTournament car selection menu state
 
 	m_pD3D9RenderStateCache = nullptr; 
+	gtcDirect3DBeginScene = nullptr;
+	gtcDirect3DEndScene = nullptr;
 
 	//RefreshSettingsFromPluginINIFile();
 
@@ -443,36 +447,49 @@ CNGPCarMenu::~CNGPCarMenu(void)
 	g_bRBRHooksInitialized = FALSE;
 	m_PluginState = T_PLUGINSTATE::PLUGINSTATE_CLOSING;
 
-	DebugPrint("Enter CNGPCarMenu.Destructor");
+	try
+	{
+		DebugPrint("Enter CNGPCarMenu.Destructor");
 
-	if (gtcDirect3DBeginScene != nullptr) delete gtcDirect3DBeginScene;
-	if (gtcDirect3DEndScene != nullptr) delete gtcDirect3DEndScene;
+		if (gtcDirect3DBeginScene != nullptr) delete gtcDirect3DBeginScene;
+		if (gtcDirect3DEndScene != nullptr) delete gtcDirect3DEndScene;
 
 #if USE_DEBUG == 1
-	if (g_pFontDebug != nullptr) delete g_pFontDebug;
-#endif 
+		if (g_pFontDebug != nullptr)
+		{
+			if(!m_bPacenotePluginInstalled) g_pFontDebug->m_ReleaseStateBlocks = FALSE;
+			delete g_pFontDebug;
+		}
+#endif
 
-	if (g_pFontCarSpecCustom != nullptr) delete g_pFontCarSpecCustom;
+		if (g_pFontCarSpecCustom != nullptr)
+		{
+			if (!m_bPacenotePluginInstalled) g_pFontCarSpecCustom->m_ReleaseStateBlocks = FALSE;
+			delete g_pFontCarSpecCustom;
+		}
+		
+		SAFE_RELEASE(m_screenshotCroppingRectVertexBuffer);
+		ClearCachedCarPreviewImages();
+		SAFE_DELETE(g_pRBRPluginMenuSystem);
+		SAFE_DELETE(m_pLangIniFile);
 
-	SAFE_RELEASE(m_screenshotCroppingRectVertexBuffer);
-	ClearCachedCarPreviewImages();
+		if (g_pRBRPluginIntegratorLinkList != nullptr)
+		{
+			g_pRBRPluginIntegratorLinkList->clear();
+			SAFE_DELETE(g_pRBRPluginIntegratorLinkList);
+		}
 
-	SAFE_DELETE(g_pRBRPluginMenuSystem);
+		SAFE_DELETE(m_pD3D9RenderStateCache);
 
-	SAFE_DELETE(m_pLangIniFile);
+		DebugPrint("Exit CNGPCarMenu.Destructor");
+		DebugCloseFile();
 
-	if (g_pRBRPluginIntegratorLinkList != nullptr)
-	{
-		g_pRBRPluginIntegratorLinkList->clear();
-		SAFE_DELETE(g_pRBRPluginIntegratorLinkList);
+		if (g_pRBRPlugin == this) g_pRBRPlugin = nullptr;
 	}
-
-	SAFE_DELETE(m_pD3D9RenderStateCache);
-
-	DebugPrint("Exit CNGPCarMenu.Destructor");
-	DebugCloseFile();
-
-	if (g_pRBRPlugin == this) g_pRBRPlugin = nullptr;
+	catch (...)
+	{
+		// Do nothing. Just eat all potential exceptions (should never happen at this point, but you never know)
+	}
 }
 
 void CNGPCarMenu::ClearCachedCarPreviewImages()
@@ -1877,6 +1894,22 @@ const char* CNGPCarMenu::GetName(void)
 			// Do nothing even when removal of the replay template file failed. This is not fatal error at this point.
 		}
 
+
+		// Check the RBR DX9 fullscreen vs windows mode option
+		CSimpleIni rbrINI;
+		rbrINI.SetUnicode(true);
+		rbrINI.LoadFile((m_sRBRRootDir + "\\RichardBurnsRally.ini").c_str());
+		std::string sRBRFullscreenOption = rbrINI.GetValue("Settings", "Fullscreen", "false");
+		_ToLowerCase(sRBRFullscreenOption);
+		if (sRBRFullscreenOption == "true" || sRBRFullscreenOption == "1")
+			m_bRBRFullscreenDX9 = TRUE;
+		rbrINI.Reset();
+
+		m_bPacenotePluginInstalled = fs::exists(m_sRBRRootDir + "\\Plugins\\PaceNote.dll");
+
+		LogPrint("RBR Fullscreen mode=%d   PacenotePlugin installed=%d", m_bRBRFullscreenDX9, m_bPacenotePluginInstalled);
+	
+		// Init RBR API objects
 		RBRAPI_InitializeObjReferences();
 		m_pD3D9RenderStateCache = new CD3D9RenderStateCache(g_pRBRIDirect3DDevice9, false);
 
@@ -1933,11 +1966,12 @@ const char* CNGPCarMenu::GetName(void)
 
 		//
 		// Ready to rock! Re-route and store the original function address for later use. At this point all variables used in custom Dx0 functions should be initialized already
+		// ("TRUE" as ignore trampoline restoration process fixes the bug with GaugerPlugin where RBR generated a crash dump at app exit. Both plugins worked just fine, but RBR exit generated crash dump).
 		//
-		gtcDirect3DBeginScene = new DetourXS((LPVOID)0x0040E880, CustomRBRDirectXBeginScene);
+		gtcDirect3DBeginScene = new DetourXS((LPVOID)0x0040E880, CustomRBRDirectXBeginScene, TRUE);
 		Func_OrigRBRDirectXBeginScene = (tRBRDirectXBeginScene)gtcDirect3DBeginScene->GetTrampoline();
 
-		gtcDirect3DEndScene = new DetourXS((LPVOID)0x0040E890, CustomRBRDirectXEndScene);
+		gtcDirect3DEndScene = new DetourXS((LPVOID)0x0040E890, CustomRBRDirectXEndScene, TRUE);
 		Func_OrigRBRDirectXEndScene = (tRBRDirectXEndScene)gtcDirect3DEndScene->GetTrampoline();	 
 
 		DebugPrint("CRBRNetTNG.GetName. BeginSceneIsFirst=%d  EndSceneIsFirst=%d", gtcDirect3DBeginScene->IsFirstHook(), gtcDirect3DEndScene->IsFirstHook());
@@ -2389,7 +2423,7 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 {
 	HRESULT hResult;
 
-	if (!g_bRBRHooksInitialized) 
+	if (!g_bRBRHooksInitialized)
 		return S_OK;
 
 	if (g_pRBRGameMode->gameMode == 03)

@@ -208,8 +208,8 @@ protected:
 
 	int	m_iCarMenuNameLen; // Max char space reserved for the current car menu name menu items (calculated in CalculateMaxLenCarMenuName method)
 
-	DetourXS* gtcDirect3DBeginScene = NULL;
-	DetourXS* gtcDirect3DEndScene = NULL;
+	DetourXS* gtcDirect3DBeginScene;
+	DetourXS* gtcDirect3DEndScene;
 
 	void InitCarSpecData_RBRCIT();
 	void InitCarSpecData_EASYRBR();
@@ -236,6 +236,9 @@ public:
 	int	m_iMenuCreateOption;	// 0 = Generate all car images, 1 = Generate only missing car images
 	int	m_iMenuImageOption;		// 0 = Use PNG preview file format to read and create image files, 1 = BMP file format
 	int m_iMenuRBRTMOption;		// 0 = RBRTM integration disabled, 1 = Enabled
+
+	bool m_bRBRFullscreenDX9;			// Is RBR running in fullscreen or windows DX9 mode? TRUE-fullscreen, FALSE=windowed
+	bool m_bPacenotePluginInstalled;	// Is Pacenote plugin used? RBR exit logic handles font cleanup a bit differently in fullscreen mode IF pacenote plugin is missing
 
 	std::string  m_sRBRRootDir;  // RBR app path, multibyte (or normal ASCII) string
 	std::wstring m_sRBRRootDirW; // RBR app path, widechar string

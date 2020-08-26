@@ -293,6 +293,8 @@ class CD3DFont
 	int m_iTextHeight;  // Actual text height in pixels (cached value after the first call to GetTextHeight)
 
 public:
+	BOOL m_ReleaseStateBlocks; // TRUE - Destructor releases stateBlock objects. FALSE - Destructor does not call release for stateBlocks because it has been done already
+
 	// 2D and 3D text drawing functions
 	//HRESULT DrawText(FLOAT x, FLOAT y, DWORD dwColor, const WCHAR* strText, DWORD dwFlags = 0L);
 	HRESULT DrawText(int x, int y, DWORD dwColor, const CHAR*  strText, DWORD dwFlags = 0L);

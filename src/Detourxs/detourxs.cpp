@@ -15,10 +15,12 @@ DetourXS::DetourXS()
 	m_OrigJmp = Absolute;
 	m_TrampJmp = Absolute;
 	m_hFirstHookEvent = nullptr;
+	m_IgnoreDestroyRestoration = FALSE;
 }
 
-DetourXS::DetourXS(LPVOID lpFuncOrig, LPVOID lpFuncDetour) : DetourXS()
+DetourXS::DetourXS(LPVOID lpFuncOrig, LPVOID lpFuncDetour, BOOL ignoreDestroyRestoration) : DetourXS()
 {
+	m_IgnoreDestroyRestoration = ignoreDestroyRestoration;
 	Create(lpFuncOrig, lpFuncDetour);
 }
 
@@ -76,13 +78,16 @@ BOOL DetourXS::Create(const LPVOID lpFuncOrig, const LPVOID lpFuncDetour)
 	FlushInstructionCache(GetCurrentProcess(), m_lpFuncOrig, m_detourLen);
 
 	// Check if this was the first hook to this lpFuncOrig pointer (if the named event with the speficied func pointer already exists then this was NOT the first hook in the original func)
-	char szBuffer[32];
-	snprintf(szBuffer, sizeof(szBuffer), "_RBR_DetourXSFuncPtr_%08x", (DWORD)lpFuncOrig);
-	HANDLE hEvent = CreateEvent(nullptr, FALSE, FALSE, szBuffer);
-	if (hEvent != nullptr && GetLastError() == ERROR_ALREADY_EXISTS)
-		CloseHandle(hEvent);			// Not the first hook. Release the handle because the first instance keeps it open until that hook is destroyed
-	else
-		m_hFirstHookEvent = hEvent;		// The first hook. Keep the handle open to let other RBR plugins hooking the same original func that those were not the first one
+	if (!m_IgnoreDestroyRestoration)
+	{
+		char szBuffer[32];
+		snprintf(szBuffer, sizeof(szBuffer), "_RBR_DetourXSFuncPtr_%08x", (DWORD)lpFuncOrig);
+		HANDLE hEvent = CreateEvent(nullptr, FALSE, FALSE, szBuffer);
+		if (hEvent != nullptr && GetLastError() == ERROR_ALREADY_EXISTS)
+			CloseHandle(hEvent);			// Not the first hook. Release the handle because the first instance keeps it open until that hook is destroyed
+		else
+			m_hFirstHookEvent = hEvent;		// The first hook. Keep the handle open to let other RBR plugins hooking the same original func that those were not the first one
+	}
 
 	m_Created = TRUE;
 	return TRUE;

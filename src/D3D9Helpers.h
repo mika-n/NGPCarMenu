@@ -93,10 +93,12 @@ extern inline void _ToLowerCase(std::string& s);       // Convert string to lowe
 extern inline void _ToLowerCase(std::wstring& s);      // Convert wstring to lowercase letters (in-place)
 
 extern int _SplitString(const std::string& s, std::vector<std::string>& splittedTokens, std::string sep, bool caseInsensitiveSep = true, bool sepAlreadyLowercase = false, int maxTokens = 64); // Split string to several tokens by using sep string as separator
+extern int _SplitInHalf(const std::string& s, std::vector<std::string>& splittedTokens, std::string sep, bool caseInsensitiveSep = true, bool sepAlreadyLowercase = false); // Split string to two tokens by using sep string as separator
 
 extern std::string _ToBinaryBitString(BYTE byteValue); // Convert BYTE value to binary "bit field" string (usually some log messages want to show an integer as binary bit field)
 
-extern std::string GetFileVersionInformationAsString(const std::wstring & fileName);
+extern std::string GetFileVersionInformationAsString(const std::wstring & fileName); // Return file version info as "major.minor.patch.build" string value
+extern BOOL GetFileVersionInformationAsNumber(const std::wstring & fileName, UINT* outMajorVer, UINT* outMinorVer, UINT* outPatchVer, UINT* outBuildVer); // Return file version info
 
 extern bool _StringToRect(const std::wstring & s, RECT * outRect, const wchar_t separatorChar = L' '); // String in "0 50 200 400" format is converted as RECT struct value 
 extern bool _StringToPoint(const std::wstring & s, POINT * outPoint, const wchar_t separatorChar = L' '); // String in "0 50" format is converted as POINT struct value 

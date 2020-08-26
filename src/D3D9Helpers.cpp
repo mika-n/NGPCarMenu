@@ -452,6 +452,11 @@ int _SplitString(const std::string& s, std::vector<std::string>& splittedTokens,
 	return splittedTokens.size();
 }
 
+int _SplitInHalf(const std::string& s, std::vector<std::string>& splittedTokens, std::string sep, bool caseInsensitiveSep, bool sepAlreadyLowercase)
+{
+	return _SplitString(s, splittedTokens, sep, caseInsensitiveSep, sepAlreadyLowercase, 2);
+}
+
 
 // Convert BYTE integer to bit field string (fex. byte value 0x05 is printed as "00000101"
 std::string _ToBinaryBitString(BYTE byteValue)
@@ -548,7 +553,18 @@ bool _StringToPoint(const std::wstring& s, POINT* outPoint, const wchar_t separa
 std::string GetFileVersionInformationAsString(const std::wstring& fileName)
 {
 	std::string sResult;
+	UINT iMajor, iMinor, iPatch, iBuild;
 
+	if (GetFileVersionInformationAsNumber(fileName, &iMajor, &iMinor, &iPatch, &iBuild))
+		sResult = std::to_string(iMajor) + "." + std::to_string(iMinor) + "." + std::to_string(iPatch) + "." + std::to_string(iBuild);
+
+	// Empty string if getVer failed
+	return sResult;
+}
+
+BOOL GetFileVersionInformationAsNumber(const std::wstring& fileName, UINT* pMajorVer, UINT* pMinorVer, UINT* pPatchVer, UINT* pBuildVer)
+{
+	BOOL  bResult = FALSE;
 	DWORD dwHandle = 0;
 	DWORD dwSize = GetFileVersionInfoSizeW(fileName.c_str(), &dwHandle);
 
@@ -560,17 +576,18 @@ std::string GetFileVersionInformationAsString(const std::wstring& fileName)
 			LPBYTE pQryBuffer = nullptr;
 			UINT iLen = 0;
 
-			if (VerQueryValue(pVerData, "\\", (LPVOID*) &pQryBuffer, &iLen))
+			if (VerQueryValue(pVerData, "\\", (LPVOID*)&pQryBuffer, &iLen))
 			{
 				if (iLen > 0 && pQryBuffer != nullptr)
 				{
 					VS_FIXEDFILEINFO* verInfo = (VS_FIXEDFILEINFO*)pQryBuffer;
 					if (verInfo->dwSignature == 0xfeef04bd)
 					{
-						sResult = std::to_string((verInfo->dwFileVersionMS >> 16) & 0xffff) + "."
-							    + std::to_string((verInfo->dwFileVersionMS >> 0) & 0xffff) + "."
-							    + std::to_string((verInfo->dwFileVersionLS >> 16) & 0xffff) + "."
-							    + std::to_string((verInfo->dwFileVersionLS >> 0) & 0xffff);
+						if (pMajorVer != nullptr) *pMajorVer = (UINT)((verInfo->dwFileVersionMS >> 16) & 0xffff);
+						if (pMinorVer != nullptr) *pMinorVer = (UINT)((verInfo->dwFileVersionMS >> 0) & 0xffff);
+						if (pPatchVer != nullptr) *pPatchVer = (UINT)((verInfo->dwFileVersionLS >> 16) & 0xffff);
+						if (pBuildVer != nullptr) *pBuildVer = (UINT)((verInfo->dwFileVersionLS >> 0) & 0xffff);
+						bResult = TRUE;
 					}
 				}
 			}
@@ -578,9 +595,9 @@ std::string GetFileVersionInformationAsString(const std::wstring& fileName)
 		delete[] pVerData;
 	}
 
-	// Empty string if getVer failed
-	return sResult;
+	return bResult;
 }
+
 
 //---------------------------------------------------------------------------------------------------------------
 

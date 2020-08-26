@@ -40,7 +40,7 @@ public:
 
 public:
 	DetourXS();
-	DetourXS(LPVOID lpFuncOrig, LPVOID lpFuncDetour);
+	DetourXS(LPVOID lpFuncOrig, LPVOID lpFuncDetour, BOOL ignoreDestroyRestoration = FALSE);
 	~DetourXS();
 
 	BOOL Create(const LPVOID lpFuncOrig, const LPVOID lpFuncDetour);
@@ -94,6 +94,7 @@ private:
 	size_t m_detourLen;
 	BOOL m_Created;
 
+	BOOL   m_IgnoreDestroyRestoration;
 	HANDLE m_hFirstHookEvent;  // Event handle to keep track of if the lpFuncOrig was already hooked by another object in any of the other processes/DLL plugins. NULL = Not the first hook. NULL != The first hook.
 };
 

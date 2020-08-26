@@ -113,6 +113,8 @@ CD3DFont::CD3DFont(const std::wstring &fontName, DWORD dwHeight, DWORD dwFlags)
 
 	m_font = GetFont(fontName, dwHeight, dwFlags);
 	m_dwFlags = dwFlags;
+
+	m_ReleaseStateBlocks = TRUE;
 }
 
 //-----------------------------------------------------------------------------
@@ -218,8 +220,18 @@ HRESULT CD3DFont::RestoreDeviceObjects()
 HRESULT CD3DFont::InvalidateDeviceObjects()
 {
 	SAFE_RELEASE(m_pVB);
-	SAFE_RELEASE(m_pStateBlockSaved);
-	SAFE_RELEASE(m_pStateBlockDrawText);
+	
+	if (m_ReleaseStateBlocks)
+	{
+		SAFE_RELEASE(m_pStateBlockSaved);
+		SAFE_RELEASE(m_pStateBlockDrawText);
+	}
+	else
+	{
+		// Fullscreen RBR crashes at exit if state is released when RBR calls plugin destructor because the block objects have been already released by DX9 engine (RBR takes care of DX9 device cleanup)
+		m_pStateBlockSaved = NULL;
+		m_pStateBlockDrawText = NULL;
+	}
 
 	return S_OK;
 }
