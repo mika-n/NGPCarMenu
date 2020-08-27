@@ -75,6 +75,7 @@ PRBRGhostCarMovement g_pRBRGhostCarMovement = nullptr;
 
 PRBRMenuSystem		 g_pRBRMenuSystem = nullptr;		// Pointer to RBR menu system (all standard menu objects)
 
+PRBRPacenotes g_pRBRPacenotes = nullptr;
 
 //----------------------------------------------------------------------------------------------------------------------------
 // Helper functions to modify RBR memory locations on the fly
@@ -258,6 +259,7 @@ BOOL RBRAPI_InitializeRaceTimeObjReferences()
 	// Objects which are valid only when a race or replay is started
 	g_pRBRMapInfo     = (PRBRMapInfo) *(DWORD*)(0x1659184);
 	g_pRBRCarMovement = (PRBRCarMovement) *(DWORD*)(0x008EF660);
+	g_pRBRPacenotes = (PRBRPacenotes) * ((DWORD*) (*((DWORD*) (0x007EABA8)) + 0x10));
 
 	return g_pRBRCarMovement != nullptr;
 }
