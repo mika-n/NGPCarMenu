@@ -77,6 +77,8 @@ PRBRMenuSystem		 g_pRBRMenuSystem = nullptr;		// Pointer to RBR menu system (all
 
 PRBRPacenotes g_pRBRPacenotes = nullptr;
 
+wchar_t* g_currentLocationString = nullptr;
+
 //----------------------------------------------------------------------------------------------------------------------------
 // Helper functions to modify RBR memory locations on the fly
 //
@@ -249,9 +251,10 @@ BOOL RBRAPI_InitializeObjReferences()
 		RBRAPI_RefreshWndRect();
 	}
 
-	// Pointer 0x493980 -> rbrHwnd? Can it be used to re-route WM messages to our own windows handler and this way to "listen" RBR key presses if this plugin needs key controls?
+  g_currentLocationString = (wchar_t*) (0x007D1D64);
 
-	return g_pRBRIDirect3DDevice9 != nullptr;
+	// Pointer 0x493980 -> rbrHwnd? Can it be used to re-route WM messages to our own windows handler and this way to "listen" RBR key presses if this plugin needs key controls?
+  return g_pRBRIDirect3DDevice9 != nullptr;
 }
 
 BOOL RBRAPI_InitializeRaceTimeObjReferences()

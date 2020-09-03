@@ -611,6 +611,7 @@ extern PRBRMenuSystem		g_pRBRMenuSystem;
 
 extern PRBRPacenotes		g_pRBRPacenotes;
 
+extern wchar_t*		g_currentLocationString;  // Offset 0x007D1D64.  Current location string.
 //
 // TODO:
 //
