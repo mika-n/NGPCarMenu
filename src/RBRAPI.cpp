@@ -21,13 +21,7 @@
 //
 // The information in this RBR-API interface is a result of painstaking investigations with the RBR game engine and the information published
 // in other web pages (especially the following web pages).
-//
-// - https://web.archive.org/web/20181105131638/http://www.geocities.jp/v317mt/index.html
-// - https://suxin.space/notes/rbr-play-replay/
-// - http://www.tocaedit.com/2013/05/gran-turismo-guages-for-rbr-v12-update.html
-// - http://www.tocaedit.com/2018/03/sources-online.html
-// - https://vauhtimurot.blogspot.com/p/in-english.html  (in most part the web page is in Finnish)
-// - http://rbr.onlineracing.cz/?setlng=eng
+// ---> See RBRAPI.H file header for a list of some of the web pages with valuable RBR modding information (no need to maintain the same contribution list in this file) <---
 //
 // Also, various forum posts by WorkerBee, Kegetys, Racer_S, Mandosukai (and I'm sure many others) here and there have been useful.
 // Thank you all for the good work with the RBR game engine (RBR still has the best rally racing physics engine and WorkeBeer's NGP plugin makes it even greater).
@@ -75,9 +69,9 @@ PRBRGhostCarMovement g_pRBRGhostCarMovement = nullptr;
 
 PRBRMenuSystem		 g_pRBRMenuSystem = nullptr;		// Pointer to RBR menu system (all standard menu objects)
 
-PRBRPacenotes g_pRBRPacenotes = nullptr;
+PRBRPacenotes		 g_pRBRPacenotes = nullptr;
 
-wchar_t* g_currentLocationString = nullptr;
+WCHAR*				 g_pRBRMapLocationName = nullptr; // Pointer to RBR stage (map) name string, wchar_t unicode str pointer
 
 //----------------------------------------------------------------------------------------------------------------------------
 // Helper functions to modify RBR memory locations on the fly
@@ -238,6 +232,7 @@ BOOL RBRAPI_InitializeObjReferences()
 
 	// Fixed location to mapSettings struct (ie. not a pointer reference). 
 	g_pRBRMapSettings = (PRBRMapSettings)(0x1660800);
+	g_pRBRMapLocationName = (wchar_t*)(0x007D1D64);
 
 	// Get a pointer to DX9 device handler before re-routing the RBR function
 	if(g_pRBRIDirect3DDevice9 == nullptr) g_pRBRIDirect3DDevice9 = (LPDIRECT3DDEVICE9) * (DWORD*)(*(DWORD*)(*(DWORD*)0x007EA990 + 0x28) + 0xF4);
@@ -251,10 +246,9 @@ BOOL RBRAPI_InitializeObjReferences()
 		RBRAPI_RefreshWndRect();
 	}
 
-  g_currentLocationString = (wchar_t*) (0x007D1D64);
-
 	// Pointer 0x493980 -> rbrHwnd? Can it be used to re-route WM messages to our own windows handler and this way to "listen" RBR key presses if this plugin needs key controls?
-  return g_pRBRIDirect3DDevice9 != nullptr;
+
+	return g_pRBRIDirect3DDevice9 != nullptr;
 }
 
 BOOL RBRAPI_InitializeRaceTimeObjReferences()
@@ -262,7 +256,7 @@ BOOL RBRAPI_InitializeRaceTimeObjReferences()
 	// Objects which are valid only when a race or replay is started
 	g_pRBRMapInfo     = (PRBRMapInfo) *(DWORD*)(0x1659184);
 	g_pRBRCarMovement = (PRBRCarMovement) *(DWORD*)(0x008EF660);
-	g_pRBRPacenotes = (PRBRPacenotes) * ((DWORD*) (*((DWORD*) (0x007EABA8)) + 0x10));
+	g_pRBRPacenotes   = (PRBRPacenotes) *((DWORD*) (*((DWORD*)(0x007EABA8)) + 0x10));
 
 	return g_pRBRCarMovement != nullptr;
 }

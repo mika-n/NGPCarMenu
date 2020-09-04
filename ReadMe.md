@@ -108,13 +108,16 @@ Also, some Windows OS setups limit writing new files under c:\program files\ or 
 - Next Generation Physics RBR plugin, NGP. (author: WorkerBee). [NGP Home page](http://www.ly-racing.de/viewtopic.php?t=7878)
 - FixUp RBR plugin. (author: WorkerBee). [FixUp Home page](http://www.ly-racing.de/viewtopic.php?t=7878)
 - Pacenote RBR plugin. (author: WorkerBee). [Pacenote Home page](http://www.ly-racing.de/viewtopic.php?t=6848)
+- CrewChief pacenote and racing engineer plugin. (author: TheIronWolf)[CrewChief for RBR Home Page](http://thecrewchief.org/showthread.php?1851-Richard-Burns-Rally-Crew-Chief-setup-and-known-issues&p=7539#post7539)
 - RBRTM Czech Tournament plugin. (author: Wally). [RBRTM Home page](https://rbr.onlineracing.cz/?setlng=eng)
+- RallySimFans Tournament plugin. (author: Rallysimfans.hu team). [RallysimFans Home page](http://www.rallysimfans.hu/rbr/index.php?lang=en)
+- RBRPro content manager tool. (author: TGD, Carlo Iovino). [RBRPro Home Page](https://www.rbrpro.org/)
 - RBR Car Installation Tool, RBRCIT. (author: Zissakos). [RBRCIT Home page](https://github.com/zissakos/RBRCIT)
 - EasyRBR car and track manager tool. (author: Plankgas/PTD). [EasyRBR Home page](https://www.ptd-3d.com/easyrbr/)
 
 This plugin has been tested by NGPCarMenu author with these magnificent RBR plugins/tools and the plugin works great with those. In fact, this plugin should be compatible with any plugin because the plugin doesn't change how the RBR game handles racing and the actual car models.
 
-Users have reported that the customized "Select Car" menu works also with following plugins:
+Users have reported that the customized "Select Car" menu works also with following plugins (I can confirm this):
 - RX RBR plugin and BTB tracks. (author: black f./jharron). 
   - ["Speedy Cereals" (Vauhtimurot in Finnish) info page for RX plugin and BTB tracks](https://vauhtimurot.blogspot.com/p/installing-btb-stages.html)
   - ["Another info page about RBR_RX"](https://www.racedepartment.com/threads/virtualmotorsports-rally-finland-rx-track-archive.35080/) 

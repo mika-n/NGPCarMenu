@@ -34,7 +34,11 @@ any explicit licenses. Here are references to those code snippets:
  - (Sasha / Suxin) RBR replay function call entry point to call it programmatically.
    https://suxin.space/notes/rbr-play-replay/
 
-Thank you Jacob, Ivan, Simon, Sasha for sharing the information.
+ - (TheIronWolfModding) RBR pacenote interface. The Iron Wolf has integrated RBR pacenotes with a wondeful CrewChief application. CrewChief application is a customizable pacenote and "racing engineer" voice platform supporting numerous racing games. And now thanks to TheIronWorlf it supports RBR also.
+   https://gitlab.com/TheIronWolfModding/rbrcrewchief
+   http://thecrewchief.org/showthread.php?1851-Richard-Burns-Rally-Crew-Chief-setup-and-known-issues&p=7539#post7539
+
+Thank you Jacob, Ivan, Simon, Sasha, TheIronWolfModding for sharing the information. And of course those who has done the ground work to keep RBR alive (WorkerBee, car and track modellers, audio authors, pacenote authors).
 
 This work contains components with own licence texts. Please refer to those components for more details.
  - DetourXS, Dominic Tobias. Re-routing function pointers. https://dominictobias.com

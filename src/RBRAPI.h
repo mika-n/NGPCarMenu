@@ -26,6 +26,7 @@
 // - http://www.tocaedit.com/2018/03/sources-online.html
 // - https://vauhtimurot.blogspot.com/p/in-english.html  (in most part the web page is in Finnish)
 // - http://rbr.onlineracing.cz/?setlng=eng
+// - https://gitlab.com/TheIronWolfModding/rbrcrewchief
 //
 // Also, various forum posts by WorkerBee, Kegetys, black f./jharron, Racer_S, Mandosukai (and I'm sure many others) here and there have been useful.
 // Thank you all for the good work with the RBR game engine (RBR still has the best rally racing physics engine and WorkeBeer's NGP plugin makes it even greater).
@@ -556,11 +557,12 @@ typedef struct {
 } RBRMenuSystem;
 typedef RBRMenuSystem* PRBRMenuSystem;
 
-// Offset 0x007EABA8.  Pacenotes.
+
+// Offset 0x007EABA8.  Pacenotes. (Contributed by TheIronWolf)
 typedef struct
 {
 #pragma pack(push,1)
-  __int32 type;		// 0x00
+  __int32 type;		// 0x00	(left or right and how tight corner. 0=veeeery sharp left (hairspin), 1..5=left turn where 5 is veeeery easy. 6=veeery easy right turn, 7..11=right turn, 12=veeery shart right (hairspin), 16=over crest. And lots of other note types)
   __int32 flags;	// 0x04
   float distance;	// 0x08
 #pragma pack(pop)
@@ -570,9 +572,9 @@ typedef RBRPacenote* PRBRPacenote;
 typedef struct
 {
 #pragma pack(push,1)
-  BYTE pad1[0x20];					// 0x00
-  __int32 numPacenotes;			// 0x20
-  RBRPacenote* pPacenotes;	// 0x24
+  BYTE pad1[0x20];			// 0x00
+  __int32 numPacenotes;		// 0x20
+  PRBRPacenote pPacenotes;	// 0x24. Pointer to array of RBRPacenote structs (numPacenotes)
 #pragma pack(pop)
 } RBRPacenotes;
 typedef RBRPacenotes* PRBRPacenotes;
@@ -609,9 +611,10 @@ extern PRBRMapInfo			g_pRBRMapInfo;		// Valid only when racing or replay is on
 
 extern PRBRMenuSystem		g_pRBRMenuSystem;
 
-extern PRBRPacenotes		g_pRBRPacenotes;
+extern PRBRPacenotes		g_pRBRPacenotes;	// Array of pacenotes. Valid only at racetime.
 
-extern wchar_t*		g_currentLocationString;  // Offset 0x007D1D64.  Current location string.
+extern wchar_t*				g_pRBRMapLocationName; // Offset 0x007D1D64. The name of the current stage (map, WCHAR string). Valid only at racetime.
+
 //
 // TODO:
 //
