@@ -556,6 +556,27 @@ typedef struct {
 } RBRMenuSystem;
 typedef RBRMenuSystem* PRBRMenuSystem;
 
+// Offset 0x007EABA8.  Pacenotes.
+typedef struct
+{
+#pragma pack(push,1)
+  __int32 type;		// 0x00
+  __int32 flags;	// 0x04
+  float distance;	// 0x08
+#pragma pack(pop)
+} RBRPacenote;
+typedef RBRPacenote* PRBRPacenote;
+
+typedef struct
+{
+#pragma pack(push,1)
+  BYTE pad1[0x20];					// 0x00
+  __int32 numPacenotes;			// 0x20
+  RBRPacenote* pPacenotes;	// 0x24
+#pragma pack(pop)
+} RBRPacenotes;
+typedef RBRPacenotes* PRBRPacenotes;
+
 
 // Custom helper struct for plugins menu structure
 typedef struct {
@@ -588,7 +609,9 @@ extern PRBRMapInfo			g_pRBRMapInfo;		// Valid only when racing or replay is on
 
 extern PRBRMenuSystem		g_pRBRMenuSystem;
 
+extern PRBRPacenotes		g_pRBRPacenotes;
 
+extern wchar_t*		g_currentLocationString;  // Offset 0x007D1D64.  Current location string.
 //
 // TODO:
 //

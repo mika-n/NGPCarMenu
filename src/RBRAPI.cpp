@@ -75,6 +75,9 @@ PRBRGhostCarMovement g_pRBRGhostCarMovement = nullptr;
 
 PRBRMenuSystem		 g_pRBRMenuSystem = nullptr;		// Pointer to RBR menu system (all standard menu objects)
 
+PRBRPacenotes g_pRBRPacenotes = nullptr;
+
+wchar_t* g_currentLocationString = nullptr;
 
 //----------------------------------------------------------------------------------------------------------------------------
 // Helper functions to modify RBR memory locations on the fly
@@ -248,9 +251,10 @@ BOOL RBRAPI_InitializeObjReferences()
 		RBRAPI_RefreshWndRect();
 	}
 
-	// Pointer 0x493980 -> rbrHwnd? Can it be used to re-route WM messages to our own windows handler and this way to "listen" RBR key presses if this plugin needs key controls?
+  g_currentLocationString = (wchar_t*) (0x007D1D64);
 
-	return g_pRBRIDirect3DDevice9 != nullptr;
+	// Pointer 0x493980 -> rbrHwnd? Can it be used to re-route WM messages to our own windows handler and this way to "listen" RBR key presses if this plugin needs key controls?
+  return g_pRBRIDirect3DDevice9 != nullptr;
 }
 
 BOOL RBRAPI_InitializeRaceTimeObjReferences()
@@ -258,6 +262,7 @@ BOOL RBRAPI_InitializeRaceTimeObjReferences()
 	// Objects which are valid only when a race or replay is started
 	g_pRBRMapInfo     = (PRBRMapInfo) *(DWORD*)(0x1659184);
 	g_pRBRCarMovement = (PRBRCarMovement) *(DWORD*)(0x008EF660);
+	g_pRBRPacenotes = (PRBRPacenotes) * ((DWORD*) (*((DWORD*) (0x007EABA8)) + 0x10));
 
 	return g_pRBRCarMovement != nullptr;
 }
