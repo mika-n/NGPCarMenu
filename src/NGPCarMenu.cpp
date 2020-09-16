@@ -2574,7 +2574,7 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 				// If the active custom plugin is RBRTM and RBR shows a custom plugin menuObj and the internal RBRTM menu is the Shakedown "car selection" menuID then prepare to render a car preview image
 				if (g_pRBRPlugin->m_bRBRTMPluginActive && g_pRBRPluginMenuSystem->customPluginMenuObj == g_pRBRMenuSystem->currentMenuObj && g_pRBRPlugin->m_pRBRTMPlugin->pCurrentRBRTMMenuObj != nullptr)
 				{
-					switch ((DWORD)*g_pRBRPlugin->m_pRBRTMPlugin->pCurrentRBRTMMenuObj)
+					switch (/*(DWORD)*g_pRBRPlugin->m_pRBRTMPlugin->pCurrentRBRTMMenuObj*/ g_pRBRPlugin->m_pRBRTMPlugin->pCurrentRBRTMMenuObj->menuID)
 					{
 						case 0x15978614: bRBRTMCarSelectionMenu = true; break; // RBRTM car selection screen (either below Shakedown or OnlineTournament menu tree)
 
@@ -2583,7 +2583,7 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 						case 0x159786F8:
 						case 0x15978684: g_pRBRPlugin->m_iRBRTMCarSelectionType = 1; break; // RBRTM OnlineTournament menu tree
 
-						case 0x15978154:
+						case 0x15978154: // Shakedown - Stage selection screen
 						case 0x159786A0: g_pRBRPlugin->m_iRBRTMCarSelectionType = 2; break; // RBRTM Shakedown menu tree
 					}
 
@@ -2695,6 +2695,25 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 #if USE_DEBUG == 1
 	WCHAR szTxtBuffer[200];
 
+
+	if (g_pRBRPlugin->m_pRBRTMPlugin != nullptr && g_pRBRPlugin->m_pRBRTMPlugin->pCurrentRBRTMMenuObj != nullptr && g_pRBRPlugin->m_pRBRTMPlugin->pCurrentRBRTMMenuObj->menuID == 0x15978154)
+	{
+		int iRBRTM_NumOfItems = ((g_pRBRPlugin->m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData != nullptr) ? g_pRBRPlugin->m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->numOfItems : -1);
+		int iRBRTM_SelectedItemIdx = g_pRBRPlugin->m_pRBRTMPlugin->selectedItemIdx;
+
+		swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"M=%08x TM=%08x TM=%08x Idx=%d/%d Stge=%d",
+			(DWORD)g_pRBRMenuSystem->currentMenuObj,
+			(DWORD)g_pRBRPlugin->m_pRBRTMPlugin,
+			g_pRBRPlugin->m_pRBRTMPlugin->pCurrentRBRTMMenuObj->menuID,
+			iRBRTM_SelectedItemIdx,
+			iRBRTM_NumOfItems,
+			((iRBRTM_NumOfItems > 0 && iRBRTM_SelectedItemIdx >= 0 && iRBRTM_SelectedItemIdx < iRBRTM_NumOfItems) ? g_pRBRPlugin->m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems[g_pRBRPlugin->m_pRBRTMPlugin->selectedItemIdx].mapID : -1)
+		);
+
+		g_pFontDebug->DrawText(1, 1 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, D3DFONT_CLEARTARGET);
+	}
+
+/*
 	RECT wndRect;
 	RECT wndClientRect;
 	RECT wndMappedRect;
@@ -2708,6 +2727,7 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 	//swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"Mode %d %d.  Img (%f,%f)(%f,%f)  Timer=%f", g_pRBRGameMode->gameMode, g_pRBRGameModeExt->gameModeExt, g_pRBRMenuSystem->menuImagePosX, g_pRBRMenuSystem->menuImagePosY, g_pRBRMenuSystem->menuImageWidth, g_pRBRMenuSystem->menuImageHeight, g_pRBRCarInfo->stageStartCountdown);
 	swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"Mode %d %d.  Img (%f,%f)(%f,%f)  hWnd=%x", g_pRBRGameMode->gameMode, g_pRBRGameModeExt->gameModeExt, g_pRBRMenuSystem->menuImagePosX, g_pRBRMenuSystem->menuImagePosY, g_pRBRMenuSystem->menuImageWidth, g_pRBRMenuSystem->menuImageHeight, (int)creationParameters.hFocusWindow);
 	g_pFontDebug->DrawText(1, 1 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, D3DFONT_CLEARTARGET);
+*/
 
 /*
 	int x, y;

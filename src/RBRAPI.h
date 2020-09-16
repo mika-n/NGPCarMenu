@@ -168,7 +168,7 @@ typedef struct {
 	float fadeWrongWayMsg;   // 0x154. 1 when "wrong way" msg is shown
 							 //	TODO: 0x15C Some time attribute? Total race time? 
 	BYTE  pad3[0x170 - 0x154 - sizeof(float)];
-	__int32 gear;		     // 0x170. 0=Reverse,1=Neutral,2..6=Gear-1 (ie. value 3 means gear 2)
+	__int32 gear;		     // 0x170. 0=Reverse,1=Neutral,2..6=Gear-1 (ie. value 3 means gear 2) (note! the current value only, gear is not set via this value)
 
 	BYTE  pad4[0x244 - 0x170 - sizeof(__int32)];
 	float stageStartCountdown; // 0x244 (7=Countdown not yet started, 6.999-0.1 Countdown running, 0=GO!, <0=Racing time since GO! command)
@@ -619,6 +619,10 @@ extern wchar_t*				g_pRBRMapLocationName; // Offset 0x007D1D64. The name of the 
 // TODO:
 //
 //  0x008EF660 
+//    +0x085C float throttle value?
+//    +0x0860 float brake value?
+//    +0x0864 float handbrake value?
+//    +0x0868 float steering value?
 //    +0x086C float Clutch  >0.85 clutch On, otherwise Off?
 //    +0x1100 long. Current gear 0..7? There is already gear value in above shown structures. What is this one?
 //   

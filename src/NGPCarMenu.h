@@ -113,12 +113,40 @@ typedef RBRTMStageOptions1* PRBRTMStageOptions1;
 
 typedef struct {
 #pragma pack(push,1)
+	WCHAR*  wszMenuItemName; // 0x00
+	BYTE    pad1[0x2C - 0x00 - sizeof(WCHAR*)];
+	__int32 mapID;			 // 0x2C
+	BYTE    pad2[0x38 - 0x2C - sizeof(__int32)]; // 0x38 = Total size of RBRTM menu item struct
+#pragma pack(pop)
+} RBRTMMenuItem;
+typedef RBRTMMenuItem* PRBRTMMenuItem;
+
+typedef struct {
+#pragma pack(push,1)
+	__int32 unknown1;			// 0x00
+	PRBRTMMenuItem pMenuItems;	// 0x04 Pointer to array of menuItem structs
+	__int32 numOfItems;			// 0x08 Num of items in pMenuItems array (not including the "Back" menu item)
+#pragma pack(pop)
+} RBRTMMenuData;
+typedef RBRTMMenuData* PRBRTMMenuData;
+
+typedef struct {
+#pragma pack(push,1)
+	DWORD menuID;				// 0x00	(0x159785F8=RBRTM main menu, 0x15978614=RBRTM CarSelection screen, 0x159786F8=Online options1 screen, 0x15978684=Online options2 screen, 0x15978154=Shakedown stage selection, 0x159786A0=Shakedown options screen)
+	PRBRTMMenuData pMenuData;	// 0X04
+#pragma pack(pop)
+} RBRTMMenuObj;
+typedef RBRTMMenuObj* PRBRTMMenuObj;
+
+// Offset 0x1597F128?
+typedef struct {
+#pragma pack(push,1)
 	__int32 unknown1;				// 0x00
 	__int32 unknown2;				// 0x04
 	__int32 unknown3;				// 0x08
-	DWORD* pCurrentRBRTMMenuObj;	// 0x0C - Pointer to current RBRTM menu object
+	PRBRTMMenuObj pCurrentRBRTMMenuObj;	// 0x0C - Pointer to the current RBRTM menu object
 	__int32 selectedItemIdx;		// 0x10 - Currently selected menu item line
-	__int32 selectedStage;			// 0x14 - Currently selected shakedown stage# (map)
+	__int32 selectedStage;			// 0x14 - Currently selected shakedown stage# (mapID). Set after the stage was selected from the list of RBRTM stages
 
 	BYTE pad1[0xBA2 - 0x14 - sizeof(__int32)];
 	PRBRTMStageOptions1 pRBRTMStageOptions1;	// 0xBA2
