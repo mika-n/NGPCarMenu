@@ -17,7 +17,10 @@ This **NGPCarMenu RBR plugin solves these problems** by doing following enhancem
 - Customized car and camera position to take automatic screenshots of 3D car models (well, not yet implemented in INI config file. Car and cam position is pre-set in the plugin code. Maybe the next version moves this setting to INI file).
 - Longer car model names in car specs window (as much there is room on the screen).
 - Longer car menu names (up to 30 chars).
-- RBRTM plugin integration (ie. shows the information and a car preview image in RBRTM car selection menu and map preview images in Shakedown menu).
+- RBRTM improvement 1: Shows the car information and a car preview image in RBRTM car selection menu (Online and Shakedown car selection).
+- RBRTM improvement 2: Shows the map information and a preview image in Shakedown menu while browsing through list of stages (supports custom user supplied PNG images also).
+- RBRTM improvement 3: Shows Nth recently driven stages as a shortcut menu entries on top of the Shakedown stage list (easier and faster to choose favourite stages to drive again when no need to browse through the long list of stages).
+- RBRTM improvement 4: Remembers the focused stage menu line even after visiting the RBRTM main menu (without NGPCarMenu plugin RBRTM would always reset back to the first menu line after visiting RBRTM main menu).
 
 The plugin supports **RBRTM Czech Tournament** plugin (V0.88) integration. Use NGPCarMenu in-game menu or INI file to enable/disable this integration.
 
