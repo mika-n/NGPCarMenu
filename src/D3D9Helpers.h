@@ -44,6 +44,8 @@
 
 #define LogPrint DebugPrintFunc   // LogPrint prints out a txt message both in retail and debug builds
 
+extern unsigned long g_iLogMsgCount; // Num of printed log messages (if message count exceeds X messages then messages are no longer written to a logfile to avoid flooding)
+
 extern void DebugReleaseResources();
 extern void DebugCloseFile();
 extern void DebugClearFile();

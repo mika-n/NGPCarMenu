@@ -52,6 +52,13 @@ const char*		GetStageName	( int iMap );
 // Return name of car (returns NULL for invalid car id's)
 const char*		GetCarName		( int iCar );
 
+
+//------------------------------------------------------------------------------------------------//
+// NGPCarMenu additions in NPlugin
+const wchar_t* GetSurfaceName(int iSurface);
+//const char*    GetSurfaceNameA(int iSurface);
+const int      GetStageSurface(int iMap);
+
 //------------------------------------------------------------------------------------------------//
 /**
  * Format a string to reflect a time in a 00:00:00 format

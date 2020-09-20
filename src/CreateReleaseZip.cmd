@@ -46,6 +46,7 @@ mkdir "%RELEASE_FOLDER%\Plugins\%APPNAME%\"
 mkdir "%RELEASE_FOLDER%\Plugins\%APPNAME%\Replays"
 mkdir "%RELEASE_FOLDER%\Plugins\%APPNAME%\preview\1920x1080\"
 mkdir "%RELEASE_FOLDER%\Plugins\%APPNAME%\preview\1366x768\"
+mkdir "%RELEASE_FOLDER%\Plugins\%APPNAME%\preview\maps\"
 
 rem Dummy files because 7Zip tool would ignore empty folders
 echo Use Options-Plugins-NGPCarMenu-CreateCarImages menu command in RBR game to update car preview images> "%RELEASE_FOLDER%\Plugins\%APPNAME%\preview\1920x1080\carImages.txt"
@@ -65,6 +66,8 @@ copy "..\LicenseText.txt"    "%RELEASE_FOLDER%\Plugins\%APPNAME%\"
 copy "..\LicenseText_3rdPartyTools.txt" "%RELEASE_FOLDER%\Plugins\%APPNAME%\"
 copy "..\ReadMe.md"          "%RELEASE_FOLDER%\Plugins\%APPNAME%\"
 copy "..\ReadMe.md"          "%RELEASE_FOLDER%\Plugins\%APPNAME%\ReadMe.txt"
+
+copy "..\misc\maps\*.png"    "%RELEASE_FOLDER%\Plugins\%APPNAME%\preview\maps\"
 
 PUSHD "%RELEASE_FOLDER%\"
 del "..\%RELEASE_PKG%"

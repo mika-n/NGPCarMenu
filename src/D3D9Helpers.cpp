@@ -619,7 +619,7 @@ void DebugOpenFile(bool bOverwriteFile = false)
 			if (g_sLogFileName.empty())
 			{
 				wchar_t  szModulePath[_MAX_PATH];
-				::GetModuleFileNameW(NULL, szModulePath, sizeof(szModulePath));
+				::GetModuleFileNameW(NULL, szModulePath, COUNT_OF_ITEMS(szModulePath));
 				::PathRemoveFileSpecW(szModulePath);
 
 				g_sLogFileName = szModulePath;
@@ -716,7 +716,7 @@ void DebugPrintFunc_CHAR_or_WCHAR(LPCSTR szTxtBuf, LPCWSTR wszTxtBuf, int iMaxCh
 void DebugPrintFunc(LPCSTR lpszFormat, ...)
 {
 	// Safety option to ignore debug messages if the app gets stuck in infinite loop
-	if (g_iLogMsgCount >= 1000)
+	if (g_iLogMsgCount >= 2000)
 		return;
 
 	va_list args;
@@ -734,7 +734,7 @@ void DebugPrintFunc(LPCSTR lpszFormat, ...)
 void DebugPrintFunc(LPCWSTR lpszFormat, ...)
 {
 	// Safety option to ignore debug messages if the app gets stuck in infinite loop
-	if (g_iLogMsgCount >= 1000)
+	if (g_iLogMsgCount >= 2000)
 		return;
 
 	va_list args;

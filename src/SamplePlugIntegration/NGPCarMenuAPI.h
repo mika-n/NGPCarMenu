@@ -1,6 +1,22 @@
 #ifndef __NGPCARMENUAPI_H_INCLUDED
 #define __NGPCARMENUAPI_H_INCLUDED
 
+//
+// NGPCarMenuAPI. API interface to draw custom images from another plugins without worrying about DirectX and RBR texture/bitmap handling requirements. 
+// How to use this API?
+//  - Include this NGPCarMenuAPI.h file in your own plugin code
+//  - Instantiate CNGPCarMenuAPI class object within your plugin code
+//  - Register a link between your plugin and NGPCarMenu backend plugin by calling InitializePluginIntegration method (ie. you need to have NGPCarMenu.dll installed in RBR\Plugins\ folder)
+//  - Load images (PNG/BMP) and specify size and location by calling LoadCustomImage method (each image should have an unique imageID identifier. It is up to you to generate this ID number)
+//  - Show or hide a specified image (imageID) based on events in your own plugin by calling ShowHideImage method
+//  - See the sample plugin code for more details.
+//
+// Copyright 2020, MIKA-N. https://github.com/mika-n
+//
+// This NGPCarMenuAPI.h file and interface is provided by MIKA-N free of charge. Use at your own risk. No warranty given whatsoever in any direct or in-direct consequences. 
+// You can modify this file and CNGPCarMenuAPI class as long the original copyright notice is also included in the derived work and those changes in this file are published as an open-source results (it is up to you to decide where to publish those changes).
+// 
+
 #define WIN32_LEAN_AND_MEAN // Exclude rarely-used stuff from Windows headers
 #include <windows.h>
 

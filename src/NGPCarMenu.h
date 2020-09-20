@@ -35,6 +35,8 @@
 //#include <stdio.h>
 #include <d3d9.h>
 #include <memory>					// unique_ptr and smart_ptr
+//#include <forward_list>				// std::forward_list
+#include <list>
 
 #include "PluginHelpers.h"
 
@@ -56,8 +58,8 @@
 #define C_REPLAYFILENAME_SCREENSHOT   "_NGPCarMenu.rpl"  // Name of the temporary RBR replay file (char and wchar version)
 #define C_REPLAYFILENAME_SCREENSHOTW L"_NGPCarMenu.rpl"
 
-#define C_RBRTM_PLUGIN_NAME "RBR Tournament"
-
+#define C_RBRTM_PLUGIN_NAME     "RBR Tournament"
+#define C_MAX_RECENT_RBRTM_MAPS 5
 
 //
 // The state of the plugin enum
@@ -101,6 +103,14 @@ typedef struct {
 typedef RBRCarSelectionMenuEntry* PRBRCarSelectionMenuEntry;
 
 //------------------------------------------------------------------------------------------------
+
+#define RBRTMMENUIDX_CARSELECTION		0x15978614	// RBRTMMenuObj.menuID values. RBRTM car selection screen (either below Shakedown or OnlineTournament menu tree)
+#define RBRTMMENUIDX_MAIN				0x159785F8  // RBRTM main menu, so the RBRTM menu is no longer below Shakedown or OnlineTournament menu tree
+#define RBRTMMENUIDX_ONLINEOPTION1		0x159786F8	// RBRTM OnlineTournament options 1 menu (options for online rally lookups)
+#define RBRTMMENUIDX_ONLINEOPTION2		0x15978684	// RBRTM OnlineTournament options 2 menu (list of online rallies)
+#define RBRTMMENUIDX_SHAKEDOWNSTAGES	0x15978154	// RBRTM Shakedown Stage selection screen
+#define RBRTMMENUIDX_SHAKEDOWNOPTION1	0x159786A0	// RBRTM Shakedown options 1 menu (the menu just before the car selection screen)
+
 typedef struct {
 #pragma pack(push,1)
 	BYTE unknown1;
@@ -113,7 +123,7 @@ typedef RBRTMStageOptions1* PRBRTMStageOptions1;
 
 typedef struct {
 #pragma pack(push,1)
-	WCHAR*  wszMenuItemName; // 0x00
+	const WCHAR*  wszMenuItemName; // 0x00
 	BYTE    pad1[0x2C - 0x00 - sizeof(WCHAR*)];
 	__int32 mapID;			 // 0x2C
 	BYTE    pad2[0x38 - 0x2C - sizeof(__int32)]; // 0x38 = Total size of RBRTM menu item struct
@@ -147,12 +157,39 @@ typedef struct {
 	PRBRTMMenuObj pCurrentRBRTMMenuObj;	// 0x0C - Pointer to the current RBRTM menu object
 	__int32 selectedItemIdx;		// 0x10 - Currently selected menu item line
 	__int32 selectedStage;			// 0x14 - Currently selected shakedown stage# (mapID). Set after the stage was selected from the list of RBRTM stages
-
-	BYTE pad1[0xBA2 - 0x14 - sizeof(__int32)];
+	BYTE pad1[0xA08 - 0x14 - sizeof(__int32)];
+	__int32 numOfMenuItems;			// 0xA08 - Num of menu rows + 1 (back) in Shakedown stage selection menu list. This controls the max movement of focus line (not the num of shown menu items). RBRTMMenuData.numOfItems controls the num of shown menu items, but not focus line movements.
+	BYTE pad2[0xBA2 - 0xA08 - sizeof(__int32)];
 	PRBRTMStageOptions1 pRBRTMStageOptions1;	// 0xBA2
 #pragma pack(pop)
 } RBRTMPlugin;
 typedef RBRTMPlugin* PRBRTMPlugin;
+
+struct RBRTM_MapInfo {
+	int			  mapID;			// MapID
+	int			  mapIDMenuIdx;		// Menu index (used when the previous menu line is automatically selected when user navigates back to Shakedown menu)
+	std::wstring  name;
+	double		  length;
+	int			  surface;
+	std::wstring  previewImageFile;
+	IMAGE_TEXTURE imageTexture;
+
+	RBRTM_MapInfo() 
+	{
+		name.reserve(32);
+		mapID = -1;
+		mapIDMenuIdx = -1;
+		length = -1;
+		surface = -1;
+		ZeroMemory(&imageTexture, sizeof(IMAGE_TEXTURE));
+	}
+
+	~RBRTM_MapInfo()
+	{
+		SAFE_RELEASE(imageTexture.pTexture);
+	}
+};
+
 
 //------------------------------------------------------------------------------------------------
 
@@ -173,6 +210,7 @@ extern HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer);
 // The linked "other plugin" doesn't have to worry about directX textures, vertex, surface and bitmap objects because this NGPCarMenu plugin takes care of those.
 // DrawFrontEndPage method of the "other plugin" can use simple API functions exported by NGPCarMenu 
 // plugin to load and draw custom images at specified location with or without scaling (PNG and BMP files).
+// See src/SamplePluginIntegration/NGPCarMenuAPI.h header. Include NGPCarMenuAPI.h header file in your own plugin and use those CNGPCarMenuAPI class methods to register a plugin link and to draw custom images.
 //
 class CRBRPluginIntegratorLinkImage
 {
@@ -231,8 +269,9 @@ public:
 class CNGPCarMenu : public IPlugin
 {
 protected:
-	CSimpleIniW* m_pLangIniFile;
-	std::string m_sPluginTitle;
+	std::string m_sPluginTitle;		// Title of the plugin shown in NGPCarMenu menus
+
+	CSimpleIniW* m_pLangIniFile;	// NGPCarMenu language localization file
 
 	int	m_iCarMenuNameLen; // Max char space reserved for the current car menu name menu items (calculated in CalculateMaxLenCarMenuName method)
 
@@ -303,10 +342,28 @@ public:
 	IMAGE_TEXTURE m_carPreviewTexture[8];		// 0..7 car preview image data (or NULL if missing/not loaded yet)	
 	IMAGE_TEXTURE m_carRBRTMPreviewTexture[8];  // 0..7 car preview image for RBRTM plugin integration if RBRTM integration is enabled (the same pic as in standard preview image texture, but re-scaled to fit the smaller picture are in RBRTM screen)
 
+	CSimpleIniW* m_pTracksIniFile;				// maps\Tracks.ini file (if RBRTM integration is enabled then splash/preview images are shown in Shakedown map selection list)
+
+	RECT         m_mapRBRTMPictureRect;			// Output rect of RBRTM map preview image (re-scaled pic area)
+	std::wstring m_screenshotPathMapRBRTM;		// Custom map preview image path
+	RBRTM_MapInfo m_latestMapRBRTM;				// The latest selected stage (mapID) in RBRTM Shakedown menu (if the current mapID is still the same then no need to re-load the same stage preview image)
+
+	int m_recentMapsMaxCountRBRTM;				// Max num of recent stages/maps added to recentMaps vector (default 5 if not set in INI file. 0 disabled the custom Shakedown menu feature)
+	std::list<std::unique_ptr<RBRTM_MapInfo>> m_recentMapsRBRTM; // Recent maps shown on top of the Shakedown stage list
+	bool m_bRecentMapsRBRTMModified;			// Is the recent maps list modified since the last INI file saving?
+
+	PRBRTMMenuData m_pOrigMapMenuDataRBRTM;		// The original RBRTM Shakedown menu data struct
+	PRBRTMMenuItem m_pOrigMapMenuItemsRBRTM;	// The original RBRTM Shakedown stages menu item array
+	int            m_origNumOfItemsMenuItemsRBRTM; // The original num of menu items in Stages menu list
+
+	PRBRTMMenuItem m_pCustomMapMenuRBRTM;		// Custom "list of stages" menu in RBRTM Shakedown menu (contains X recent shortcuts and the original list of stages)
+	int m_numOfItemsCustomMapMenuRBRTM;			// Num of items in m_pCustomMapMenuRBRTM (dynamic) array
+
 	std::string m_sRBRTMPluginTitle;			// "RBR Tournament" is the RBRTM plugin name by default, but in theory it is possible that this str is translated in RBRTM language files. The plugin name in use is stored here because the RBRTM integration routine needs this name.
 	int    m_iRBRTMPluginMenuIdx;				// Index of the RBRTM plugin in the RBR Plugins menu list (this way we know when RBRTM custom plugin in Nth index position is activated)
 	bool   m_bRBRTMPluginActive;				// TRUE/FALSE if the current active custom plugin is RBRTM (active = The RBRTM plugin handler is running in foreground)
 	int    m_iRBRTMCarSelectionType;			// 0=No car selection menu shown, 1=Online Tournament selection, 2=Shakedown car selection
+
 	PRBRMenuObj  m_pRBRPrevCurrentMenu;			// If RBRTM integration is enabled then NGPCarMenu must try to identify Plugins and RBRTM plugin. This is just a "previous currentMenu" in order to optimize the check routine (ie. don't re-check if the plugin is RBRTM until new menu/plugin is activated)
 	PRBRTMPlugin m_pRBRTMPlugin;				// Pointer to RBRTM plugin or nullptr if not found or RBRTM integration is disabled
 
@@ -320,7 +377,7 @@ public:
 	int GetNextScreenshotCarID(int currentCarID);
 	static bool PrepareScreenshotReplayFile(int carID);
 
-	std::wstring ReplacePathVariables(const std::wstring& sPath, int selectedCarIdx = -1, bool rbrtmplugin = false);
+	std::wstring ReplacePathVariables(const std::wstring& sPath, int selectedCarIdx = -1, bool rbrtmplugin = false, int mapID = -1, const WCHAR* mapName = nullptr);
 	bool ReadCarPreviewImageFromFile(int selectedCarIdx, float x, float y, float cx, float cy, IMAGE_TEXTURE* pOutImageTexture, DWORD dwFlags = 0, bool isRBRTMPlugin = false);
 
 	int InitPluginIntegration(const std::string& customPluginName, bool bInitRBRTM);
@@ -330,22 +387,131 @@ public:
 	void SaveSettingsToPluginINIFile();
 
 
-	const WCHAR* GetLangStr(const WCHAR* szStrKey) 
+	int FindRBRTMMenuItemIdxByMapID(PRBRTMMenuData pMenuData, int mapID)
+	{
+		// Find the RBRTM menu item by mapID. Return index to the menuItem struct or -1
+		if (pMenuData != nullptr && mapID > 0)
+		{
+			for (int idx = 0; idx < pMenuData->numOfItems; idx++)
+				if (pMenuData->pMenuItems[idx].mapID == mapID)
+					return idx;
+		}
+
+		return -1;
+	}
+
+
+	int CalculateNumOfValidMapsInRecentList(PRBRTMMenuData pMenuData = nullptr)
+	{
+		int numOfRecentMaps = 0;
+		int menuIdx;
+
+		auto it = m_recentMapsRBRTM.begin();
+		while (it != m_recentMapsRBRTM.end()) 
+		{
+			if ((*it)->mapID > 0 && numOfRecentMaps < m_recentMapsMaxCountRBRTM)
+			{
+				menuIdx = FindRBRTMMenuItemIdxByMapID(pMenuData, (*it)->mapID);
+
+				if (menuIdx >= 0 || pMenuData == nullptr)
+				{
+					// The mapID in recent list is valid. Refresh the menu entry name as "[recent idx] Stage name"
+					numOfRecentMaps++;
+					if (pMenuData != nullptr)
+					{
+						(*it)->name = L"[" + std::to_wstring(numOfRecentMaps) + L"] ";
+						(*it)->name.append(pMenuData->pMenuItems[menuIdx].wszMenuItemName);
+					}
+
+					// Go to the next item in list iterator
+					++it;
+				}
+				else
+				{
+					// The map in recent list is no longer in stages menu list. Invalidate the recent item (ie. it is not added as a shortcut to RBRTM Shakedown stages menu)
+					it = m_recentMapsRBRTM.erase(it);
+				}
+			}
+			else
+			{
+				// Invalid mapID value or "too many items". Remove the item if the menu data was defined
+				if (pMenuData != nullptr)
+					it = m_recentMapsRBRTM.erase(it);
+				else
+					++it;
+			}
+		}
+
+		return numOfRecentMaps;
+	}
+
+	void AddMapToRecentList(int mapID)
+	{
+		if (mapID <= 0) return;
+
+		// Add mapID to top of the recentMaps list (if already in the list then move it to top, otherwise add as a new item and remove the last item if the list is full)
+		for (auto& iter = m_recentMapsRBRTM.begin(); iter != m_recentMapsRBRTM.end(); ++iter) 
+		{
+			if ((*iter)->mapID == mapID)
+			{
+				// MapID already in the recent list. Move it to the top of the list (no need to re-add it to the list)
+				if (iter != m_recentMapsRBRTM.begin())
+				{
+					m_recentMapsRBRTM.splice(m_recentMapsRBRTM.begin(), m_recentMapsRBRTM, iter, std::next(iter));
+					m_bRecentMapsRBRTMModified = TRUE;
+				}
+
+				// Must return after moving the item to top of list because for-iterator is now invalid because the list was modified
+				return;
+			}
+		}
+
+		// MapID is not yet in the recent list. Add it to the top of the list (we cannot delete items at this point because the to-be-removed recentItem may be used by Shakedown stages menu)
+		auto newItem = std::make_unique<RBRTM_MapInfo>();
+		newItem->mapID = mapID;
+		m_recentMapsRBRTM.push_front(std::move(newItem));
+		m_bRecentMapsRBRTMModified = TRUE;
+	}
+
+
+	inline const WCHAR* GetLangStr(const WCHAR* szStrKey) 
 	{ 
 		// Return localized version of the strKey string value (or the original value if no localization available)
-		if (m_pLangIniFile == nullptr) 
+		if (m_pLangIniFile == nullptr || szStrKey == nullptr || szStrKey[0] == L'\0')
 			return szStrKey; 
 
 		const WCHAR* szResult = m_pLangIniFile->GetValue(L"Strings", szStrKey, nullptr);
+		/*
 		if (szResult == nullptr && szStrKey != nullptr)
 		{
-			// No match, but let's try again without potenial leading and/or trailing whitespace chars
+			// No match, but let's try again without leading and/or trailing whitespace chars
 			std::wstring sStrWithoutTrailingWhitespace(szStrKey);
 			_Trim(sStrWithoutTrailingWhitespace);
 			szResult = m_pLangIniFile->GetValue(L"Strings", sStrWithoutTrailingWhitespace.c_str(), szStrKey);
 		}
-		return szResult;
+		*/
+		return (szResult != nullptr ? szResult : szStrKey);
 	}
+
+	inline const void AddLangStr(const WCHAR* szStrKey, const WCHAR* szResult)
+	{
+		if (m_pLangIniFile == nullptr || szStrKey == nullptr || szStrKey[0] == L'\0' || szResult == nullptr)
+			return;
+
+		// Add translation key only if it doesn't exist already
+		if(m_pLangIniFile->GetValue(L"Strings", szStrKey, nullptr) == nullptr)
+			m_pLangIniFile->SetValue(L"Strings", szStrKey, szResult);
+	}
+
+	inline const void AddLangStr(const WCHAR* szStrKey, const char* szResult)
+	{
+		if(szResult != nullptr)
+			AddLangStr(szStrKey, _ToWString(szResult).c_str());
+	}
+
+
+	void /*HRESULT*/ CustomRBRDirectXBeginScene( /*void* objPointer*/ );
+	HRESULT CustomRBRDirectXEndScene(void* objPointer);
 
 	//------------------------------------------------------------------------------------------------
 	virtual const char* GetName(void);
