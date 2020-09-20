@@ -746,10 +746,12 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 					if (fs::exists(sRBRTMLangFile))
 					{
 						CSimpleIni rbrTMLangINI;
-						rbrTMLangINI.SetUnicode(true);
+						//rbrTMLangINI.SetUnicode(true);
 						rbrTMLangINI.LoadFile(sRBRTMLangFile.c_str());
 						m_sRBRTMPluginTitle = rbrTMLangINI.GetValue("Strings", "1", "");
 
+						// FIXME: TODO: Disabled because RBRTM lang file should be read using the file specific codepage (CP). Not yet implemented. For now surface names can be translated via NGPCarMenu lang file.
+						/*
 						if (m_pLangIniFile != nullptr)
 						{
 							// Get surface (gravel, tarmac, snow) translations from RBRTM language file if the NGPCarMenu translation file didn't define these keywords
@@ -757,6 +759,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 							AddLangStr(L"gravel", rbrTMLangINI.GetValue("Strings", "361", nullptr));
 							AddLangStr(L"snow",   rbrTMLangINI.GetValue("Strings", "362", nullptr));
 						}
+						*/
 					}
 				}
 
