@@ -849,14 +849,25 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 				this->m_screenshotPathMapRBRTM = this->m_sRBRRootDirW + L"\\" + this->m_screenshotPathMapRBRTM; // Path relative to the root of RBR app path
 
 			// RBRTM_MapPictureRect
+			// TODO: All ini options with resoblock-defaultblock-trim-stripLeadingTrailingQuoteChar logic
 			sTextValue = pluginINIFile.GetValue(szResolutionText, L"RBRTM_MapPictureRect", L"");
-			_StringToRect(sTextValue, &this->m_mapRBRTMPictureRect);
+			_Trim(sTextValue);
+			if (sTextValue.empty())
+			{
+				sTextValue = pluginINIFile.GetValue(L"Default", L"RBRTM_MapPictureRect", L"");
+				_Trim(sTextValue);
+			}
+
+			if (sTextValue != L"0")
+				_StringToRect(sTextValue, &this->m_mapRBRTMPictureRect);
+			else
+				m_mapRBRTMPictureRect.bottom = -1; // Disable RBRTM Shakedown map preview image featre
 
 			if (m_mapRBRTMPictureRect.top == 0 && m_mapRBRTMPictureRect.right == 0 && m_mapRBRTMPictureRect.left == 0 && m_mapRBRTMPictureRect.bottom == 0)
 			{
 				// Default rectangle area of RBRTM map preview picture if RBRTM_MapPictureRect is not set in INI file
-				RBRAPI_MapRBRPointToScreenPoint(295.0f, 120.0f, (int*)&m_mapRBRTMPictureRect.left, (int*)&m_mapRBRTMPictureRect.top);
-				RBRAPI_MapRBRPointToScreenPoint(625.0f, 455.0f, (int*)&m_mapRBRTMPictureRect.right, (int*)&m_mapRBRTMPictureRect.bottom);
+				RBRAPI_MapRBRPointToScreenPoint(295.0f, 230.0f, (int*)&m_mapRBRTMPictureRect.left, (int*)&m_mapRBRTMPictureRect.top);
+				RBRAPI_MapRBRPointToScreenPoint(628.0f, 455.0f, (int*)&m_mapRBRTMPictureRect.right, (int*)&m_mapRBRTMPictureRect.bottom);
 
 				LogPrint("RBRTM_MapPictureRect value is empty. Using the default value RBRTM_MapPictureRect=%d %d %d %d", m_mapRBRTMPictureRect.left, m_mapRBRTMPictureRect.top, m_mapRBRTMPictureRect.right, m_mapRBRTMPictureRect.bottom);
 			}
@@ -2876,36 +2887,40 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 							// Take stage len and surface type from maps\Tracks.ini file
 							m_latestMapRBRTM.length  = m_pTracksIniFile->GetDoubleValue(wszMapINISection, L"Length", -1.0);
 
-							// At first check surface type for the original map. If the map was not original then check Tracks.ini file Surface option
+							// Check surface type for the original map. If the map was not original then check Tracks.ini file Surface option
 							m_latestMapRBRTM.surface = NPlugin::GetStageSurface(m_latestMapRBRTM.mapID);
 							if(m_latestMapRBRTM.surface < 0) m_latestMapRBRTM.surface = m_pTracksIniFile->GetLongValue(wszMapINISection, L"Surface", -1);
 
-							// Use custom map image path at first (set in RBRTM_MapScreenshotPath ini option). If the option or file is missing then take the stage preview image name from maps\Tracks.ini file
-							m_latestMapRBRTM.previewImageFile = ReplacePathVariables(m_screenshotPathMapRBRTM, -1, TRUE, m_latestMapRBRTM.mapID, m_latestMapRBRTM.name.c_str());
-
-							if(g_iLogMsgCount < 26)
-								LogPrint(L"Custom preview image file %s for a map #%d %s", m_latestMapRBRTM.previewImageFile.c_str(), m_latestMapRBRTM.mapID, m_latestMapRBRTM.name.c_str());
-
-							if (m_latestMapRBRTM.previewImageFile.empty() || !fs::exists(m_latestMapRBRTM.previewImageFile))
+							// Skip map image initializations if the map preview img feature is disabled (RBRTM_MapPictureRect=0)
+							if (m_mapRBRTMPictureRect.bottom != -1)
 							{
-								m_latestMapRBRTM.previewImageFile = _RemoveEnclosingChar(m_pTracksIniFile->GetValue(wszMapINISection, L"SplashScreen", L""), L'"', false);
-
-								if (m_latestMapRBRTM.previewImageFile.length() >= 2 && m_latestMapRBRTM.previewImageFile[0] != L'\\' && m_latestMapRBRTM.previewImageFile[1] != L':')
-									m_latestMapRBRTM.previewImageFile = this->m_sRBRRootDirW + L"\\" + m_latestMapRBRTM.previewImageFile;
+								// Use custom map image path at first (set in RBRTM_MapScreenshotPath ini option). If the option or file is missing then take the stage preview image name from maps\Tracks.ini file
+								m_latestMapRBRTM.previewImageFile = ReplacePathVariables(m_screenshotPathMapRBRTM, -1, TRUE, m_latestMapRBRTM.mapID, m_latestMapRBRTM.name.c_str());
 
 								if (g_iLogMsgCount < 26)
-									LogPrint(L"Custom image not found. Using Maps\\Tracks.ini SplashScreen image option %s", m_latestMapRBRTM.previewImageFile.c_str());
+									LogPrint(L"Custom preview image file %s for a map #%d %s", m_latestMapRBRTM.previewImageFile.c_str(), m_latestMapRBRTM.mapID, m_latestMapRBRTM.name.c_str());
+
+								if (m_latestMapRBRTM.previewImageFile.empty() || !fs::exists(m_latestMapRBRTM.previewImageFile))
+								{
+									m_latestMapRBRTM.previewImageFile = _RemoveEnclosingChar(m_pTracksIniFile->GetValue(wszMapINISection, L"SplashScreen", L""), L'"', false);
+
+									if (m_latestMapRBRTM.previewImageFile.length() >= 2 && m_latestMapRBRTM.previewImageFile[0] != L'\\' && m_latestMapRBRTM.previewImageFile[1] != L':')
+										m_latestMapRBRTM.previewImageFile = this->m_sRBRRootDirW + L"\\" + m_latestMapRBRTM.previewImageFile;
+
+									if (g_iLogMsgCount < 26)
+										LogPrint(L"Custom image not found. Using Maps\\Tracks.ini SplashScreen image option %s", m_latestMapRBRTM.previewImageFile.c_str());
+								}
 							}
 
-							// Release previous map preview texture and read a new image (if preview path is set and the image file exists)
+							// Release previous map preview texture and read a new image file (if preview path is set and the image file exists and map preview img drawing is not disabled)
 							SAFE_RELEASE(m_latestMapRBRTM.imageTexture.pTexture);
-							if (!m_latestMapRBRTM.previewImageFile.empty() && fs::exists(m_latestMapRBRTM.previewImageFile))
+							if (!m_latestMapRBRTM.previewImageFile.empty() && fs::exists(m_latestMapRBRTM.previewImageFile) && m_mapRBRTMPictureRect.bottom != -1)
 							{
 								hResult = D3D9CreateRectangleVertexTexBufferFromFile(g_pRBRIDirect3DDevice9,
 									m_latestMapRBRTM.previewImageFile,
 									(float)m_mapRBRTMPictureRect.left, (float)m_mapRBRTMPictureRect.top, (float)(m_mapRBRTMPictureRect.right - m_mapRBRTMPictureRect.left), (float)(m_mapRBRTMPictureRect.bottom - m_mapRBRTMPictureRect.top),
 									&m_latestMapRBRTM.imageTexture,
-									0);
+									0  /*IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_BOTTOM | IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER*/ );
 
 								// Image not available or loading failed
 								if (!SUCCEEDED(hResult))
@@ -2919,12 +2934,13 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 						std::wstringstream sStrStream;
 						sStrStream << std::fixed << std::setprecision(1);
 
-						//RBRAPI_MapRBRPointToScreenPoint(345.0f, 50.0f, &posX, &posY);
-						posX = m_mapRBRTMPictureRect.left;
-						posY = m_mapRBRTMPictureRect.top - (4 * iFontHeight);
+						//posX = m_mapRBRTMPictureRect.left;
+						//posY = m_mapRBRTMPictureRect.top - (4 * iFontHeight);
+						RBRAPI_MapRBRPointToScreenPoint(295.0f, 53.0f, &posX, &posY);
 
-						int iMapInfoPrintRow = 0;
-						g_pFontCarSpecCustom->DrawText(posX, posY + ((++iMapInfoPrintRow) * iFontHeight), C_CARMODELTITLETEXT_COLOR, (m_latestMapRBRTM.name + L"  (#" + std::to_wstring(g_pRBRPlugin->m_latestMapRBRTM.mapID) + L")").c_str(), 0);
+						//int iMapInfoPrintRow = 0;
+						//g_pFontCarSpecCustom->DrawText(posX, posY + ((++iMapInfoPrintRow) * iFontHeight), C_CARMODELTITLETEXT_COLOR, (m_latestMapRBRTM.name + L"  (#" + std::to_wstring(g_pRBRPlugin->m_latestMapRBRTM.mapID) + L")").c_str(), 0);
+						sStrStream << m_latestMapRBRTM.name << L"  (#" << g_pRBRPlugin->m_latestMapRBRTM.mapID << L")   ";
 
 						if (m_latestMapRBRTM.length > 0)
 							// TODO: KM to Miles miles=km*0.621371192 config option support
@@ -2933,8 +2949,8 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 						if (m_latestMapRBRTM.surface >= 0 && m_latestMapRBRTM.surface <= 2)
 							sStrStream << GetLangStr(NPlugin::GetSurfaceName(m_latestMapRBRTM.surface));
 
-						g_pFontCarSpecCustom->DrawText(posX, posY + ((++iMapInfoPrintRow) * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), 0);
-						//g_pFontCarSpecCustom->DrawText(posX, posY + ((++iMapInfoPrintRow) * iFontHeight), C_CARSPECTEXT_COLOR, m_latestMapRBRTM.previewImageFile.c_str(), 0);
+						//g_pFontCarSpecCustom->DrawText(posX, posY + ((++iMapInfoPrintRow) * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), 0);
+						g_pFontCarSpecCustom->DrawText(posX, posY, C_CARMODELTITLETEXT_COLOR, sStrStream.str().c_str(), 0);
 
 						if (m_latestMapRBRTM.imageTexture.pTexture != nullptr)
 						{
