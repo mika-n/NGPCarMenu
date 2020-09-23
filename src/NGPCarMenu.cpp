@@ -354,7 +354,7 @@ IPlugin* RBR_CreatePlugin( IRBRGame* pGame )
 	DebugPrint("--------------------------------------------\nRBR_CreatePlugin");
 
 	if (g_pRBRPlugin == nullptr) g_pRBRPlugin = new CNGPCarMenu(pGame);
-	//DebugPrint("NGPCarMenu=%08x", g_pRBRPlugin);
+	//DebugPrint("NGPCarMenu=%08x", (DWORD)g_pRBRPlugin);
 	return g_pRBRPlugin;
 }
 
@@ -2808,6 +2808,9 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 					// RBRTM stage selection list in Shakedown menu is the active RBRTM menu
 					//
 					int menuIdx;
+
+					// Hide the annoying "moving background box" on the bottom right corner in RBRTM Shakedown stages menu
+					g_pRBRMenuSystem->menuImageHeight = g_pRBRMenuSystem->menuImageWidth = 0;
 
 					if (m_pRBRTMPlugin->selectedItemIdx < m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->numOfItems)
 					{
