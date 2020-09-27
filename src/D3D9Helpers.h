@@ -103,7 +103,7 @@ extern std::string GetFileVersionInformationAsString(const std::wstring & fileNa
 extern BOOL GetFileVersionInformationAsNumber(const std::wstring & fileName, UINT* outMajorVer, UINT* outMinorVer, UINT* outPatchVer, UINT* outBuildVer); // Return file version info
 
 extern bool _StringToRect (const std::wstring & s, RECT * outRect, const wchar_t separatorChar = L' '); // String in "0 50 200 400" format is converted as RECT struct value 
-extern bool _StringToRect(const std::string & s, RECT * outRect, const wchar_t separatorChar = L' ');
+extern bool _StringToRect (const std::string & s, RECT * outRect, const char separatorChar = ' ');
 extern bool _StringToPoint(const std::wstring & s, POINT * outPoint, const wchar_t separatorChar = L' '); // String in "0 50" format is converted as POINT struct value 
 extern bool _StringToPoint(const std::string & s, POINT * outPoint, const char separatorChar);
 

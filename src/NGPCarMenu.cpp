@@ -3365,6 +3365,15 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 						m_latestMapRBRRX.mapIDMenuIdx = m_currentCustomMapSelectedItemIdxRBRRX;
 						m_latestMapRBRRX.folderName = m_pCustomMapMenuRBRRX[m_currentCustomMapSelectedItemIdxRBRRX].szTrackFolder;
 						_ToLowerCase(m_latestMapRBRRX.folderName);
+						
+						m_latestMapRBRRX.name = m_pCustomMapMenuRBRRX[m_currentCustomMapSelectedItemIdxRBRRX].szTrackName;
+						if (m_currentCustomMapSelectedItemIdxRBRRX < min((int)m_recentMapsRBRRX.size(), m_recentMapsMaxCountRBRRX))
+						{
+							// Shortcut menu name. Remove the "[N] " leading tag because it is not part of the stage name
+							int iPos = m_latestMapRBRRX.name.find_first_of(']');
+							if (iPos >= 0)
+								m_latestMapRBRRX.name = (m_latestMapRBRRX.name.length() > iPos+2 ? m_latestMapRBRRX.name.substr(iPos+2) : "");
+						}
 
 						//btbTrackINIFile.SetUnicode(true);
 						//btbTrackINIFile.LoadFile((m_sRBRRootDirW + L"\\RX_CONTENT\\" + _ToWString(m_latestMapRBRRX.folderName) + L"\\track.ini").c_str());
@@ -3376,13 +3385,14 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 						// Skip map image initializations if the map preview img feature is disabled (RBRTM_MapPictureRect=0)
 						if (m_mapRBRRXPictureRect.bottom != -1)
 						{
-							CSimpleIni btbTrackINIFile;							
+							//CSimpleIni btbTrackINIFile;							
 							//btbTrackINIFile.SetUnicode(true);
-							try
-							{
-								btbTrackINIFile.LoadFile((m_sRBRRootDirW + L"\\RX_CONTENT\\" + _ToWString(m_latestMapRBRRX.folderName) + L"\\track.ini").c_str());
-								const CHAR* szTrackName = btbTrackINIFile.GetValue("INFO", "name", nullptr);
-								std::wstring sTrackName = _ToWString(szTrackName); //  _ToUTF8WString(szTrackName);
+							//try
+							//{
+								//btbTrackINIFile.LoadFile((m_sRBRRootDirW + L"\\RX_CONTENT\\" + _ToWString(m_latestMapRBRRX.folderName) + L"\\track.ini").c_str());
+								//const CHAR* szTrackName = btbTrackINIFile.GetValue("INFO", "name", "");
+								//std::wstring sTrackName = _ToWString(szTrackName); //  _ToUTF8WString(szTrackName);
+								std::wstring sTrackName = _ToWString(m_latestMapRBRRX.name);
 
 								// Use custom map image path at first (set in RBRTM_MapScreenshotPath ini option). If the option or file is missing then take the stage preview image name from maps\Tracks.ini file
 								m_latestMapRBRRX.previewImageFile = ReplacePathVariables(m_screenshotPathMapRBRRX, -1, FALSE, -1, sTrackName.c_str(), m_latestMapRBRRX.folderName);
@@ -3390,14 +3400,13 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 								if (g_iLogMsgCount < 26)
 									//LogPrint(L"Custom preview image file %s for a RBRRX map %s", m_latestMapRBRRX.previewImageFile.c_str(), _ToWString(m_latestMapRBRRX.name).c_str());
 									LogPrint(L"Custom preview image file %s for a RBRRX map %s", m_latestMapRBRRX.previewImageFile.c_str(), sTrackName.c_str());
-							}
-							catch (...)
-							{
+							//}
+							//catch (...)
+							//{
 								// Error while reading BTB track settings
-								m_latestMapRBRRX.previewImageFile.clear();
-
-								LogPrint("Failed to read settings for a map preview image %s", m_latestMapRBRRX.name.c_str());
-							}
+							//	m_latestMapRBRRX.previewImageFile.clear();
+							//	LogPrint("Failed to read settings for a map preview image %s", m_latestMapRBRRX.name.c_str());
+							//}
 						}
 
 						// Release previous map preview texture and read a new image file (if preview path is set and the image file exists and map preview img drawing is not disabled)
@@ -3522,9 +3531,13 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 			// Stage loading while RBRRX plugin is active in Shakedown mode. Add the latest map (=stage) to the top of the recent list
 			if (m_recentMapsMaxCountRBRRX > 0)
 			{
-				m_bRecentMapsRBRRXModified = FALSE;
-				AddMapToRecentList(m_latestMapRBRRX.folderName);
-				if (m_bRecentMapsRBRRXModified) SaveSettingsToRBRRXRecentMaps();
+				// If BTB track name is empty then this must be a dummy non-BTB track folder entry (RBR_RX shows non-track folder as an empty menu line in the menu list)
+				if (!m_latestMapRBRRX.name.empty())
+				{
+					m_bRecentMapsRBRRXModified = FALSE;
+					AddMapToRecentList(m_latestMapRBRRX.folderName);
+					if (m_bRecentMapsRBRRXModified) SaveSettingsToRBRRXRecentMaps();
+				}
 			}
 
 			m_bRecentMapsRBRRXModified = FALSE;
