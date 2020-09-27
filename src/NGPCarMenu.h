@@ -176,7 +176,7 @@ struct RBRTM_MapInfo {
 
 	RBRTM_MapInfo() 
 	{
-		name.reserve(32);
+		name.reserve(64);
 		mapID = -1;
 		mapIDMenuIdx = -1;
 		length = -1;
@@ -185,6 +185,63 @@ struct RBRTM_MapInfo {
 	}
 
 	~RBRTM_MapInfo()
+	{
+		SAFE_RELEASE(imageTexture.pTexture);
+	}
+};
+
+
+//------------------------------------------------------------------------------------------------
+
+typedef struct {
+#pragma pack(push,1)
+	char szTrackName[256];
+	char szTrackFolder[260];
+#pragma pack(pop)
+} RBRRXMenuItem;
+typedef RBRRXMenuItem* PRBRRXMenuItem;
+
+typedef struct {
+#pragma pack(push,1)
+	BYTE pad[0x08];				// 0x00
+	__int32 selectedItemIdx;	// 0x08
+#pragma pack(pop)
+} RBRRXMenuData;
+typedef RBRRXMenuData* PRBRRXMenuData;
+
+// Offset rbr_rx base
+typedef struct {
+#pragma pack(push,1)
+	BYTE pad1[0x608E4];			// 0x00	
+	PRBRRXMenuItem pMenuItems;	// 0x608E4
+	__int32 numOfItems;			// 0x608E8
+	BYTE pad2[0x60918- 0x608E8 - sizeof(__int32)];
+	__int32 menuID;				// 0x60918			0=main, 1=stages, 2=replay
+	BYTE pad3[0x665F4 - 0x60918- sizeof(__int32)];
+	PRBRRXMenuData pMenuData;	// 0x665F4 
+#pragma pack(pop)
+} RBRRXPlugin;
+typedef RBRRXPlugin* PRBRRXPlugin;
+
+struct RBRRX_MapInfo {
+	int			  mapIDMenuIdx;		// Menu index (used when the previous menu line is automatically selected when user navigates back to Shakedown menu)
+	std::string   name;
+	std::string   folderName;
+	//double length;
+	std::wstring  surface;
+	std::wstring  previewImageFile;
+	IMAGE_TEXTURE imageTexture;
+
+	RBRRX_MapInfo()
+	{
+		//name.reserve(256);
+		mapIDMenuIdx = -1;
+		//length = -1;
+		surface = L"";
+		ZeroMemory(&imageTexture, sizeof(IMAGE_TEXTURE));
+	}
+
+	~RBRRX_MapInfo()
 	{
 		SAFE_RELEASE(imageTexture.pTexture);
 	}
@@ -303,6 +360,7 @@ public:
 	int	m_iMenuCreateOption;	// 0 = Generate all car images, 1 = Generate only missing car images
 	int	m_iMenuImageOption;		// 0 = Use PNG preview file format to read and create image files, 1 = BMP file format
 	int m_iMenuRBRTMOption;		// 0 = RBRTM integration disabled, 1 = Enabled
+	int m_iMenuRBRRXOption;		// 0 = RBRRX integration disabled, 1 = Enabled
 
 	bool m_bRBRFullscreenDX9;			// Is RBR running in fullscreen or windows DX9 mode? TRUE-fullscreen, FALSE=windowed
 	bool m_bPacenotePluginInstalled;	// Is Pacenote plugin used? RBR exit logic handles font cleanup a bit differently in fullscreen mode IF pacenote plugin is missing
@@ -344,6 +402,7 @@ public:
 
 	CSimpleIniW* m_pTracksIniFile;				// maps\Tracks.ini file (if RBRTM integration is enabled then splash/preview images are shown in Shakedown map selection list)
 
+
 	RECT         m_mapRBRTMPictureRect;			// Output rect of RBRTM map preview image (re-scaled pic area)
 	std::wstring m_screenshotPathMapRBRTM;		// Custom map preview image path
 	RBRTM_MapInfo m_latestMapRBRTM;				// The latest selected stage (mapID) in RBRTM Shakedown menu (if the current mapID is still the same then no need to re-load the same stage preview image)
@@ -355,17 +414,37 @@ public:
 	PRBRTMMenuData m_pOrigMapMenuDataRBRTM;		// The original RBRTM Shakedown menu data struct
 	PRBRTMMenuItem m_pOrigMapMenuItemsRBRTM;	// The original RBRTM Shakedown stages menu item array
 	int            m_origNumOfItemsMenuItemsRBRTM; // The original num of menu items in Stages menu list
-
 	PRBRTMMenuItem m_pCustomMapMenuRBRTM;		// Custom "list of stages" menu in RBRTM Shakedown menu (contains X recent shortcuts and the original list of stages)
 	int m_numOfItemsCustomMapMenuRBRTM;			// Num of items in m_pCustomMapMenuRBRTM (dynamic) array
+
+
+	RECT         m_mapRBRRXPictureRect;			// Output rect of RBRRX map preview image (re-scaled pic area)
+	std::wstring m_screenshotPathMapRBRRX;		// Custom map preview image path
+	RBRRX_MapInfo m_latestMapRBRRX;				// The latest selected stage in RBRRX menu (if the current mapID is still the same then no need to re-load the same stage preview image)
+
+	int m_recentMapsMaxCountRBRRX;				// Max num of recent stages/maps added to recentMaps vector (default 5 if not set in INI file. 0 disabled the custom Shakedown menu feature)
+	std::list<std::unique_ptr<RBRRX_MapInfo>> m_recentMapsRBRRX; // Recent maps shown on top of the RBR_RX stage list
+	bool m_bRecentMapsRBRRXModified;			// Is the recent maps list modified since the last INI file saving?
+
+	PRBRRXMenuItem m_pOrigMapMenuItemsRBRRX;	// The original RBRTM Shakedown stages menu item array
+	int            m_origNumOfItemsMenuItemsRBRRX; // The original num of menu items in Stages menu list
+	PRBRRXMenuItem m_pCustomMapMenuRBRRX;		// Custom "list of stages" menu in RBRRX
+	int m_numOfItemsCustomMapMenuRBRRX;			// Num of items in m_pCustomMapMenuRBRRX (dynamic) array
+	int m_currentCustomMapSelectedItemIdxRBRRX;	// "Virtual" selected row running from 0..m_numOfItemsCustomMapMenuRBRRX-1 (the real row number. m_pRBRRXPlugin->pMenuData->selectedItemIdx is always between 0..16)
+	int m_prevCustomMapSelectedItemIdxRBRRX;
 
 	std::string m_sRBRTMPluginTitle;			// "RBR Tournament" is the RBRTM plugin name by default, but in theory it is possible that this str is translated in RBRTM language files. The plugin name in use is stored here because the RBRTM integration routine needs this name.
 	int    m_iRBRTMPluginMenuIdx;				// Index of the RBRTM plugin in the RBR Plugins menu list (this way we know when RBRTM custom plugin in Nth index position is activated)
 	bool   m_bRBRTMPluginActive;				// TRUE/FALSE if the current active custom plugin is RBRTM (active = The RBRTM plugin handler is running in foreground)
 	int    m_iRBRTMCarSelectionType;			// 0=No car selection menu shown, 1=Online Tournament selection, 2=Shakedown car selection
 
-	PRBRMenuObj  m_pRBRPrevCurrentMenu;			// If RBRTM integration is enabled then NGPCarMenu must try to identify Plugins and RBRTM plugin. This is just a "previous currentMenu" in order to optimize the check routine (ie. don't re-check if the plugin is RBRTM until new menu/plugin is activated)
-	PRBRTMPlugin m_pRBRTMPlugin;				// Pointer to RBRTM plugin or nullptr if not found or RBRTM integration is disabled
+	int    m_iRBRRXPluginMenuIdx;				// Index of the RBR_RX plugin in the RBR Plugins menu list (this way we know when RBRRX custom plugin in Nth index position is activated)
+	bool   m_bRBRRXPluginActive;				// TRUE/FALSE if the current active custom plugin is RBR_RX (active = The RBRTM plugin handler is running in foreground)
+
+	PRBRMenuObj  m_pRBRPrevCurrentMenu;			// If RBRTM or RBRRX integration is enabled then NGPCarMenu must try to identify Plugins menuobj and RBRTM/RBRRX plugin. This is just a "previous currentMenu" in order to optimize the check routine (ie. don't re-check if the plugin is RBRTM until new menu/plugin is activated)
+	
+	PRBRTMPlugin m_pRBRTMPlugin;				// Pointer to RBRTM plugin or nullptr if not found or RBRTM integration is disabled	
+	PRBRRXPlugin m_pRBRRXPlugin;				// Pointer to RBRRX plugin or nullptr
 
 	CD3D9RenderStateCache* m_pD3D9RenderStateCache; // DirectX cache class to restore DX9 render state back to original settings after tweaking render state
 
@@ -377,7 +456,7 @@ public:
 	int GetNextScreenshotCarID(int currentCarID);
 	static bool PrepareScreenshotReplayFile(int carID);
 
-	std::wstring ReplacePathVariables(const std::wstring& sPath, int selectedCarIdx = -1, bool rbrtmplugin = false, int mapID = -1, const WCHAR* mapName = nullptr);
+	std::wstring ReplacePathVariables(const std::wstring& sPath, int selectedCarIdx = -1, bool rbrtmplugin = false, int mapID = -1, const WCHAR* mapName = nullptr, const std::string& folderName = "");
 	bool ReadCarPreviewImageFromFile(int selectedCarIdx, float x, float y, float cx, float cy, IMAGE_TEXTURE* pOutImageTexture, DWORD dwFlags = 0, bool isRBRTMPlugin = false);
 
 	int InitPluginIntegration(const std::string& customPluginName, bool bInitRBRTM);
@@ -400,6 +479,26 @@ public:
 		return -1;
 	}
 
+	int FindRBRRXMenuItemIdxByFolderName(PRBRRXMenuItem pMapMenuItemsRBRRX, int numOfItemsMenuItemsRBRRX, const std::string& folderName)
+	{
+		// Find the RBRRX menu item by folderName (map identifier because BTB tracks don't have unique ID numbers). Return index to the menuItem struct or -1
+		if (pMapMenuItemsRBRRX != nullptr && !folderName.empty())
+		{
+			std::string trackFolder;
+			trackFolder.reserve(260); // Max length of folder name in RBR_RX plugin
+			//_ToLowerCase(folderName);
+
+			for (int idx = 0; idx < numOfItemsMenuItemsRBRRX; idx++)
+			{
+				trackFolder.assign(pMapMenuItemsRBRRX[idx].szTrackFolder);
+				//DebugPrint("DEBUG: FindRBRRXMenuItemIdxByFolderName %d %s=%s", idx, trackFolder.c_str(), folderName.c_str());
+				if (_iEqual(trackFolder, folderName, true))
+					return idx;
+			}
+		}
+
+		return -1;
+	}
 
 	int CalculateNumOfValidMapsInRecentList(PRBRTMMenuData pMenuData = nullptr)
 	{
@@ -445,6 +544,51 @@ public:
 		return numOfRecentMaps;
 	}
 
+	int CalculateNumOfValidMapsInRecentList(PRBRRXMenuItem pMapMenuItemsRBRRX = nullptr, int numOfItemsMenuItemsRBRRX = 0)
+	{
+		int numOfRecentMaps = 0;
+		int menuIdx;
+
+		auto it = m_recentMapsRBRRX.begin();
+		while (it != m_recentMapsRBRRX.end())
+		{
+			if (!(*it)->folderName.empty() && numOfRecentMaps < m_recentMapsMaxCountRBRRX)
+			{
+				menuIdx = FindRBRRXMenuItemIdxByFolderName(pMapMenuItemsRBRRX, numOfItemsMenuItemsRBRRX, (*it)->folderName);
+				//DebugPrint("DEBUG: CalculateNumOfValidMapsInRecentList=%s %d", (*it)->folderName.c_str(), menuIdx);
+
+				if (menuIdx >= 0 || pMapMenuItemsRBRRX == nullptr)
+				{
+					// The mapID in recent list is valid. Refresh the menu entry name as "[recent idx] Stage name"
+					numOfRecentMaps++;
+					if (pMapMenuItemsRBRRX != nullptr)
+					{
+						(*it)->name = "[" + std::to_string(numOfRecentMaps) + "] ";
+						(*it)->name.append(pMapMenuItemsRBRRX[menuIdx].szTrackName);
+					}
+
+					// Go to the next item in list iterator
+					++it;
+				}
+				else
+				{
+					// The map in recent list is no longer in stages menu list. Invalidate the recent item (ie. it is not added as a shortcut to RBRTM Shakedown stages menu)
+					it = m_recentMapsRBRRX.erase(it);
+				}
+			}
+			else
+			{
+				// Invalid map or "too many items". Remove the item if the menu data was defined
+				if (pMapMenuItemsRBRRX != nullptr)
+					it = m_recentMapsRBRRX.erase(it);
+				else
+					++it;
+			}
+		}
+
+		return numOfRecentMaps;
+	}
+
 	void AddMapToRecentList(int mapID)
 	{
 		if (mapID <= 0) return;
@@ -471,6 +615,36 @@ public:
 		newItem->mapID = mapID;
 		m_recentMapsRBRTM.push_front(std::move(newItem));
 		m_bRecentMapsRBRTMModified = TRUE;
+	}
+
+	void AddMapToRecentList(std::string folderName)
+	{
+		if (folderName.empty()) return;
+		_ToLowerCase(folderName); // RecentRBRRX vector list should have lowercase folder names
+
+		// Add map folderName to top of the recentMaps list (if already in the list then move it to top, otherwise add as a new item and remove the last item if the list is full)
+		for (auto& iter = m_recentMapsRBRRX.begin(); iter != m_recentMapsRBRRX.end(); ++iter)
+		{
+			if(folderName.compare((*iter)->folderName) == 0)
+			{
+				// MapID already in the recent list. Move it to the top of the list (no need to re-add it to the list)
+				if (iter != m_recentMapsRBRRX.begin())
+				{
+					m_recentMapsRBRRX.splice(m_recentMapsRBRRX.begin(), m_recentMapsRBRRX, iter, std::next(iter));
+					m_bRecentMapsRBRRXModified = TRUE;
+				}
+
+				// Must return after moving the item to top of list because for-iterator is now invalid because the list was modified
+				return;
+			}
+		}
+
+		// BTB folderName is not yet in the recent list. Add it to the top of the list
+		auto newItem = std::make_unique<RBRRX_MapInfo>();
+		newItem->folderName = folderName;
+		//DebugPrint("DEBUG: RBRRX_RecentMapX=%s", newItem->folderName.c_str());
+		m_recentMapsRBRRX.push_front(std::move(newItem));
+		m_bRecentMapsRBRRXModified = TRUE;
 	}
 
 

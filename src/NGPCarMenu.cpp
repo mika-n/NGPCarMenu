@@ -106,13 +106,15 @@ RBRCarSelectionMenuEntry g_RBRCarSelectionMenuEntry[8] = {
 #define C_MENUCMD_CREATEOPTION		0
 #define C_MENUCMD_IMAGEOPTION		1
 #define C_MENUCMD_RBRTMOPTION		2
-#define C_MENUCMD_RELOAD			3
-#define C_MENUCMD_CREATE			4
+#define C_MENUCMD_RBRRXOPTION		3
+#define C_MENUCMD_RELOAD			4
+#define C_MENUCMD_CREATE			5
 
-char* g_NGPCarMenu_PluginMenu[5] = {
+char* g_NGPCarMenu_PluginMenu[6] = {
 	 "> Create option"		// CreateOptions
 	,"> Image option"		    // ImageOptions
 	,"> RBRTM integration option"    // EnableDisableOptions
+	,"> RBRRX integration option"    // EnableDisableOptions
 	,"RELOAD car images"	// Clear cached car images to force re-loading of new images
 	,"CREATE car images"	// Create new car images (all or only missing car iamges)
 };
@@ -389,15 +391,28 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_pTracksIniFile = nullptr;
 	ZeroMemory(&m_mapRBRTMPictureRect, sizeof(m_mapRBRTMPictureRect));
 	m_latestMapRBRTM.mapID = -1;
-	m_recentMapsMaxCountRBRTM = 5;	// Default num of recent maps/stages on top of the RBRTM Shakedown stages menu list
+	m_recentMapsMaxCountRBRTM = 5;		// Default num of recent maps/stages on top of the RBRTM Shakedown stages menu list
 	m_bRecentMapsRBRTMModified = FALSE;
+
+	ZeroMemory(&m_mapRBRRXPictureRect, sizeof(m_mapRBRRXPictureRect));
+	m_latestMapRBRRX.folderName = "";
+	m_recentMapsMaxCountRBRRX = 5;		// Default num of recent maps/stages on top of the RBRRX stages menu list
+	m_bRecentMapsRBRRXModified = FALSE;
 
 	m_pOrigMapMenuDataRBRTM = nullptr;
 	m_pOrigMapMenuItemsRBRTM = nullptr;
 	m_pCustomMapMenuRBRTM = nullptr;
 
+	m_pOrigMapMenuItemsRBRRX = nullptr;
+	m_pCustomMapMenuRBRRX = nullptr;
+
 	m_origNumOfItemsMenuItemsRBRTM = 0;
 	m_numOfItemsCustomMapMenuRBRTM = 0;
+
+	m_origNumOfItemsMenuItemsRBRRX = 0;
+	m_numOfItemsCustomMapMenuRBRRX = 0;
+	m_currentCustomMapSelectedItemIdxRBRRX = 0;
+	m_prevCustomMapSelectedItemIdxRBRRX = 0;
 
 	m_iCarMenuNameLen = 0;
 	
@@ -437,6 +452,7 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_iMenuCreateOption = 0;
 	m_iMenuImageOption = 0;
 	m_iMenuRBRTMOption = 0;
+	m_iMenuRBRRXOption = 0;
 
 	m_screenshotAPIType = C_SCREENSHOTAPITYPE_DIRECTX;
 
@@ -445,6 +461,10 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_pRBRPrevCurrentMenu = nullptr;// Previous "current menu obj" (used in RBRTM integration initialization routine)
 	m_bRBRTMPluginActive = false;	// Is RBRTM plugin currently the active custom frontend plugin
 	m_iRBRTMCarSelectionType = 0;   // If RBRTM is activated then is it at 1=Shakedown or 2=OnlineTournament car selection menu state
+
+	m_pRBRRXPlugin = nullptr;		// Pointer to RBRRX plugin object
+	m_iRBRRXPluginMenuIdx = 0;		// Index (Nth item) to RBRRX plugin in RBR in-game Plugins menu list (0=Not yet initialized, -1=Initialized but not found, >0=Initialized and found)
+	m_bRBRRXPluginActive = false;
 
 	m_pD3D9RenderStateCache = nullptr; 
 	gtcDirect3DBeginScene = nullptr;
@@ -487,7 +507,9 @@ CNGPCarMenu::~CNGPCarMenu(void)
 		SAFE_DELETE(g_pRBRPluginMenuSystem);
 		SAFE_DELETE(m_pLangIniFile);
 		SAFE_DELETE(m_pTracksIniFile);
-		if (g_pRBRPlugin->m_pCustomMapMenuRBRTM != nullptr) delete[] g_pRBRPlugin->m_pCustomMapMenuRBRTM;
+
+		if (m_pCustomMapMenuRBRTM != nullptr) delete[] m_pCustomMapMenuRBRTM;
+		if (m_pCustomMapMenuRBRRX != nullptr) delete[] m_pCustomMapMenuRBRRX;
 
 		if (g_pRBRPluginIntegratorLinkList != nullptr)
 		{
@@ -531,7 +553,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 	DebugPrint("Enter CNGPCarMenu.RefreshSettingsFromPluginINIFile");
 
 	int iFileFormat;
-	CSimpleIniW  pluginINIFile;
+	CSimpleIniW pluginINIFile;
 	std::wstring sTextValue;
 	std::string  sIniFileName = CNGPCarMenu::m_sRBRRootDir + "\\Plugins\\" VS_PROJECT_NAME ".ini";
 
@@ -547,6 +569,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		RBRAPI_RefreshWndRect();
 		swprintf_s(szResolutionText, COUNT_OF_ITEMS(szResolutionText), L"%dx%d", g_rectRBRWndClient.right, g_rectRBRWndClient.bottom);
 
+		pluginINIFile.SetUnicode(true);
 		pluginINIFile.LoadFile(sIniFileName.c_str());
 
 		if (addMissingSections)
@@ -874,16 +897,77 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		}
 
 
-/*		sTextValue = pluginINIFile.GetValue(szResolutionText, L"RBRTM_Car3DModelInfoPosition", L"");
-		_StringToPoint(sTextValue, &this->m_carRBRTM3DModelInfoPosition);
-		if (g_pRBRIDirect3DDevice9 != nullptr && m_carRBRTM3DModelInfoPosition.x == 0 && m_carRBRTM3DModelInfoPosition.y == 0)
+		// RBRRX integration properties
+		sTextValue = pluginINIFile.GetValue(L"Default", L"RBRRX_Integration", L"1");
+		_Trim(sTextValue);
+		try
 		{
-			// Default X,Y position of car spec info textbox in RBRTM screens
-			RBRAPI_MapRBRPointToScreenPoint((float)m_carRBRTMPictureRect.right + 10, (float)m_carRBRTMPictureRect.bottom - (6 * g_pFontCarSpecCustom->GetTextHeight()), (int*)&m_carRBRTM3DModelInfoPosition.x, (int*)&m_carRBRTM3DModelInfoPosition.y);
-		}
-*/
+			m_iMenuRBRRXOption = (std::stoi(sTextValue) >= 1 ? 1 : 0);
 
+			if (m_iMenuRBRRXOption)
+				g_bNewCustomPluginIntegrations = TRUE;  // If RBRRX integration is enabled then signal initialization of "custom plugin integration"
+		}
+		catch (...)
+		{
+			LogPrint("WARNING. Invalid value %s in RBRRX_Integration option", sTextValue.c_str());
+			m_iMenuRBRRXOption = 0;
+		}
+
+		if (m_iMenuRBRRXOption)
+		{
+			try
+			{
+				// Read customized RBRRX stages menu settings (recent maps)
+				m_recentMapsMaxCountRBRRX = min(pluginINIFile.GetLongValue(L"Default", L"RBRRX_RecentMapsMaxCount", 5), 500);
+
+				for (int idx = m_recentMapsMaxCountRBRRX; idx > 0; idx--)
+					AddMapToRecentList(_ToString(pluginINIFile.GetValue(L"Default", (std::wstring(L"RBRRX_RecentMap").append(std::to_wstring(idx)).c_str()), L"")));
+
+				// Set "not modified" when the recent map was modifed because of reading the current INI file
+				m_bRecentMapsRBRRXModified = FALSE;
+			}
+			catch (...)
+			{
+				LogPrint("ERROR CNGPCarMenu.RefreshSettingsFromPluginINIFile. Invalid values in RBRRX_RecentMaps configurations");
+			}
+
+			// Custom map preview image path. NGPCarMenu checks first this folder+image. If the file doesn't exit then the plugin checks a map specific SplashScreen option in Maps\Tracks.ini file
+			this->m_screenshotPathMapRBRRX = pluginINIFile.GetValue(L"Default", L"RBRRX_MapScreenshotPath", L"");
+			_Trim(this->m_screenshotPathMapRBRRX);
+			if (this->m_screenshotPathMapRBRRX.empty())
+				this->m_screenshotPathMapRBRRX = L"Plugins\\NGPCarMenu\\preview\\maps\\BTB_%mapfolder%.png";  // Default value for this option
+
+			if (this->m_screenshotPathMapRBRRX.length() >= 2 && this->m_screenshotPathMapRBRRX[0] != L'\\' && this->m_screenshotPathMapRBRRX[1] != L':')
+				this->m_screenshotPathMapRBRRX = this->m_sRBRRootDirW + L"\\" + this->m_screenshotPathMapRBRRX; // Path relative to the root of RBR app path
+
+			// RBRRX_MapPictureRect
+			sTextValue = pluginINIFile.GetValue(szResolutionText, L"RBRRX_MapPictureRect", L"");
+			_Trim(sTextValue);
+			if (sTextValue.empty())
+			{
+				sTextValue = pluginINIFile.GetValue(L"Default", L"RBRRX_MapPictureRect", L"");
+				_Trim(sTextValue);
+			}
+
+			if (sTextValue != L"0")
+				_StringToRect(sTextValue, &this->m_mapRBRRXPictureRect);
+			else
+				m_mapRBRRXPictureRect.bottom = -1; // Disable RBRRX map preview image featre
+
+			if (m_mapRBRRXPictureRect.top == 0 && m_mapRBRRXPictureRect.right == 0 && m_mapRBRRXPictureRect.left == 0 && m_mapRBRRXPictureRect.bottom == 0)
+			{
+				// Default rectangle area of RBRRX map preview picture if RBRRX_MapPictureRect is not set in INI file
+				RBRAPI_MapRBRPointToScreenPoint(430.0f, 320.0f, (int*)&m_mapRBRRXPictureRect.left, (int*)&m_mapRBRRXPictureRect.top);
+				RBRAPI_MapRBRPointToScreenPoint(630.0f, 470.0f, (int*)&m_mapRBRRXPictureRect.right, (int*)&m_mapRBRRXPictureRect.bottom);
+
+				LogPrint("RBRRX_MapPictureRect value is empty. Using the default value RBRRX_MapPictureRect=%d %d %d %d", m_mapRBRRXPictureRect.left, m_mapRBRRXPictureRect.top, m_mapRBRRXPictureRect.right, m_mapRBRRXPictureRect.bottom);
+			}
+		}
+
+
+		//
 		// If the existing INI file format is an old version1 then save the file using the new format specifier
+		//
 		if (iFileFormat < 2)
 		{
 			pluginINIFile.SetValue(L"Default", L"FileFormat", L"2");
@@ -938,6 +1022,19 @@ void CNGPCarMenu::SaveSettingsToPluginINIFile()
 			}
 		}
 
+		// Save RBRRX recent maps entries
+		idx = 0;
+		for (auto& item : m_recentMapsRBRRX)
+		{
+			if (idx >= m_recentMapsMaxCountRBRRX) break;
+
+			if (!item->folderName.empty())
+			{
+				idx++;
+				pluginINIFile.SetValue(L"Default", (std::wstring(L"RBRRX_RecentMap").append(std::to_wstring(idx)).c_str()), _ToWString(item->folderName).c_str());
+			}
+		}
+
 		pluginINIFile.SaveFile(sIniFileName.c_str());
 	}
 	catch (...)
@@ -980,9 +1077,18 @@ int CNGPCarMenu::InitPluginIntegration(const std::string& customPluginName, bool
 							g_pRBRPluginMenuSystem->pluginsMenuObj = g_pRBRMenuSystem->currentMenuObj;
 					}
 				}
-				
+
 				if(g_pRBRPluginMenuSystem->pluginsMenuObj != nullptr && ( (bInitRBRTM && m_iRBRTMPluginMenuIdx == 0) || !bInitRBRTM) && !customPluginName.empty())
 				{
+/*
+#if USE_DEBUG == 1
+					for (int idx = g_pRBRPluginMenuSystem->pluginsMenuObj->firstSelectableItemIdx; idx < g_pRBRPluginMenuSystem->pluginsMenuObj->numOfItems - 1; idx++)
+					{
+						pItemArr = (PRBRPluginMenuItemObj3)g_pRBRPluginMenuSystem->pluginsMenuObj->pItemObj[idx];
+						DebugPrint("PluginMenuIdx=%d %s", idx, pItemArr->szItemName);
+					}
+#endif
+*/
 					//
 					// Check if custom plugin is installed. If this is "RBRTM" integration call then check that RBRTM is a supported version
 					//
@@ -990,9 +1096,7 @@ int CNGPCarMenu::InitPluginIntegration(const std::string& customPluginName, bool
 					{
 						pItemArr = (PRBRPluginMenuItemObj3)g_pRBRPluginMenuSystem->pluginsMenuObj->pItemObj[idx];
 
-						//DebugPrint("MenuIdx=%d %s", idx, pItemArr->szItemName);
-
-						if (g_pRBRPluginMenuSystem->pluginsMenuObj->pItemObj[idx] != nullptr && strncmp(pItemArr->szItemName, customPluginName.c_str(), customPluginName.length()) == 0)
+						if (/*g_pRBRPluginMenuSystem->pluginsMenuObj->pItemObj[idx]*/ pItemArr != nullptr && strncmp(pItemArr->szItemName, customPluginName.c_str(), customPluginName.length()) == 0)
 						{
 							iResultPluginIdx = idx; // Index to custom plugin obj within the "Plugins" menu
 
@@ -1025,6 +1129,8 @@ int CNGPCarMenu::InitPluginIntegration(const std::string& customPluginName, bool
 					}
 					else
 					{
+						iResultPluginIdx = -1;
+
 						LogPrint("%s plugin integration disabled. Plugin not found", customPluginName.c_str());
 
 						if (bInitRBRTM)
@@ -1080,13 +1186,47 @@ int CNGPCarMenu::InitAllNewCustomPluginIntegrations()
 
 	try
 	{
-		if (g_pRBRPlugin->m_iMenuRBRTMOption == 1 && g_pRBRPlugin->m_iRBRTMPluginMenuIdx == 0)
+		if (m_iMenuRBRTMOption == 1 && m_iRBRTMPluginMenuIdx == 0)
 			// RBRTM integration is enabled, but the RBRTM linking is not yet initialized. Do it now when RBR has already loaded all custom plugins.
 			// If initialization succeeds then m_iRBRTMPluginMenuIdx > 0 and m_pRBRTMPlugin != NULL and g_pRBRPluginMenuSystem->customPluginMenuObj != NULL, otherwise PluginMenuIdx=-1
-			if (InitPluginIntegration(g_pRBRPlugin->m_sRBRTMPluginTitle, TRUE) != 0)
+			if (InitPluginIntegration(m_sRBRTMPluginTitle, TRUE) != 0)
 				iInitCount++;
 			else
 				iStillWaitingInit++;
+
+		if (m_iMenuRBRRXOption == 1 && m_iRBRRXPluginMenuIdx == 0)
+		{
+			// RBRRX integration is enabled, but the linking is not yet initialized. Do it now
+			m_iRBRRXPluginMenuIdx = InitPluginIntegration("RBR_RX", FALSE);
+			if (m_iRBRRXPluginMenuIdx != 0)
+			{
+				iInitCount++;
+
+				if (m_iRBRRXPluginMenuIdx > 0)
+				{
+					try
+					{
+						HMODULE hModule = ::LoadLibraryA((m_sRBRRootDir + "\\Plugins\\rbr_rx.dll").c_str());
+						if (hModule != nullptr)
+						{
+							m_pRBRRXPlugin = (PRBRRXPlugin)hModule;
+							FreeLibrary(hModule);
+
+							m_pOrigMapMenuItemsRBRRX = m_pRBRRXPlugin->pMenuItems;
+							m_origNumOfItemsMenuItemsRBRRX = m_pRBRRXPlugin->numOfItems;
+						}
+					}
+					catch (...)
+					{
+						m_pRBRRXPlugin = nullptr;
+						m_iRBRRXPluginMenuIdx = -1;
+						LogPrint("ERROR CNGPCarMenu.InitAllNewCustomPluginIntegrations. Failed to init RBR_RX plugin integration");
+					}					
+				}
+			}
+			else
+				iStillWaitingInit++;
+		}
 
 		if (g_pRBRPluginIntegratorLinkList != nullptr)
 		{
@@ -1906,7 +2046,7 @@ bool CNGPCarMenu::PrepareScreenshotReplayFile(int carID)
 //-----------------------------------------------------------------------------------------------
 // Replace all %variableName% RBR path variables with the actual value
 //
-std::wstring CNGPCarMenu::ReplacePathVariables(const std::wstring& sPath, int selectedCarIdx, bool rbrtmplugin, int mapID, const WCHAR* mapName)
+std::wstring CNGPCarMenu::ReplacePathVariables(const std::wstring& sPath, int selectedCarIdx, bool rbrtmplugin, int mapID, const WCHAR* mapName, const std::string& folderName)
 {
 	WCHAR szResolutionText[16];
 	std::wstring sResult = sPath;
@@ -1944,7 +2084,15 @@ std::wstring CNGPCarMenu::ReplacePathVariables(const std::wstring& sPath, int se
 	sResult = _ReplaceStr(sResult, L"%plugin%", (rbrtmplugin ? L"RBRTM" : L"RBR"));
 
 	if (mapID > 0) sResult = _ReplaceStr(sResult, L"%mapid%", std::to_wstring(mapID));
-	if (mapName != nullptr) sResult = _ReplaceStr(sResult, L"%mapname%", mapName);
+	if (mapName != nullptr) sResult = _ReplaceStr(sResult, L"%mapname%", mapName);	
+
+	if (!folderName.empty())
+	{
+		if(_iStarts_With(folderName, "tracks\\", true))
+			sResult = _ReplaceStr(sResult, L"%mapfolder%", _ToWString(folderName.substr(7)));
+		else
+			sResult = _ReplaceStr(sResult, L"%mapfolder%", _ToWString(folderName));
+	}
 
 	return sResult;
 }
@@ -2164,6 +2312,8 @@ void CNGPCarMenu::DrawFrontEndPage(void)
 			sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_ImageOptions[m_iMenuImageOption]);
 		else if (i == C_MENUCMD_RBRTMOPTION)
 			sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_EnableDisableOptions[m_iMenuRBRTMOption]);
+		else if (i == C_MENUCMD_RBRRXOPTION)
+			sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_EnableDisableOptions[m_iMenuRBRRXOption]);
 		else
 			sprintf_s(szTextBuf, sizeof(szTextBuf), "%s", g_NGPCarMenu_PluginMenu[i]);
 
@@ -2276,13 +2426,17 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 	int iPrevMenuImageOptionValue = m_iMenuImageOption;
 	DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_IMAGEOPTION, m_iMenuImageOption, g_NGPCarMenu_ImageOptions);
 
-	int iPrevMenuRMRTMOptionValue = m_iMenuRBRTMOption;
+	int iPrevMenuRBRTMOptionValue = m_iMenuRBRTMOption;
 	DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_RBRTMOPTION, m_iMenuRBRTMOption, g_NGPCarMenu_EnableDisableOptions);
-	
-	if (m_iMenuRBRTMOption == 1 && iPrevMenuRMRTMOptionValue != m_iMenuRBRTMOption)
+	if (m_iMenuRBRTMOption == 1 && iPrevMenuRBRTMOptionValue != m_iMenuRBRTMOption)
 		g_bNewCustomPluginIntegrations = TRUE;
 
-	if(iPrevMenuImageOptionValue != m_iMenuImageOption || iPrevMenuRMRTMOptionValue != m_iMenuRBRTMOption)
+	int iPrevMenuRBRRXOptionValue = m_iMenuRBRRXOption;
+	DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_RBRRXOPTION, m_iMenuRBRRXOption, g_NGPCarMenu_EnableDisableOptions);
+	if (m_iMenuRBRRXOption == 1 && iPrevMenuRBRRXOptionValue != m_iMenuRBRRXOption)
+		g_bNewCustomPluginIntegrations = TRUE;
+
+	if(iPrevMenuImageOptionValue != m_iMenuImageOption || iPrevMenuRBRTMOptionValue != m_iMenuRBRTMOption || iPrevMenuRBRRXOptionValue != m_iMenuRBRRXOption)
 		SaveSettingsToPluginINIFile();
 }
 
@@ -2421,15 +2575,37 @@ inline void CNGPCarMenu::CustomRBRDirectXBeginScene()
 		if (g_bNewCustomPluginIntegrations)
 			InitAllNewCustomPluginIntegrations();
 
-		// Check if any of the custom plugins is active
-		if (g_pRBRPluginIntegratorLinkList != nullptr && g_pRBRPluginMenuSystem->customPluginMenuObj != nullptr)
+		if (g_pRBRPluginMenuSystem->customPluginMenuObj != nullptr)
 		{
-			for (auto& item : *g_pRBRPluginIntegratorLinkList)
+			// Check if RBRTM plugin is active
+			if (m_iMenuRBRTMOption == 1)
 			{
-				if (!item->m_bCustomPluginActive && g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->customPluginMenuObj && item->m_iCustomPluginMenuIdx == g_pRBRPluginMenuSystem->pluginsMenuObj->selectedItemIdx)
-					item->m_bCustomPluginActive = true;
-				else if (item->m_bCustomPluginActive && (g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->optionsMenuObj || g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->pluginsMenuObj || g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN]))
-					item->m_bCustomPluginActive = false;
+				if (!m_bRBRTMPluginActive && g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->customPluginMenuObj && g_pRBRPluginMenuSystem->pluginsMenuObj->selectedItemIdx == m_iRBRTMPluginMenuIdx)
+					m_bRBRTMPluginActive = true;
+				else if (m_bRBRTMPluginActive && (g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->optionsMenuObj || g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->pluginsMenuObj || g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN]))
+					// Menu is back in RBR Plugins/Options/Main menu, so RBRTM cannot be the foreground plugin anymore
+					m_bRBRTMPluginActive = false;
+			}
+
+			// Check if RBRRX plugin is active
+			if (m_iMenuRBRRXOption == 1)
+			{
+				if (!m_bRBRRXPluginActive && g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->customPluginMenuObj && m_iRBRRXPluginMenuIdx == g_pRBRPluginMenuSystem->pluginsMenuObj->selectedItemIdx)
+					m_bRBRRXPluginActive = true;
+				else if (m_bRBRRXPluginActive && (g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->optionsMenuObj || g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->pluginsMenuObj || g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN]))
+					m_bRBRRXPluginActive = false;
+			}
+
+			// Check if any of the custom plugins are active
+			if (g_pRBRPluginIntegratorLinkList != nullptr)
+			{
+				for (auto& item : *g_pRBRPluginIntegratorLinkList)
+				{
+					if (!item->m_bCustomPluginActive && g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->customPluginMenuObj && item->m_iCustomPluginMenuIdx == g_pRBRPluginMenuSystem->pluginsMenuObj->selectedItemIdx)
+						item->m_bCustomPluginActive = true;
+					else if (item->m_bCustomPluginActive && (g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->optionsMenuObj || g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->pluginsMenuObj || g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN]))
+						item->m_bCustomPluginActive = false;
+				}
 			}
 		}
 	}
@@ -2659,314 +2835,588 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 					g_pFontCarSpecCustom->DrawText(posX, (iCarSpecPrintRow++) * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarFMODBank, 0);
 			}
 		}
-		else if (m_iMenuRBRTMOption == 1)
+		else
 		{
-			//
-			// RBRTM integration enabled. Check if RMRTB is in "SelectCar" menu in Shakedown or OnlineTournament menus
-			//
+			int menuIdx;
 
-			bool bRBRTMCarSelectionMenu = false;
-			bool bRBRTMStageSelectionMenu = false; // Is stage selection menu of Shakedown RBRTM menu active?
-
-			if (g_pRBRPluginMenuSystem->customPluginMenuObj != nullptr && m_pRBRTMPlugin != nullptr && m_pRBRTMPlugin->pCurrentRBRTMMenuObj != nullptr)
+			if (/*m_iMenuRBRTMOption == 1*/ m_bRBRTMPluginActive)
 			{
-				if (!m_bRBRTMPluginActive && g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->customPluginMenuObj && g_pRBRPluginMenuSystem->pluginsMenuObj->selectedItemIdx == m_iRBRTMPluginMenuIdx)
-					// RBRTM plugin activated via RBR Plugins in-game menu
-					m_bRBRTMPluginActive = true;
-				else if (m_bRBRTMPluginActive && (g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->optionsMenuObj || g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->pluginsMenuObj || g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN]))
-					// Menu is back in RBR Plugins/Options/Main menu, so RBRTM cannot be the foreground plugin anymore
-					m_bRBRTMPluginActive = false;
+				//
+				// RBRTM integration enabled. Check if RMRTB is in "SelectCar" menu in Shakedown or OnlineTournament menus
+				//
 
-				// If the active custom plugin is RBRTM and RBR shows a custom plugin menuObj and the internal RBRTM menu is the Shakedown "car selection" menuID then prepare to render a car preview image
-				if (m_bRBRTMPluginActive && g_pRBRPluginMenuSystem->customPluginMenuObj == g_pRBRMenuSystem->currentMenuObj && m_pRBRTMPlugin->pCurrentRBRTMMenuObj != nullptr)
+				bool bRBRTMCarSelectionMenu = false;
+				bool bRBRTMStageSelectionMenu = false; // Is stage selection menu of Shakedown RBRTM menu active?
+
+				if (g_pRBRPluginMenuSystem->customPluginMenuObj != nullptr && m_pRBRTMPlugin != nullptr && m_pRBRTMPlugin->pCurrentRBRTMMenuObj != nullptr)
 				{
-					switch (m_pRBRTMPlugin->pCurrentRBRTMMenuObj->menuID)
+					// If the active custom plugin is RBRTM and RBR shows a custom plugin menuObj and the internal RBRTM menu is the Shakedown "car selection" menuID then prepare to render a car preview image
+					if (m_bRBRTMPluginActive && g_pRBRPluginMenuSystem->customPluginMenuObj == g_pRBRMenuSystem->currentMenuObj && m_pRBRTMPlugin->pCurrentRBRTMMenuObj != nullptr)
 					{
-					case RBRTMMENUIDX_CARSELECTION:							// RBRTM car selection screen (either below Shakedown or OnlineTournament menu tree)
-						bRBRTMCarSelectionMenu = true;
-						break;
-
-					case RBRTMMENUIDX_MAIN:									// Back to RBRTM main menu, so the RBRTM menu is no longer below Shakedown or OnlineTournament menu tree
-						m_iRBRTMCarSelectionType = 0;
-						break;
-
-					case RBRTMMENUIDX_ONLINEOPTION1:						// RBRTM OnlineTournament menu tree
-						[[fallthrough]];
-
-					case RBRTMMENUIDX_ONLINEOPTION2:
-						m_iRBRTMCarSelectionType = 1;
-						break;
-
-					case RBRTMMENUIDX_SHAKEDOWNSTAGES:						// Shakedown - Stage selection screen. Let to fall through to the next case to flag the shakedown menu type
-						bRBRTMStageSelectionMenu = true;
-						[[fallthrough]];
-
-					case RBRTMMENUIDX_SHAKEDOWNOPTION1:						// RBRTM Shakedown menu tree
-						m_iRBRTMCarSelectionType = 2;
-						break;
-					}
-
-					if (m_pRBRTMPlugin->pRBRTMStageOptions1 == nullptr || m_pRBRTMPlugin->pRBRTMStageOptions1->selectedCarID < 0 || m_pRBRTMPlugin->pRBRTMStageOptions1->selectedCarID > 7)
-						bRBRTMCarSelectionMenu = false;
-
-					// If Shakedown stages menu is no longer active then restore the original data and delete the custom stages data (RBRTM may re-create the menu each time it is opened
-					if (!bRBRTMStageSelectionMenu)
-					{
-						if (m_pOrigMapMenuDataRBRTM != nullptr && m_pCustomMapMenuRBRTM != nullptr && m_pOrigMapMenuDataRBRTM->pMenuItems == m_pCustomMapMenuRBRTM)
+						switch (m_pRBRTMPlugin->pCurrentRBRTMMenuObj->menuID)
 						{
-							m_pOrigMapMenuDataRBRTM->pMenuItems = m_pOrigMapMenuItemsRBRTM;
-							m_pOrigMapMenuDataRBRTM->numOfItems = m_origNumOfItemsMenuItemsRBRTM;
+						case RBRTMMENUIDX_CARSELECTION:							// RBRTM car selection screen (either below Shakedown or OnlineTournament menu tree)
+							bRBRTMCarSelectionMenu = true;
+							break;
+
+						case RBRTMMENUIDX_MAIN:									// Back to RBRTM main menu, so the RBRTM menu is no longer below Shakedown or OnlineTournament menu tree
+							m_iRBRTMCarSelectionType = 0;
+							break;
+
+						case RBRTMMENUIDX_ONLINEOPTION1:						// RBRTM OnlineTournament menu tree
+							[[fallthrough]];
+
+						case RBRTMMENUIDX_ONLINEOPTION2:
+							m_iRBRTMCarSelectionType = 1;
+							break;
+
+						case RBRTMMENUIDX_SHAKEDOWNSTAGES:						// Shakedown - Stage selection screen. Let to fall through to the next case to flag the shakedown menu type
+							bRBRTMStageSelectionMenu = true;
+							[[fallthrough]];
+
+						case RBRTMMENUIDX_SHAKEDOWNOPTION1:						// RBRTM Shakedown menu tree
+							m_iRBRTMCarSelectionType = 2;
+							break;
 						}
 
-						if (m_pCustomMapMenuRBRTM != nullptr)
+						if (m_pRBRTMPlugin->pRBRTMStageOptions1 == nullptr || m_pRBRTMPlugin->pRBRTMStageOptions1->selectedCarID < 0 || m_pRBRTMPlugin->pRBRTMStageOptions1->selectedCarID > 7)
+							bRBRTMCarSelectionMenu = false;
+
+						// If Shakedown stages menu is no longer active then restore the original data and delete the custom stages data (RBRTM may re-create the menu each time it is opened
+						if (!bRBRTMStageSelectionMenu)
 						{
-							delete[] m_pCustomMapMenuRBRTM;
-							m_pCustomMapMenuRBRTM = nullptr;
-						}
-					}
-				}
-
-				if (bRBRTMCarSelectionMenu && (m_iRBRTMCarSelectionType == 2 || (m_iRBRTMCarSelectionType == 1 && m_pRBRTMPlugin->selectedItemIdx == 1)))
-				{
-					//
-					// RBRTM car selection in Shakedown or OnlineTournament menu
-					//
-
-					int iCarSpecPrintRow;
-					int selectedCarIdx = ::RBRAPI_MapCarIDToMenuIdx(m_pRBRTMPlugin->pRBRTMStageOptions1->selectedCarID);
-					PRBRCarSelectionMenuEntry pCarSelectionMenuEntry = &g_RBRCarSelectionMenuEntry[selectedCarIdx];
-
-					iFontHeight = g_pFontCarSpecCustom->GetTextHeight();
-
-					if (m_carRBRTMPreviewTexture[selectedCarIdx].pTexture == nullptr && m_carRBRTMPreviewTexture[selectedCarIdx].imgSize.cx >= 0 && g_RBRCarSelectionMenuEntry[selectedCarIdx].wszCarModel[0] != '\0')
-					{
-						ReadCarPreviewImageFromFile(selectedCarIdx,
-							(float)m_carRBRTMPictureRect.left, (float)m_carRBRTMPictureRect.top,
-							(float)(m_carRBRTMPictureRect.right - m_carRBRTMPictureRect.left),
-							(float)(m_carRBRTMPictureRect.bottom - m_carRBRTMPictureRect.top),
-							&m_carRBRTMPreviewTexture[selectedCarIdx],
-							m_carRBRTMPictureScale /*IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO | IMAGE_TEXTURE_POSITION_BOTTOM*/,
-							true);
-					}
-
-					// If the car preview image is successfully initialized (imgSize.cx >= 0) and texture (=image) is prepared then draw it on the screen
-					if (m_carRBRTMPreviewTexture[selectedCarIdx].imgSize.cx >= 0 && m_carRBRTMPreviewTexture[selectedCarIdx].pTexture != nullptr)
-					{
-						iCarSpecPrintRow = 0;
-
-						if (m_carRBRTMPictureUseTransparent)
-							m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
-
-						D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, m_carRBRTMPreviewTexture[selectedCarIdx].pTexture, m_carRBRTMPreviewTexture[selectedCarIdx].vertexes2D);
-
-						if (m_carRBRTMPictureUseTransparent)
-							m_pD3D9RenderStateCache->RestoreState();
-
-						// 3D model and custom livery text is drawn on top of the car preview image (bottom left corner)
-						if (pCarSelectionMenuEntry->wszCarPhysicsLivery[0] != L'\0')
-							g_pFontCarSpecCustom->DrawText(m_carRBRTMPictureRect.left + 2, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsLivery, 0);
-
-						if (pCarSelectionMenuEntry->wszCarPhysics3DModel[0] != L'\0')
-							g_pFontCarSpecCustom->DrawText(m_carRBRTMPictureRect.left + 2, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysics3DModel, 0);
-					}
-
-					// FIACategory, HP, Year, Weight, Transmission, AudioFMOD
-					iCarSpecPrintRow = 0;
-					//posX = g_pRBRPlugin->m_carRBRTMPictureRect.right + 16;
-					RBRAPI_MapRBRPointToScreenPoint(460.0f, 0.0f, &posX, nullptr);
-
-					if (pCarSelectionMenuEntry->wszCarFMODBank[0] != L'\0')
-						g_pFontCarSpecCustom->DrawText(posX, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarFMODBank, 0);
-
-					if (pCarSelectionMenuEntry->wszCarYear[0] != L'\0')
-						g_pFontCarSpecCustom->DrawText(posX, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarYear, 0);
-
-					if (pCarSelectionMenuEntry->wszCarTrans[0] != L'\0')
-						g_pFontCarSpecCustom->DrawText(posX, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarTrans, 0);
-
-					if (pCarSelectionMenuEntry->wszCarWeight[0] != L'\0')
-						g_pFontCarSpecCustom->DrawText(posX, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarWeight, 0);
-
-					if (pCarSelectionMenuEntry->wszCarPower[0] != L'\0')
-						g_pFontCarSpecCustom->DrawText(posX, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPower, 0);
-
-					if (pCarSelectionMenuEntry->szCarCategory[0] != L'\0')
-						g_pFontCarSpecCustom->DrawText(posX, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->szCarCategory, 0);
-
-					if (pCarSelectionMenuEntry->wszCarModel[0] != L'\0')
-						g_pFontCarSpecCustom->DrawText(posX, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARMODELTITLETEXT_COLOR, pCarSelectionMenuEntry->wszCarModel, 0);
-
-				}
-				else if (bRBRTMStageSelectionMenu && m_iRBRTMCarSelectionType == 2
-					&& m_pTracksIniFile != nullptr
-					&& m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData != nullptr
-					&& m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems != nullptr
-					&& m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->numOfItems > 0
-					&& m_pRBRTMPlugin->selectedItemIdx >= 0)
-				{
-					//
-					// RBRTM stage selection list in Shakedown menu is the active RBRTM menu
-					//
-					int menuIdx;
-
-					// Hide the annoying "moving background box" on the bottom right corner in RBRTM Shakedown stages menu
-					g_pRBRMenuSystem->menuImageHeight = g_pRBRMenuSystem->menuImageWidth = 0;
-
-					if (m_pRBRTMPlugin->selectedItemIdx < m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->numOfItems)
-					{
-						if (m_pCustomMapMenuRBRTM == nullptr)
-						{
-							int numOfRecentMaps = CalculateNumOfValidMapsInRecentList(m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData);
-
-							// Initialization of custom RBRTM stages menu list in Shakedown menu (Nth recent stages on top of the menu and then the original RBRTM stage list).
-							// Use the custom list if there are recent mapIDs in the list and the feature is enabled (recent items max count > 0)
-							m_pCustomMapMenuRBRTM = new RBRTMMenuItem[m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->numOfItems + numOfRecentMaps];
-
-							if (m_pCustomMapMenuRBRTM != nullptr && numOfRecentMaps > 0 && m_recentMapsMaxCountRBRTM > 0)
+							if (m_pOrigMapMenuDataRBRTM != nullptr && m_pCustomMapMenuRBRTM != nullptr && m_pOrigMapMenuDataRBRTM->pMenuItems == m_pCustomMapMenuRBRTM)
 							{
-								m_pOrigMapMenuDataRBRTM = m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData;
-								m_pOrigMapMenuItemsRBRTM = m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems;
-								m_origNumOfItemsMenuItemsRBRTM = m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->numOfItems;
+								m_pOrigMapMenuDataRBRTM->pMenuItems = m_pOrigMapMenuItemsRBRTM;
+								m_pOrigMapMenuDataRBRTM->numOfItems = m_origNumOfItemsMenuItemsRBRTM;
+							}
 
-								m_numOfItemsCustomMapMenuRBRTM = m_origNumOfItemsMenuItemsRBRTM + numOfRecentMaps;
+							if (m_pCustomMapMenuRBRTM != nullptr)
+							{
+								delete[] m_pCustomMapMenuRBRTM;
+								m_pCustomMapMenuRBRTM = nullptr;
+							}
+						}
+					}
 
-								// Clear shortcut stage items and copy the original RBRTM stages list at the end of custom menu list
-								ZeroMemory(m_pCustomMapMenuRBRTM, sizeof(RBRTMMenuItem) * numOfRecentMaps);
-								memcpy(&m_pCustomMapMenuRBRTM[numOfRecentMaps], m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems, m_origNumOfItemsMenuItemsRBRTM * sizeof(RBRTMMenuItem));
+					if (bRBRTMCarSelectionMenu && (m_iRBRTMCarSelectionType == 2 || (m_iRBRTMCarSelectionType == 1 && m_pRBRTMPlugin->selectedItemIdx == 1)))
+					{
+						//
+						// RBRTM car selection in Shakedown or OnlineTournament menu
+						//
 
-								// Activate the custom stages menu
-								m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems = m_pCustomMapMenuRBRTM;
-								m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->numOfItems = m_numOfItemsCustomMapMenuRBRTM;
-								m_pRBRTMPlugin->numOfMenuItems = m_numOfItemsCustomMapMenuRBRTM + 1;
+						int iCarSpecPrintRow;
+						int selectedCarIdx = ::RBRAPI_MapCarIDToMenuIdx(m_pRBRTMPlugin->pRBRTMStageOptions1->selectedCarID);
+						PRBRCarSelectionMenuEntry pCarSelectionMenuEntry = &g_RBRCarSelectionMenuEntry[selectedCarIdx];
 
-								numOfRecentMaps = 0;
-								for (auto& item : m_recentMapsRBRTM)
+						iFontHeight = g_pFontCarSpecCustom->GetTextHeight();
+
+						if (m_carRBRTMPreviewTexture[selectedCarIdx].pTexture == nullptr && m_carRBRTMPreviewTexture[selectedCarIdx].imgSize.cx >= 0 && g_RBRCarSelectionMenuEntry[selectedCarIdx].wszCarModel[0] != '\0')
+						{
+							ReadCarPreviewImageFromFile(selectedCarIdx,
+								(float)m_carRBRTMPictureRect.left, (float)m_carRBRTMPictureRect.top,
+								(float)(m_carRBRTMPictureRect.right - m_carRBRTMPictureRect.left),
+								(float)(m_carRBRTMPictureRect.bottom - m_carRBRTMPictureRect.top),
+								&m_carRBRTMPreviewTexture[selectedCarIdx],
+								m_carRBRTMPictureScale /*IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO | IMAGE_TEXTURE_POSITION_BOTTOM*/,
+								true);
+						}
+
+						// If the car preview image is successfully initialized (imgSize.cx >= 0) and texture (=image) is prepared then draw it on the screen
+						if (m_carRBRTMPreviewTexture[selectedCarIdx].imgSize.cx >= 0 && m_carRBRTMPreviewTexture[selectedCarIdx].pTexture != nullptr)
+						{
+							iCarSpecPrintRow = 0;
+
+							if (m_carRBRTMPictureUseTransparent)
+								m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
+
+							D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, m_carRBRTMPreviewTexture[selectedCarIdx].pTexture, m_carRBRTMPreviewTexture[selectedCarIdx].vertexes2D);
+
+							if (m_carRBRTMPictureUseTransparent)
+								m_pD3D9RenderStateCache->RestoreState();
+
+							// 3D model and custom livery text is drawn on top of the car preview image (bottom left corner)
+							if (pCarSelectionMenuEntry->wszCarPhysicsLivery[0] != L'\0')
+								g_pFontCarSpecCustom->DrawText(m_carRBRTMPictureRect.left + 2, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsLivery, 0);
+
+							if (pCarSelectionMenuEntry->wszCarPhysics3DModel[0] != L'\0')
+								g_pFontCarSpecCustom->DrawText(m_carRBRTMPictureRect.left + 2, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysics3DModel, 0);
+						}
+
+						// FIACategory, HP, Year, Weight, Transmission, AudioFMOD
+						iCarSpecPrintRow = 0;
+						//posX = g_pRBRPlugin->m_carRBRTMPictureRect.right + 16;
+						RBRAPI_MapRBRPointToScreenPoint(460.0f, 0.0f, &posX, nullptr);
+
+						if (pCarSelectionMenuEntry->wszCarFMODBank[0] != L'\0')
+							g_pFontCarSpecCustom->DrawText(posX, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarFMODBank, 0);
+
+						if (pCarSelectionMenuEntry->wszCarYear[0] != L'\0')
+							g_pFontCarSpecCustom->DrawText(posX, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarYear, 0);
+
+						if (pCarSelectionMenuEntry->wszCarTrans[0] != L'\0')
+							g_pFontCarSpecCustom->DrawText(posX, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarTrans, 0);
+
+						if (pCarSelectionMenuEntry->wszCarWeight[0] != L'\0')
+							g_pFontCarSpecCustom->DrawText(posX, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarWeight, 0);
+
+						if (pCarSelectionMenuEntry->wszCarPower[0] != L'\0')
+							g_pFontCarSpecCustom->DrawText(posX, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPower, 0);
+
+						if (pCarSelectionMenuEntry->szCarCategory[0] != L'\0')
+							g_pFontCarSpecCustom->DrawText(posX, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->szCarCategory, 0);
+
+						if (pCarSelectionMenuEntry->wszCarModel[0] != L'\0')
+							g_pFontCarSpecCustom->DrawText(posX, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARMODELTITLETEXT_COLOR, pCarSelectionMenuEntry->wszCarModel, 0);
+
+					}
+					else if (bRBRTMStageSelectionMenu && m_iRBRTMCarSelectionType == 2
+						&& m_pTracksIniFile != nullptr
+						&& m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData != nullptr
+						&& m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems != nullptr
+						&& m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->numOfItems > 0
+						&& m_pRBRTMPlugin->selectedItemIdx >= 0)
+					{
+						//
+						// RBRTM stage selection list in Shakedown menu is the active RBRTM menu
+						//
+
+						// Hide the annoying "moving background box" on the bottom right corner in RBRTM Shakedown stages menu
+						g_pRBRMenuSystem->menuImageHeight = g_pRBRMenuSystem->menuImageWidth = 0;
+
+						if (m_pRBRTMPlugin->selectedItemIdx < m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->numOfItems)
+						{
+							if (m_pCustomMapMenuRBRTM == nullptr)
+							{
+								int numOfRecentMaps = CalculateNumOfValidMapsInRecentList(m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData);
+
+								// Initialization of custom RBRTM stages menu list in Shakedown menu (Nth recent stages on top of the menu and then the original RBRTM stage list).
+								// Use the custom list if there are recent mapIDs in the list and the feature is enabled (recent items max count > 0)
+								m_pCustomMapMenuRBRTM = new RBRTMMenuItem[m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->numOfItems + numOfRecentMaps];
+
+								if (m_pCustomMapMenuRBRTM != nullptr && numOfRecentMaps > 0 && m_recentMapsMaxCountRBRTM > 0)
 								{
-									// At this point there are only max number of valid mapID values in the recent list (CalculateNumOfValidMapsInRecentList removed invalid and extra items)
-									m_pCustomMapMenuRBRTM[numOfRecentMaps].mapID = item->mapID;
-									m_pCustomMapMenuRBRTM[numOfRecentMaps].wszMenuItemName = item->name.c_str();
-									numOfRecentMaps++;
+									m_pOrigMapMenuDataRBRTM = m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData;
+									m_pOrigMapMenuItemsRBRTM = m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems;
+									m_origNumOfItemsMenuItemsRBRTM = m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->numOfItems;
+
+									m_numOfItemsCustomMapMenuRBRTM = m_origNumOfItemsMenuItemsRBRTM + numOfRecentMaps;
+
+									// Clear shortcut stage items and copy the original RBRTM stages list at the end of custom menu list
+									ZeroMemory(m_pCustomMapMenuRBRTM, sizeof(RBRTMMenuItem) * numOfRecentMaps);
+									memcpy(&m_pCustomMapMenuRBRTM[numOfRecentMaps], m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems, m_origNumOfItemsMenuItemsRBRTM * sizeof(RBRTMMenuItem));
+
+									// Activate the custom stages menu
+									m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems = m_pCustomMapMenuRBRTM;
+									m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->numOfItems = m_numOfItemsCustomMapMenuRBRTM;
+									m_pRBRTMPlugin->numOfMenuItems = m_numOfItemsCustomMapMenuRBRTM + 1;
+
+									numOfRecentMaps = 0;
+									for (auto& item : m_recentMapsRBRTM)
+									{
+										// At this point there are only max number of valid mapID values in the recent list (CalculateNumOfValidMapsInRecentList removed invalid and extra items)
+										m_pCustomMapMenuRBRTM[numOfRecentMaps].mapID = item->mapID;
+										m_pCustomMapMenuRBRTM[numOfRecentMaps].wszMenuItemName = item->name.c_str();
+										numOfRecentMaps++;
+									}
 								}
+
+
+								// Activate the latest mapID menu row automatically (by default RBRTM would wrap back to the first stage menu line when user navigates back to Shakedown menu, very annoying)
+								if (m_latestMapRBRTM.mapID > 0 && m_pCustomMapMenuRBRTM != nullptr)
+								{
+									// If the latest menuIdx is set then check the array by index access before trying to search through all menu items
+									if (m_latestMapRBRTM.mapIDMenuIdx >= 0 && m_latestMapRBRTM.mapIDMenuIdx < m_numOfItemsCustomMapMenuRBRTM
+										&& m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems[m_latestMapRBRTM.mapIDMenuIdx].mapID == m_latestMapRBRTM.mapID)
+									{
+										m_pRBRTMPlugin->selectedItemIdx = m_latestMapRBRTM.mapIDMenuIdx;
+									}
+									else
+									{
+										menuIdx = FindRBRTMMenuItemIdxByMapID(m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData, m_latestMapRBRTM.mapID);
+										if (menuIdx >= 0)
+											m_pRBRTMPlugin->selectedItemIdx = menuIdx;
+									}
+								}
+
+								// Shakedown stages menu is open, save recentMaps INI options when a stage is chosen for racing and the recent list is modified
+								m_bRecentMapsRBRTMModified = TRUE;
 							}
 
 
-							// Activate the latest mapID menu row automatically (by default RBRTM would wrap back to the first stage menu line when user navigates back to Shakedown menu, very annoying)
-							if (m_latestMapRBRTM.mapID > 0 && m_pCustomMapMenuRBRTM != nullptr)
+							// If the mapID is different than the latest mapID then load new details (stage name, length, surface, previewImage)
+							if (m_latestMapRBRTM.mapID != m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems[m_pRBRTMPlugin->selectedItemIdx].mapID)
 							{
-								// If the latest menuIdx is set then check the array by index access before trying to search through all menu items
-								if (m_latestMapRBRTM.mapIDMenuIdx >= 0 && m_latestMapRBRTM.mapIDMenuIdx < m_numOfItemsCustomMapMenuRBRTM
-									&& m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems[m_latestMapRBRTM.mapIDMenuIdx].mapID == m_latestMapRBRTM.mapID)
+								WCHAR wszMapINISection[16];
+
+								m_latestMapRBRTM.mapID = m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems[m_pRBRTMPlugin->selectedItemIdx].mapID;
+								m_latestMapRBRTM.mapIDMenuIdx = m_pRBRTMPlugin->selectedItemIdx;
+
+								swprintf_s(wszMapINISection, COUNT_OF_ITEMS(wszMapINISection), L"Map%02d", m_latestMapRBRTM.mapID);
+
+								// At first lookup the stage name from maps\Tracks.ini file. If the name is not set there then re-use the stage name used in RBRTM menus
+								m_latestMapRBRTM.name = _RemoveEnclosingChar(m_pTracksIniFile->GetValue(wszMapINISection, L"StageName", L""), L'"', false);
+								if (m_latestMapRBRTM.name.empty())
+									m_latestMapRBRTM.name = m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems[m_pRBRTMPlugin->selectedItemIdx].wszMenuItemName;
+
+								// Take stage len and surface type from maps\Tracks.ini file
+								m_latestMapRBRTM.length = m_pTracksIniFile->GetDoubleValue(wszMapINISection, L"Length", -1.0);
+
+								// Check surface type for the original map. If the map was not original then check Tracks.ini file Surface option
+								m_latestMapRBRTM.surface = NPlugin::GetStageSurface(m_latestMapRBRTM.mapID);
+								if (m_latestMapRBRTM.surface < 0) m_latestMapRBRTM.surface = m_pTracksIniFile->GetLongValue(wszMapINISection, L"Surface", -1);
+
+								// Skip map image initializations if the map preview img feature is disabled (RBRTM_MapPictureRect=0)
+								if (m_mapRBRTMPictureRect.bottom != -1)
 								{
-									m_pRBRTMPlugin->selectedItemIdx = m_latestMapRBRTM.mapIDMenuIdx;
+									// Use custom map image path at first (set in RBRTM_MapScreenshotPath ini option). If the option or file is missing then take the stage preview image name from maps\Tracks.ini file
+									m_latestMapRBRTM.previewImageFile = ReplacePathVariables(m_screenshotPathMapRBRTM, -1, TRUE, m_latestMapRBRTM.mapID, m_latestMapRBRTM.name.c_str());
+
+									if (g_iLogMsgCount < 26)
+										LogPrint(L"Custom preview image file %s for a map #%d %s", m_latestMapRBRTM.previewImageFile.c_str(), m_latestMapRBRTM.mapID, m_latestMapRBRTM.name.c_str());
+
+									if (m_latestMapRBRTM.previewImageFile.empty() || !fs::exists(m_latestMapRBRTM.previewImageFile))
+									{
+										m_latestMapRBRTM.previewImageFile = _RemoveEnclosingChar(m_pTracksIniFile->GetValue(wszMapINISection, L"SplashScreen", L""), L'"', false);
+
+										if (m_latestMapRBRTM.previewImageFile.length() >= 2 && m_latestMapRBRTM.previewImageFile[0] != L'\\' && m_latestMapRBRTM.previewImageFile[1] != L':')
+											m_latestMapRBRTM.previewImageFile = this->m_sRBRRootDirW + L"\\" + m_latestMapRBRTM.previewImageFile;
+
+										if (g_iLogMsgCount < 26)
+											LogPrint(L"Custom image not found. Using Maps\\Tracks.ini SplashScreen image option %s", m_latestMapRBRTM.previewImageFile.c_str());
+									}
+								}
+
+								// Release previous map preview texture and read a new image file (if preview path is set and the image file exists and map preview img drawing is not disabled)
+								SAFE_RELEASE(m_latestMapRBRTM.imageTexture.pTexture);
+								if (!m_latestMapRBRTM.previewImageFile.empty() && fs::exists(m_latestMapRBRTM.previewImageFile) && m_mapRBRTMPictureRect.bottom != -1)
+								{
+									hResult = D3D9CreateRectangleVertexTexBufferFromFile(g_pRBRIDirect3DDevice9,
+										m_latestMapRBRTM.previewImageFile,
+										(float)m_mapRBRTMPictureRect.left, (float)m_mapRBRTMPictureRect.top, (float)(m_mapRBRTMPictureRect.right - m_mapRBRTMPictureRect.left), (float)(m_mapRBRTMPictureRect.bottom - m_mapRBRTMPictureRect.top),
+										&m_latestMapRBRTM.imageTexture,
+										0  /*IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_BOTTOM | IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER*/);
+
+									// Image not available or loading failed
+									if (!SUCCEEDED(hResult))
+										SAFE_RELEASE(m_latestMapRBRTM.imageTexture.pTexture);
+								}
+							}
+
+							// Show details of the current stage (name, length, surface, previewImage)
+							iFontHeight = g_pFontCarSpecCustom->GetTextHeight();
+
+							std::wstringstream sStrStream;
+							sStrStream << std::fixed << std::setprecision(1);
+
+							//posX = m_mapRBRTMPictureRect.left;
+							//posY = m_mapRBRTMPictureRect.top - (4 * iFontHeight);
+							RBRAPI_MapRBRPointToScreenPoint(295.0f, 53.0f, &posX, &posY);
+
+							//int iMapInfoPrintRow = 0;
+							//g_pFontCarSpecCustom->DrawText(posX, posY + ((++iMapInfoPrintRow) * iFontHeight), C_CARMODELTITLETEXT_COLOR, (m_latestMapRBRTM.name + L"  (#" + std::to_wstring(g_pRBRPlugin->m_latestMapRBRTM.mapID) + L")").c_str(), 0);
+							sStrStream << m_latestMapRBRTM.name << L"  (#" << g_pRBRPlugin->m_latestMapRBRTM.mapID << L")   ";
+
+							if (m_latestMapRBRTM.length > 0)
+								// TODO: KM to Miles miles=km*0.621371192 config option support
+								sStrStream << m_latestMapRBRTM.length << L" km ";
+
+							if (m_latestMapRBRTM.surface >= 0 && m_latestMapRBRTM.surface <= 2)
+								sStrStream << GetLangStr(NPlugin::GetSurfaceName(m_latestMapRBRTM.surface));
+
+							//g_pFontCarSpecCustom->DrawText(posX, posY + ((++iMapInfoPrintRow) * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), 0);
+							g_pFontCarSpecCustom->DrawText(posX, posY, C_CARMODELTITLETEXT_COLOR, sStrStream.str().c_str(), 0);
+
+							if (m_latestMapRBRTM.imageTexture.pTexture != nullptr)
+							{
+								m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
+								D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, m_latestMapRBRTM.imageTexture.pTexture, m_latestMapRBRTM.imageTexture.vertexes2D);
+								m_pD3D9RenderStateCache->RestoreState();
+							}
+						}
+						else
+						{
+							// "Back" menu line selected in Shakedown stage list. Clear the "latest mapID" cache value
+							m_latestMapRBRTM.mapID = -1;
+						}
+					}
+				}
+			}
+			else if (m_bRBRRXPluginActive)
+			{
+				//
+				// RBR_RX stages menu  (menuID==1)
+				//
+
+				// Hide the annoying "moving background box" on RBR_RX menu screen
+				g_pRBRMenuSystem->menuImageHeight = g_pRBRMenuSystem->menuImageWidth = 0;
+
+				if (m_pRBRRXPlugin->menuID == 0)
+				{
+					// RBR_RX main menu
+
+					// RBR_RX has a bug where the focus line in the RBRRX main menu is sometimes beyond the first two Race and Replay menu lines. Fix the bug.
+					if (m_pRBRRXPlugin->pMenuData->selectedItemIdx >= 2)
+						m_pRBRRXPlugin->pMenuData->selectedItemIdx = 0;
+
+					// Cleanup and restore the original RBRRX menu at RBRX main menu (when RBR exists then the menu needs to be original one because RBRRX tries to release that memory pointer)
+					if (m_pRBRRXPlugin->pMenuItems != m_pOrigMapMenuItemsRBRRX)
+					{
+						m_pRBRRXPlugin->numOfItems = m_origNumOfItemsMenuItemsRBRRX;
+						m_pRBRRXPlugin->pMenuItems = m_pOrigMapMenuItemsRBRRX;
+						if (m_pCustomMapMenuRBRRX != nullptr)
+						{
+							delete[] m_pCustomMapMenuRBRRX;
+							m_pCustomMapMenuRBRRX = nullptr;
+						}
+					}
+				}
+				else if (m_pRBRRXPlugin->menuID == 1 && m_pRBRRXPlugin->pMenuData->selectedItemIdx >= 0 && m_pRBRRXPlugin->pMenuData->selectedItemIdx < m_pRBRRXPlugin->numOfItems)
+				{
+					// RBRRX tracks menu 
+
+					if (m_pCustomMapMenuRBRRX == nullptr)
+					{
+						int numOfRecentMaps = CalculateNumOfValidMapsInRecentList(m_pOrigMapMenuItemsRBRRX, m_origNumOfItemsMenuItemsRBRRX);
+
+						// Initialization of custom RBRTM stages menu list in Shakedown menu (Nth recent stages on top of the menu and then the original RBRTM stage list).
+						// Use the custom list if there are recent mapIDs in the list and the feature is enabled (recent items max count > 0)
+						m_numOfItemsCustomMapMenuRBRRX = m_origNumOfItemsMenuItemsRBRRX + numOfRecentMaps;
+						m_pCustomMapMenuRBRRX = new RBRRXMenuItem[m_numOfItemsCustomMapMenuRBRRX];
+
+						if (m_pCustomMapMenuRBRRX != nullptr /*&& numOfRecentMaps > 0 && m_recentMapsMaxCountRBRRX > 0*/)
+						{
+							// Clear shortcut stage items and copy the original RBRTM stages list at the end of custom menu list
+							ZeroMemory(m_pCustomMapMenuRBRRX, sizeof(RBRRXMenuItem) * numOfRecentMaps);
+							memcpy(&m_pCustomMapMenuRBRRX[numOfRecentMaps], m_pOrigMapMenuItemsRBRRX, m_origNumOfItemsMenuItemsRBRRX * sizeof(RBRRXMenuItem));
+
+							m_pRBRRXPlugin->pMenuItems = m_pCustomMapMenuRBRRX;
+						}
+
+						// If there are more than 17 stages then cap the num of shown stages and scroll menu lines to show other stages
+						if (m_numOfItemsCustomMapMenuRBRRX > 8+1+8)
+							m_pRBRRXPlugin->numOfItems = 8+1+8;
+
+						numOfRecentMaps = 0;
+						for (auto& item : m_recentMapsRBRRX)
+						{
+							// At this point there are only max number of valid maps in the recent list (CalculateNumOfValidMapsInRecentList removed invalid and extra items)
+							strncpy_s(m_pCustomMapMenuRBRRX[numOfRecentMaps].szTrackName,   item->name.c_str(), COUNT_OF_ITEMS(m_pCustomMapMenuRBRRX[numOfRecentMaps].szTrackName));
+							strncpy_s(m_pCustomMapMenuRBRRX[numOfRecentMaps].szTrackFolder, item->folderName.c_str(), COUNT_OF_ITEMS(m_pCustomMapMenuRBRRX[numOfRecentMaps].szTrackFolder));
+							numOfRecentMaps++;
+						}
+
+						// Activate the latest map menu row automatically
+						if (!m_latestMapRBRRX.folderName.empty() && m_pCustomMapMenuRBRRX != nullptr)
+						{
+							menuIdx = -1;
+
+							// If the latest menuIdx is set then check the array by index access before trying to search through all menu items
+							if (m_latestMapRBRRX.mapIDMenuIdx >= 0 && m_latestMapRBRRX.mapIDMenuIdx < m_numOfItemsCustomMapMenuRBRRX
+								&& _iEqual(m_pCustomMapMenuRBRRX[m_latestMapRBRRX.mapIDMenuIdx].szTrackFolder, m_latestMapRBRRX.folderName, true) )
+							{
+								menuIdx = m_latestMapRBRRX.mapIDMenuIdx;
+							}
+							else
+							{
+								menuIdx = FindRBRRXMenuItemIdxByFolderName(m_pCustomMapMenuRBRRX, m_numOfItemsCustomMapMenuRBRRX, m_latestMapRBRRX.folderName);
+							}
+
+							if (menuIdx <= 0 || menuIdx >= m_numOfItemsCustomMapMenuRBRRX)
+							{
+								// Activate the first row
+								m_pRBRRXPlugin->pMenuData->selectedItemIdx = m_prevCustomMapSelectedItemIdxRBRRX = m_currentCustomMapSelectedItemIdxRBRRX = 0;
+								m_pRBRRXPlugin->pMenuItems = &m_pCustomMapMenuRBRRX[0];
+								m_latestMapRBRRX.mapIDMenuIdx = -1;
+							}
+							else
+							{
+								// Activate Nth row
+								m_currentCustomMapSelectedItemIdxRBRRX = menuIdx;
+								m_latestMapRBRRX.mapIDMenuIdx = -1;
+
+								if (m_currentCustomMapSelectedItemIdxRBRRX <= 8 || m_numOfItemsCustomMapMenuRBRRX <= (8+1+8) )
+								{
+									m_pRBRRXPlugin->pMenuData->selectedItemIdx = m_currentCustomMapSelectedItemIdxRBRRX;
+									m_pRBRRXPlugin->pMenuItems = &m_pCustomMapMenuRBRRX[0];
+								}
+								else if (m_numOfItemsCustomMapMenuRBRRX - m_currentCustomMapSelectedItemIdxRBRRX <= 8)
+								{
+									m_pRBRRXPlugin->pMenuData->selectedItemIdx = (8+1+8) - (m_numOfItemsCustomMapMenuRBRRX - m_currentCustomMapSelectedItemIdxRBRRX);
+									m_pRBRRXPlugin->pMenuItems = &m_pCustomMapMenuRBRRX[m_numOfItemsCustomMapMenuRBRRX - (8+1+8)];
 								}
 								else
 								{
-									menuIdx = FindRBRTMMenuItemIdxByMapID(m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData, m_latestMapRBRTM.mapID);
-									if (menuIdx >= 0)
-										m_pRBRTMPlugin->selectedItemIdx = menuIdx;
+									m_pRBRRXPlugin->pMenuData->selectedItemIdx = 8;
+									m_pRBRRXPlugin->pMenuItems = &m_pCustomMapMenuRBRRX[m_currentCustomMapSelectedItemIdxRBRRX-8];
 								}
-							}
 
-							// Shakedown stages menu is open, save recentMaps INI options when a stage is chosen for racing and the recent list is modified
-							m_bRecentMapsRBRTMModified = TRUE;
+								m_prevCustomMapSelectedItemIdxRBRRX = m_pRBRRXPlugin->pMenuData->selectedItemIdx;
+							}
 						}
 
+						// Stages menu is open, save recentMaps INI options when a stage is chosen for racing and the recent list is modified
+						m_bRecentMapsRBRRXModified = TRUE;
+					}
 
-						// If the mapID is different than the latest mapID then load new details (stage name, length, surface, previewImage)
-						if (m_latestMapRBRTM.mapID != m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems[m_pRBRTMPlugin->selectedItemIdx].mapID)
+					if (m_pCustomMapMenuRBRRX != nullptr)
+					{
+						if (m_prevCustomMapSelectedItemIdxRBRRX != m_pRBRRXPlugin->pMenuData->selectedItemIdx)
 						{
-							WCHAR wszMapINISection[16];
-
-							m_latestMapRBRTM.mapID = m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems[m_pRBRTMPlugin->selectedItemIdx].mapID;
-							m_latestMapRBRTM.mapIDMenuIdx = m_pRBRTMPlugin->selectedItemIdx;
-
-							swprintf_s(wszMapINISection, COUNT_OF_ITEMS(wszMapINISection), L"Map%02d", m_latestMapRBRTM.mapID);
-
-							// At first lookup the stage name from maps\Tracks.ini file. If the name is not set there then re-use the stage name used in RBRTM menus
-							m_latestMapRBRTM.name = _RemoveEnclosingChar(m_pTracksIniFile->GetValue(wszMapINISection, L"StageName", L""), L'"', false);
-							if (m_latestMapRBRTM.name.empty())
-								m_latestMapRBRTM.name = m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems[m_pRBRTMPlugin->selectedItemIdx].wszMenuItemName;
-
-							// Take stage len and surface type from maps\Tracks.ini file
-							m_latestMapRBRTM.length  = m_pTracksIniFile->GetDoubleValue(wszMapINISection, L"Length", -1.0);
-
-							// Check surface type for the original map. If the map was not original then check Tracks.ini file Surface option
-							m_latestMapRBRTM.surface = NPlugin::GetStageSurface(m_latestMapRBRTM.mapID);
-							if(m_latestMapRBRTM.surface < 0) m_latestMapRBRTM.surface = m_pTracksIniFile->GetLongValue(wszMapINISection, L"Surface", -1);
-
-							// Skip map image initializations if the map preview img feature is disabled (RBRTM_MapPictureRect=0)
-							if (m_mapRBRTMPictureRect.bottom != -1)
+							if (m_prevCustomMapSelectedItemIdxRBRRX == 0 && m_pRBRRXPlugin->pMenuData->selectedItemIdx+1 == min(m_numOfItemsCustomMapMenuRBRRX, 17))
+								// Wrap to the last menu item
+								m_currentCustomMapSelectedItemIdxRBRRX = m_numOfItemsCustomMapMenuRBRRX - 1;
+							else if (m_prevCustomMapSelectedItemIdxRBRRX+1 == min(m_numOfItemsCustomMapMenuRBRRX, 17) && m_pRBRRXPlugin->pMenuData->selectedItemIdx == 0)
+								// Wrap to the first menu item 
+								m_currentCustomMapSelectedItemIdxRBRRX = 0;
+							else if (m_prevCustomMapSelectedItemIdxRBRRX < m_pRBRRXPlugin->pMenuData->selectedItemIdx)
 							{
+								// Next row
+								m_currentCustomMapSelectedItemIdxRBRRX++;
+
+								if (m_pRBRRXPlugin->pMenuData->selectedItemIdx == 9 && (m_numOfItemsCustomMapMenuRBRRX - m_currentCustomMapSelectedItemIdxRBRRX > 8))
+									// Scroll down because there are more than 8 stages below the focus line
+									m_pRBRRXPlugin->pMenuData->selectedItemIdx = 8;
+							}
+							else if (m_prevCustomMapSelectedItemIdxRBRRX > m_pRBRRXPlugin->pMenuData->selectedItemIdx)
+							{
+								// Prev row
+								m_currentCustomMapSelectedItemIdxRBRRX--;
+
+								if (m_pRBRRXPlugin->pMenuData->selectedItemIdx == 7 && (m_currentCustomMapSelectedItemIdxRBRRX >= 8))
+									// Scroll up because there are more than 8 stages above the focus line
+									m_pRBRRXPlugin->pMenuData->selectedItemIdx = 8;
+							}
+
+							m_prevCustomMapSelectedItemIdxRBRRX = m_pRBRRXPlugin->pMenuData->selectedItemIdx;
+
+							int iTopMenuRowIdx = max(m_currentCustomMapSelectedItemIdxRBRRX - m_pRBRRXPlugin->pMenuData->selectedItemIdx, 0);
+							m_pRBRRXPlugin->pMenuItems = &m_pCustomMapMenuRBRRX[iTopMenuRowIdx];
+
+							//m_latestMapRBRRX.mapIDMenuIdx = m_currentCustomMapSelectedItemIdxRBRRX;
+							//m_latestMapRBRRX.folderName = m_pCustomMapMenuRBRRX[m_currentCustomMapSelectedItemIdxRBRRX].szTrackFolder;
+							//_ToLowerCase(m_latestMapRBRRX.folderName);
+						}
+					}
+
+
+					// If the the map row is different than the latest map row then load new details (stage name, length, surface, previewImage)
+					if (m_latestMapRBRRX.mapIDMenuIdx != m_currentCustomMapSelectedItemIdxRBRRX)
+					{
+						//CSimpleIniW btbTrackINIFile;
+
+						m_latestMapRBRRX.mapIDMenuIdx = m_currentCustomMapSelectedItemIdxRBRRX;
+						m_latestMapRBRRX.folderName = m_pCustomMapMenuRBRRX[m_currentCustomMapSelectedItemIdxRBRRX].szTrackFolder;
+						_ToLowerCase(m_latestMapRBRRX.folderName);
+
+						//btbTrackINIFile.SetUnicode(true);
+						//btbTrackINIFile.LoadFile((m_sRBRRootDirW + L"\\RX_CONTENT\\" + _ToWString(m_latestMapRBRRX.folderName) + L"\\track.ini").c_str());
+
+						// At first lookup the stage name from maps\Tracks.ini file. If the name is not set there then re-use the stage name used in RBRTM menus
+						//m_latestMapRBRRX.name = _ToString(btbTrackINIFile.GetValue(L"INFO", L"name", L""));
+						//m_latestMapRBRRX.surface = btbTrackINIFile.GetValue(L"INFO", L"physics", L"");
+
+						// Skip map image initializations if the map preview img feature is disabled (RBRTM_MapPictureRect=0)
+						if (m_mapRBRRXPictureRect.bottom != -1)
+						{
+							CSimpleIni btbTrackINIFile;							
+							//btbTrackINIFile.SetUnicode(true);
+							try
+							{
+								btbTrackINIFile.LoadFile((m_sRBRRootDirW + L"\\RX_CONTENT\\" + _ToWString(m_latestMapRBRRX.folderName) + L"\\track.ini").c_str());
+								const CHAR* szTrackName = btbTrackINIFile.GetValue("INFO", "name", nullptr);
+								std::wstring sTrackName = _ToWString(szTrackName); //  _ToUTF8WString(szTrackName);
+
 								// Use custom map image path at first (set in RBRTM_MapScreenshotPath ini option). If the option or file is missing then take the stage preview image name from maps\Tracks.ini file
-								m_latestMapRBRTM.previewImageFile = ReplacePathVariables(m_screenshotPathMapRBRTM, -1, TRUE, m_latestMapRBRTM.mapID, m_latestMapRBRTM.name.c_str());
+								m_latestMapRBRRX.previewImageFile = ReplacePathVariables(m_screenshotPathMapRBRRX, -1, FALSE, -1, sTrackName.c_str(), m_latestMapRBRRX.folderName);
 
 								if (g_iLogMsgCount < 26)
-									LogPrint(L"Custom preview image file %s for a map #%d %s", m_latestMapRBRTM.previewImageFile.c_str(), m_latestMapRBRTM.mapID, m_latestMapRBRTM.name.c_str());
-
-								if (m_latestMapRBRTM.previewImageFile.empty() || !fs::exists(m_latestMapRBRTM.previewImageFile))
-								{
-									m_latestMapRBRTM.previewImageFile = _RemoveEnclosingChar(m_pTracksIniFile->GetValue(wszMapINISection, L"SplashScreen", L""), L'"', false);
-
-									if (m_latestMapRBRTM.previewImageFile.length() >= 2 && m_latestMapRBRTM.previewImageFile[0] != L'\\' && m_latestMapRBRTM.previewImageFile[1] != L':')
-										m_latestMapRBRTM.previewImageFile = this->m_sRBRRootDirW + L"\\" + m_latestMapRBRTM.previewImageFile;
-
-									if (g_iLogMsgCount < 26)
-										LogPrint(L"Custom image not found. Using Maps\\Tracks.ini SplashScreen image option %s", m_latestMapRBRTM.previewImageFile.c_str());
-								}
+									//LogPrint(L"Custom preview image file %s for a RBRRX map %s", m_latestMapRBRRX.previewImageFile.c_str(), _ToWString(m_latestMapRBRRX.name).c_str());
+									LogPrint(L"Custom preview image file %s for a RBRRX map %s", m_latestMapRBRRX.previewImageFile.c_str(), sTrackName.c_str());
 							}
-
-							// Release previous map preview texture and read a new image file (if preview path is set and the image file exists and map preview img drawing is not disabled)
-							SAFE_RELEASE(m_latestMapRBRTM.imageTexture.pTexture);
-							if (!m_latestMapRBRTM.previewImageFile.empty() && fs::exists(m_latestMapRBRTM.previewImageFile) && m_mapRBRTMPictureRect.bottom != -1)
+							catch (...)
 							{
-								hResult = D3D9CreateRectangleVertexTexBufferFromFile(g_pRBRIDirect3DDevice9,
-									m_latestMapRBRTM.previewImageFile,
-									(float)m_mapRBRTMPictureRect.left, (float)m_mapRBRTMPictureRect.top, (float)(m_mapRBRTMPictureRect.right - m_mapRBRTMPictureRect.left), (float)(m_mapRBRTMPictureRect.bottom - m_mapRBRTMPictureRect.top),
-									&m_latestMapRBRTM.imageTexture,
-									0  /*IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_BOTTOM | IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER*/ );
+								// Error while reading BTB track settings
+								m_latestMapRBRRX.previewImageFile.clear();
 
-								// Image not available or loading failed
-								if (!SUCCEEDED(hResult))
-									SAFE_RELEASE(m_latestMapRBRTM.imageTexture.pTexture);
+								LogPrint("Failed to read settings for a map preview image %s", m_latestMapRBRRX.name.c_str());
 							}
 						}
 
-						// Show details of the current stage (name, length, surface, previewImage)
-						iFontHeight = g_pFontCarSpecCustom->GetTextHeight();
-
-						std::wstringstream sStrStream;
-						sStrStream << std::fixed << std::setprecision(1);
-
-						//posX = m_mapRBRTMPictureRect.left;
-						//posY = m_mapRBRTMPictureRect.top - (4 * iFontHeight);
-						RBRAPI_MapRBRPointToScreenPoint(295.0f, 53.0f, &posX, &posY);
-
-						//int iMapInfoPrintRow = 0;
-						//g_pFontCarSpecCustom->DrawText(posX, posY + ((++iMapInfoPrintRow) * iFontHeight), C_CARMODELTITLETEXT_COLOR, (m_latestMapRBRTM.name + L"  (#" + std::to_wstring(g_pRBRPlugin->m_latestMapRBRTM.mapID) + L")").c_str(), 0);
-						sStrStream << m_latestMapRBRTM.name << L"  (#" << g_pRBRPlugin->m_latestMapRBRTM.mapID << L")   ";
-
-						if (m_latestMapRBRTM.length > 0)
-							// TODO: KM to Miles miles=km*0.621371192 config option support
-							sStrStream << m_latestMapRBRTM.length << L" km ";
-
-						if (m_latestMapRBRTM.surface >= 0 && m_latestMapRBRTM.surface <= 2)
-							sStrStream << GetLangStr(NPlugin::GetSurfaceName(m_latestMapRBRTM.surface));
-
-						//g_pFontCarSpecCustom->DrawText(posX, posY + ((++iMapInfoPrintRow) * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), 0);
-						g_pFontCarSpecCustom->DrawText(posX, posY, C_CARMODELTITLETEXT_COLOR, sStrStream.str().c_str(), 0);
-
-						if (m_latestMapRBRTM.imageTexture.pTexture != nullptr)
+						// Release previous map preview texture and read a new image file (if preview path is set and the image file exists and map preview img drawing is not disabled)
+						SAFE_RELEASE(m_latestMapRBRRX.imageTexture.pTexture);
+						if (!m_latestMapRBRRX.previewImageFile.empty() && fs::exists(m_latestMapRBRRX.previewImageFile) && m_mapRBRRXPictureRect.bottom != -1)
 						{
-							m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
-							D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, m_latestMapRBRTM.imageTexture.pTexture, m_latestMapRBRTM.imageTexture.vertexes2D);
-							m_pD3D9RenderStateCache->RestoreState();
+							hResult = D3D9CreateRectangleVertexTexBufferFromFile(g_pRBRIDirect3DDevice9,
+								m_latestMapRBRRX.previewImageFile,
+								(float)m_mapRBRRXPictureRect.left, (float)m_mapRBRRXPictureRect.top, (float)(m_mapRBRRXPictureRect.right - m_mapRBRRXPictureRect.left), (float)(m_mapRBRRXPictureRect.bottom - m_mapRBRRXPictureRect.top),
+								&m_latestMapRBRRX.imageTexture,
+								0  /*IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_BOTTOM | IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER*/);
+
+							// Image not available or loading failed
+							if (!SUCCEEDED(hResult))
+								SAFE_RELEASE(m_latestMapRBRRX.imageTexture.pTexture);
 						}
 					}
-					else
+
+					// Show details of the current stage (name, length, surface, previewImage)
+					//iFontHeight = g_pFontCarSpecCustom->GetTextHeight();
+
+					//std::wstringstream sStrStream;
+					//sStrStream << std::fixed << std::setprecision(1);
+
+					//posX = m_mapRBRTMPictureRect.left;
+					//posY = m_mapRBRTMPictureRect.top - (4 * iFontHeight);
+					//RBRAPI_MapRBRPointToScreenPoint(295.0f, 50.0f, &posX, &posY);
+
+					//int iMapInfoPrintRow = 0;
+					//g_pFontCarSpecCustom->DrawText(posX, posY + ((++iMapInfoPrintRow) * iFontHeight), C_CARMODELTITLETEXT_COLOR, (m_latestMapRBRTM.name + L"  (#" + std::to_wstring(g_pRBRPlugin->m_latestMapRBRTM.mapID) + L")").c_str(), 0);
+					//sStrStream << _ToWString(m_latestMapRBRRX.name) << L"   ";
+
+					//if (m_latestMapRBRRX.length > 0)
+						// TODO: KM to Miles miles=km*0.621371192 config option support
+						//sStrStream << m_latestMapRBRRX.length << L" km ";
+
+					//if (!m_latestMapRBRRX.surface.empty())
+					//	sStrStream << GetLangStr(m_latestMapRBRRX.surface.c_str());
+
+					//g_pFontCarSpecCustom->DrawText(posX, posY + ((++iMapInfoPrintRow) * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), 0);
+					//g_pFontCarSpecCustom->DrawText(posX, posY, C_CARMODELTITLETEXT_COLOR, sStrStream.str().c_str(), 0);
+
+					if (m_latestMapRBRRX.imageTexture.pTexture != nullptr)
 					{
-						// "Back" menu line selected in Shakedown stage list. Clear the "latest mapID" cache value
-						m_latestMapRBRTM.mapID = -1;
+						m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
+						D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, m_latestMapRBRRX.imageTexture.pTexture, m_latestMapRBRRX.imageTexture.vertexes2D);
+						m_pD3D9RenderStateCache->RestoreState();
 					}
+				}
+			}
+
+			if (!m_bRBRTMPluginActive && m_pRBRTMPlugin != nullptr && m_pOrigMapMenuDataRBRTM != nullptr && m_pCustomMapMenuRBRTM != nullptr 
+				&& m_pOrigMapMenuDataRBRTM->pMenuItems == m_pCustomMapMenuRBRTM 
+				&& g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN])
+			{
+				m_pOrigMapMenuDataRBRTM->pMenuItems = m_pOrigMapMenuItemsRBRTM;
+				m_pOrigMapMenuDataRBRTM->numOfItems = m_origNumOfItemsMenuItemsRBRTM;
+
+				if (m_pCustomMapMenuRBRTM != nullptr)
+				{
+					delete[] m_pCustomMapMenuRBRTM;
+					m_pCustomMapMenuRBRTM = nullptr;
+				}
+			}
+
+			if (!m_bRBRRXPluginActive && m_pRBRRXPlugin != nullptr
+				&& m_pRBRRXPlugin->pMenuItems != m_pOrigMapMenuItemsRBRRX && g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN])
+			{
+				m_pRBRRXPlugin->pMenuData->selectedItemIdx = 0;
+				m_pRBRRXPlugin->numOfItems = m_origNumOfItemsMenuItemsRBRRX;
+				m_pRBRRXPlugin->pMenuItems = m_pOrigMapMenuItemsRBRRX;
+
+				if (m_pCustomMapMenuRBRRX != nullptr)
+				{
+					delete[] m_pCustomMapMenuRBRRX;
+					m_pCustomMapMenuRBRRX = nullptr;
 				}
 			}
 		}
@@ -2996,28 +3446,64 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 			}
 		}
 	}
-	else if (g_pRBRGameMode->gameMode == 05 && m_bRBRTMPluginActive && m_iRBRTMCarSelectionType == 2 && m_bRecentMapsRBRTMModified)
+	else if (g_pRBRGameMode->gameMode == 05)
 	{
-		// Stage loading while RBRTM plugin is active in Shakedown mode. Add the latest mapID (=stage) to the top of the recent list
-		if (m_recentMapsMaxCountRBRTM > 0)
+		if (m_bRBRTMPluginActive && m_iRBRTMCarSelectionType == 2 && m_bRecentMapsRBRTMModified)
 		{
-			m_bRecentMapsRBRTMModified = FALSE;
-			AddMapToRecentList(m_latestMapRBRTM.mapID);
-			if(m_bRecentMapsRBRTMModified) SaveSettingsToPluginINIFile();
-		}
+			// Stage loading while RBRTM plugin is active in Shakedown mode. Add the latest mapID (=stage) to the top of the recent list
+			if (m_recentMapsMaxCountRBRTM > 0)
+			{
+				m_bRecentMapsRBRTMModified = FALSE;
+				AddMapToRecentList(m_latestMapRBRTM.mapID);
+				if (m_bRecentMapsRBRTMModified) SaveSettingsToPluginINIFile();
+			}
 
-		m_bRecentMapsRBRTMModified = FALSE;
+			m_bRecentMapsRBRTMModified = FALSE;
+		}
+		else if (m_bRBRRXPluginActive && m_bRecentMapsRBRRXModified)
+		{
+			// Stage loading while RBRRX plugin is active in Shakedown mode. Add the latest map (=stage) to the top of the recent list
+			if (m_recentMapsMaxCountRBRRX > 0)
+			{
+				m_bRecentMapsRBRRXModified = FALSE;
+				AddMapToRecentList(m_latestMapRBRRX.folderName);
+				if (m_bRecentMapsRBRRXModified) SaveSettingsToPluginINIFile();
+			}
+
+			m_bRecentMapsRBRRXModified = FALSE;
+		}
 	}
 	else if (m_bCustomReplayShowCroppingRect && m_iCustomReplayState >= 2 && m_iCustomReplayState != 4)
 	{
 		// Draw rectangle to highlight the screenshot capture area (except when state == 4 because then this plugin takes the car preview screenshot and we don't want to see the gray box in a preview image)
 		D3D9DrawVertex2D(g_pRBRIDirect3DDevice9, m_screenshotCroppingRectVertexBuffer);
 	}
-
+	
 #if USE_DEBUG == 1
-	/*
-		WCHAR szTxtBuffer[200];
+/*
+		WCHAR szTxtBuffer[512];
 
+		if (m_pRBRRXPlugin != nullptr)
+		{
+			int iRBRRX_NumOfItems = m_pRBRRXPlugin->numOfItems;
+			int iRBRRX_SelectedItemIdx = (m_pRBRRXPlugin->pMenuData != nullptr ? m_pRBRRXPlugin->pMenuData->selectedItemIdx : -1);
+
+			swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"A=%d RX=%08x RXMID=%d Idx=%d/%d Stge=%s",
+				m_bRBRRXPluginActive,
+				(DWORD)m_pRBRRXPlugin,
+				m_pRBRRXPlugin->menuID,
+				iRBRRX_SelectedItemIdx,
+				iRBRRX_NumOfItems,
+				((iRBRRX_NumOfItems > 0 && iRBRRX_SelectedItemIdx >= 0 && iRBRRX_SelectedItemIdx < iRBRRX_NumOfItems) ? _ToWString(m_pRBRRXPlugin->pMenuItems[iRBRRX_SelectedItemIdx].szTrackName).c_str() : L"")
+			);
+			g_pFontDebug->DrawText(1, 1 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, D3DFONT_CLEARTARGET);
+
+			swprintf_s(szTxtBuffer, COUNT_OF_ITEMS(szTxtBuffer), L"CurrTotalIdx=%d", m_currentCustomMapSelectedItemIdxRBRRX);
+			g_pFontDebug->DrawText(1, 2 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, D3DFONT_CLEARTARGET);
+		}
+*/
+
+/*
 		if (g_pRBRPlugin->m_pRBRTMPlugin != nullptr && g_pRBRPlugin->m_pRBRTMPlugin->pCurrentRBRTMMenuObj != nullptr && g_pRBRPlugin->m_pRBRTMPlugin->pCurrentRBRTMMenuObj->menuID == 0x15978154)
 		{
 			int iRBRTM_NumOfItems = ((g_pRBRPlugin->m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData != nullptr) ? g_pRBRPlugin->m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->numOfItems : -1);
@@ -3034,7 +3520,8 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 
 			g_pFontDebug->DrawText(1, 1 * 20, C_DEBUGTEXT_COLOR, szTxtBuffer, D3DFONT_CLEARTARGET);
 		}
-	*/
+*/
+		
 
 	/*
 		RECT wndRect;

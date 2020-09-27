@@ -85,7 +85,7 @@ extern std::string  _RemoveEnclosingChar(const std::string& str, const char sear
 extern std::wstring _ToWString(const std::string & s);	   // Convert std::string to std::wstring
 extern std::string  _ToString(const std::wstring & s);     // Convert std::wstring to std:string
 
-extern std::string  _ToUTF8String(const std::wstring & s); // Convert widchar std::wstring(UTF8) to multibyte string value (WinOS specific implementation)
+extern std::string  _ToUTF8String(const std::wstring & s); // Convert widechar std::wstring(UTF8) to multibyte string value (WinOS specific implementation)
 extern std::wstring _ToUTF8WString(const std::string & s); // Convert multibyte std::string(UTF8) to widechar UTF8 string value (WinOS specific implementation) 
 extern std::wstring _ToUTF8WString(const std::wstring & s);// Convert multibyte std::wstring(UTF8) to widechar UTF8 string value (WinOS specific implementation) 
 
