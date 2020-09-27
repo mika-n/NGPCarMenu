@@ -3199,7 +3199,7 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 					}
 				}
 			}
-			else if (m_bRBRRXPluginActive)
+			else if (m_bRBRRXPluginActive && g_pRBRPluginMenuSystem->customPluginMenuObj == g_pRBRMenuSystem->currentMenuObj)
 			{
 				//
 				// RBR_RX stages menu  (menuID==1)
