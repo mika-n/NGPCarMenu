@@ -1,6 +1,6 @@
 # NGPCarMenu
 
-Custom plugin for **Richard Burns Rally game (RBR v1.02 SSE)** to improve the "Select Car" in-game menu (ie. for those people who don't use external RBR game launchers). 
+Custom plugin for **Richard Burns Rally game (RBR v1.02 SSE)** to improve the "Select Car" in-game menu and RBRTM and RBR_RX "Select Stage" menus (ie. for those people who don't use external RBR game launchers). 
 
 The original "Select Car" menu within the RBR game has various problems:
 - The preview image of the car (garage) doesn't match with the custom car model.
@@ -8,6 +8,8 @@ The original "Select Car" menu within the RBR game has various problems:
 - The car specification window doesn't show additional information potentially available in custom car models (FIA category, creator and version of 3D car model, AudioFMOD sound bank).
 - The car menu name shows the original car name even when RBR would use custom cars published by WorkerBee (NGP models) or other custom 3D car models. 
 - The menu and model name has room for only short car model names (number of characters).
+- RBRTM car selection doesn't show NGP car information and car preview images. RBRTM stage selection doesn't show a map preview image and if there is a long list of stages then it takes several key presses to drive again the same stage.
+- RBR_RX stage selection list doesn't scroll if there are more than 20 BTB stages and the menu doesn't show a map preview image.
 
 This **NGPCarMenu RBR plugin solves these problems** by doing following enhancements to the built-in "Select Car" menu:
 - Shows a custom car preview image using the actual 3D model of custom car models.
@@ -21,8 +23,13 @@ This **NGPCarMenu RBR plugin solves these problems** by doing following enhancem
 - RBRTM improvement 2: Shows the map information and a preview image in Shakedown menu while browsing through list of stages (supports custom user supplied PNG images also).
 - RBRTM improvement 3: Shows Nth recently driven stages as a shortcut menu entries on top of the Shakedown stage list (easier and faster to choose favourite stages to drive again when no need to browse through the long list of stages).
 - RBRTM improvement 4: Remembers the focused stage menu line even after visiting the RBRTM main menu (without NGPCarMenu plugin RBRTM would always reset back to the first menu line after visiting RBRTM main menu).
+- RBRRX improvement 1: Shows the car information and a car preview image in RBR_RX car selection menu.
+- RBRRX improvement 2: Shows a preview image in menu while browsing through list of BTB tracks (stages, custom user supplied PNG images).
+- RBRRX improvement 3: Shows Nth recently driven stages as a shortcut menu entries on top of the RBR_RX stage list.
+- RBRRX improvement 4: Remembers the focused stage menu line even after visiting the RBR main menu (without NGPCarMenu plugin RBR_RX would sometimes reset back to the first menu line).
 
 The plugin supports **RBRTM Czech Tournament** plugin (V0.88) integration. Use NGPCarMenu in-game menu or INI file to enable/disable this integration.
+The plugin supports **RBR_RX** plugin (RBR_RX.dll with 417792 bytes, the file doesn't have version tag) integration. Use NGPCarMenu in-game menu or INI file to enable/disable this integration.
 
 Note! NGPCarMenu supports only the latest RichardBurnsRally_SSE.exe v1.02 version for Windows OS (haven't tested this under Wine/Linux, but the plugin probably works there also).
 
@@ -43,7 +50,8 @@ Note! NGPCarMenu supports only the latest RichardBurnsRally_SSE.exe v1.02 versio
 - At first you probably don't have any car preview images under *Plugins\NGPCarMenu\preview* folder. Select *"Create car images"* menu command to generate new preview images. Sit down and wait while the plugin creates new preview images from all installed car models.
 - Use the "Create car images" command when you have installed new custom cars for RBR via RBRCIT or EasyRBR tool.
 - Now you are ready to race! Go to *"Quick Rally/Multiplayer/Season"* in-game menu and verify that you can see the new information and car preview images in *"Select Car"* menu.
-- If you use RBRTM online tournament plugin then enable RBRTM_Integration option. If the car preview image is drawn at wrong location in RBRTM menus then check resolution specific RBRTM_CarPictureRect option in NGPCarMenu.ini file. Set correct rectangle coordinates where the car preview image should be dran (pro tip. Take fullscreen screenshot and use Paint app to see the correct coordinates of the bottom left "empty rectangle area" in Shakedown menu).
+- If you use RBRTM online tournament plugin then enable RBRTM_Integration option (enabled by default). If the car preview image is drawn at wrong location in RBRTM menus then check resolution specific RBRTM_CarPictureRect option in NGPCarMenu.ini file. Set correct rectangle coordinates where the car preview image should be dran (pro tip. Take fullscreen screenshot and use Paint app to see the correct coordinates of the bottom left "empty rectangle area" in Shakedown menu).
+- If you use RBR_RX BTB tracks plugin then enable RBRRX_Integration option (enabled by default). If the map preview image is drawn at wrong location in RBR_RX menus then check RBRRX_MapPictureRect INI option. See Plugins\NGPCarMenu\preview\maps\ folder for a sample BTB map preview image file.
 
 The NGPCarMenu.ini file has various screen resolution specific options. There are default values for the most common resolutions, but if the resolution you use is not there the plugin adds it there automatically with default values. Refer to NGPCarMenu.ini.sample for more information about new options.
 
@@ -82,6 +90,10 @@ rbr\Plugins\NGPCarMenu.ini options (see the NGPCarMenu.ini.sample file for more 
 | RBRTM_MapScreenshotPath | Path of custom map preview images (relative to RBR.EXE location or absolute path). NGPCarMenu uses map preview images from this folder location. If the file is missing then the plugin uses a map specific Maps\Tracks.ini SplashScreen option as a preview image. |
 | RBRTM_MapPictureRect   | Location of the map preview image on RBRTM Shakedown stages menu screen (x1 y1 x2 y2, values in screen coordinates). If missing or empty then NGPCarMenu plugin draws the image at default location. |
 | RBRTM_RecentMapsMaxCount | Maximum number of recent driven maps shown on top of the RBRTM Shakedown stages menu list (shortcuts to a map). |
+| RBRRX_Integration      | 0 or 1. 0=RBRRX integration disabled. 1=RBRRX integration enabled |
+| RBRRX_MapScreenshotPath | Path of custom map preview images (relative to RBR.EXE location or absolute path) |
+| RBRRX_MapPictureRect   | Location of the map preview image on RBR_RX stages menu screen (x1 y1 x2 y2, values in screen coordinates). If missing or empty then NGPCarMenu plugin draws the image at default location. |
+| RBRRX_RecentMapsMaxCount | Maximum number of recent driven maps shown on top of the RBR_RX stages menu list (shortcuts to a map). |
 
 ## Questions and Answers
 - **Does "Create car image" command overwrite existing car preview images?** No, the plugin uses *"Create only missing images"* option by default. However, you can change this option in the plugin's in-game menu to *"All car images"* option. This option re-creates all car images.
@@ -100,6 +112,7 @@ rbr\Plugins\NGPCarMenu.ini options (see the NGPCarMenu.ini.sample file for more 
 - **Why the car preview image in RBRTM menu has wrong aspect ratio in some resolutions?** The plugin tries to fit the original image inside the speficied draw rectangle (RBRTM_CarPictureRect). If the original picture size is too big then the image is scaled to fit the draw area. Tweak CarPictureScale and RBRTM_CarPictureScale options to fine tune how the scaling goes.
 - **Why some maps in RBRTM Shakedown stages menu list doesn't have a map preview image?** Maps\Tracks.ini file doesn't define a map specific SplashScreen option and there are no custom image in Plugins\NGPCarMenu\preview\maps\ folder. You can add your own PNG images to the maps folder. See RBRTM_MapScreenshotPath option.
 - **Why map preview images in RBRTM Shakedown menu screen are drawn at wrong location?** If RBRTM_MapPictureRect option is not set in NGPCarMenu.ini file then the plugin draws the image at default location. If you are not happy with the location then use RBRTM_MapPictureRect option to re-locate and re-size map preview images.
+- **Why RBR_RX BTB stage menu list doesn't show a map preview image?** Usually BTB track packs don't supply a map preview image, so you have to create one (take a screenshot in RBR while driving a BTB stage). See RBRRX_MapScreenshotPath INI option where to copy these map preview image files (by default Plugins\NGPCarMenu\preview\map\BTB_trackFolderName.png files).
 
 - **What is the folder structure used by this plugin?** The DLL and INI plugin files must be in the Plugins directory under the RBR game root folder. Replays RBR folder should have a replay file set in *ScreenshotReplay* option. The file hierarchy is something like this:
    c:\apps\richardBurnsRally\plugins\NGPCarMenu.dll
@@ -125,11 +138,11 @@ Also, some Windows OS setups limit writing new files under c:\program files\ or 
 
 This plugin has been tested by NGPCarMenu author with these magnificent RBR plugins/tools and the plugin works great with those. In fact, this plugin should be compatible with any plugin because the plugin doesn't change how the RBR game handles racing and the actual car models.
 
-Users have reported that the customized "Select Car" menu works also with following plugins (I can confirm this):
-- RX RBR plugin and BTB tracks. (author: black f./jharron). 
+The customized "Select Car" menu works also with RBR_RX plugin and NGPCarMenu shows a scrolling stage menu list in RBR_RX "Tracks" menu list:
+- RBR_RX plugin and BTB tracks. (author: black f./jharron). 
   - ["Speedy Cereals" (Vauhtimurot in Finnish) info page for RX plugin and BTB tracks](https://vauhtimurot.blogspot.com/p/installing-btb-stages.html)
   - ["Another info page about RBR_RX"](https://www.racedepartment.com/threads/virtualmotorsports-rally-finland-rx-track-archive.35080/) 
-  - These are not "The official" home pages of RX plugin. Is there even one for RBR_RX plugin?
+  - These are not "The official" home pages of RX plugin, but probably the best places for RBR_RX information.
  
 
 NGPCarMenu. Copyright (c) 2020 by MIKA-N. All rights reserved. See LicenseText.txt file for more information (don't worry, this is published free of charge but use at your own risk). 

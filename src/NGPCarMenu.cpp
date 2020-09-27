@@ -555,7 +555,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 	int iFileFormat;
 	CSimpleIniW pluginINIFile;
 	std::wstring sTextValue;
-	std::string  sIniFileName = CNGPCarMenu::m_sRBRRootDir + "\\Plugins\\" VS_PROJECT_NAME ".ini";
+	std::string  sIniFileName = m_sRBRRootDir + "\\Plugins\\" VS_PROJECT_NAME ".ini";
 
 	m_sMenuStatusText1.clear();
 
@@ -848,11 +848,18 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 
 			try
 			{
+				std::string sIniFileNameRBRTMRecentMaps = m_sRBRRootDir + "\\Plugins\\" VS_PROJECT_NAME "\\RBRTMRecentMaps.ini";
+				
+				CSimpleIni rbrtmRecentMapsINI;
+				rbrtmRecentMapsINI.LoadFile(sIniFileNameRBRTMRecentMaps.c_str());
+
 				// Read customized RBRTM Shakedown stages menu settings (recent maps)
 				m_recentMapsMaxCountRBRTM = min(pluginINIFile.GetLongValue(L"Default", L"RBRTM_RecentMapsMaxCount", 5), 500);
 
+				LogPrint("Notice. The list of recent driven RBRTM stages is no longer stored in Plugins\\NGPCarMenu.ini file. RBRTM_RecentMap1..N options are now stored in Plugins\\NGPCarMenu\\RBRTMRecentMaps.ini file");
+
 				for (int idx = m_recentMapsMaxCountRBRTM; idx > 0; idx--)
-					AddMapToRecentList(pluginINIFile.GetLongValue(L"Default", (std::wstring(L"RBRTM_RecentMap").append(std::to_wstring(idx)).c_str()), -1));
+					AddMapToRecentList(rbrtmRecentMapsINI.GetLongValue("Default", (std::string("RBRTM_RecentMap").append(std::to_string(idx)).c_str()), -1));
 
 				// Set "not modified" when the recent map was modifed because of reading the current INI file
 				m_bRecentMapsRBRTMModified = FALSE;
@@ -917,11 +924,17 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		{
 			try
 			{
+				std::string sIniFileNameRBRRXRecentMaps = m_sRBRRootDir + "\\Plugins\\" VS_PROJECT_NAME "\\RBRRXRecentMaps.ini";
+
+				CSimpleIni rbrrxRecentMapsINI;
+				//rbrrxRecentMapsINI.SetUnicode(TRUE);
+				rbrrxRecentMapsINI.LoadFile(sIniFileNameRBRRXRecentMaps.c_str());
+			
 				// Read customized RBRRX stages menu settings (recent maps)
 				m_recentMapsMaxCountRBRRX = min(pluginINIFile.GetLongValue(L"Default", L"RBRRX_RecentMapsMaxCount", 5), 500);
 
 				for (int idx = m_recentMapsMaxCountRBRRX; idx > 0; idx--)
-					AddMapToRecentList(_ToString(pluginINIFile.GetValue(L"Default", (std::wstring(L"RBRRX_RecentMap").append(std::to_wstring(idx)).c_str()), L"")));
+					AddMapToRecentList(std::string(rbrrxRecentMapsINI.GetValue("Default", (std::string("RBRRX_RecentMap").append(std::to_string(idx)).c_str()), "")));
 
 				// Set "not modified" when the recent map was modifed because of reading the current INI file
 				m_bRecentMapsRBRRXModified = FALSE;
@@ -935,7 +948,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 			this->m_screenshotPathMapRBRRX = pluginINIFile.GetValue(L"Default", L"RBRRX_MapScreenshotPath", L"");
 			_Trim(this->m_screenshotPathMapRBRRX);
 			if (this->m_screenshotPathMapRBRRX.empty())
-				this->m_screenshotPathMapRBRRX = L"Plugins\\NGPCarMenu\\preview\\maps\\BTB_%mapfolder%.png";  // Default value for this option
+				this->m_screenshotPathMapRBRRX = L"Plugins\\NGPCarMenu\\preview\\maps\\%mapfolder%.png";  // Default value for this option
 
 			if (this->m_screenshotPathMapRBRRX.length() >= 2 && this->m_screenshotPathMapRBRRX[0] != L'\\' && this->m_screenshotPathMapRBRRX[1] != L':')
 				this->m_screenshotPathMapRBRRX = this->m_sRBRRootDirW + L"\\" + this->m_screenshotPathMapRBRRX; // Path relative to the root of RBR app path
@@ -957,7 +970,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 			if (m_mapRBRRXPictureRect.top == 0 && m_mapRBRRXPictureRect.right == 0 && m_mapRBRRXPictureRect.left == 0 && m_mapRBRRXPictureRect.bottom == 0)
 			{
 				// Default rectangle area of RBRRX map preview picture if RBRRX_MapPictureRect is not set in INI file
-				RBRAPI_MapRBRPointToScreenPoint(430.0f, 320.0f, (int*)&m_mapRBRRXPictureRect.left, (int*)&m_mapRBRRXPictureRect.top);
+				RBRAPI_MapRBRPointToScreenPoint(390.0f, 320.0f, (int*)&m_mapRBRRXPictureRect.left, (int*)&m_mapRBRRXPictureRect.top);
 				RBRAPI_MapRBRPointToScreenPoint(630.0f, 470.0f, (int*)&m_mapRBRRXPictureRect.right, (int*)&m_mapRBRRXPictureRect.bottom);
 
 				LogPrint("RBRRX_MapPictureRect value is empty. Using the default value RBRRX_MapPictureRect=%d %d %d %d", m_mapRBRRXPictureRect.left, m_mapRBRRXPictureRect.top, m_mapRBRRXPictureRect.right, m_mapRBRRXPictureRect.bottom);
@@ -1008,8 +1021,28 @@ void CNGPCarMenu::SaveSettingsToPluginINIFile()
 		pluginINIFile.SetValue(L"Default", L"ScreenshotFileType", wsOptionValue.c_str());
 
 		pluginINIFile.SetValue(L"Default", L"RBRTM_Integration", std::to_wstring(this->m_iMenuRBRTMOption).c_str());
+		pluginINIFile.SetValue(L"Default", L"RBRRX_Integration", std::to_wstring(this->m_iMenuRBRRXOption).c_str());
 
-		// Save RBRTM shakedown recent maps entries
+		pluginINIFile.SaveFile(sIniFileName.c_str());
+	}
+	catch (...)
+	{
+		LogPrint("ERROR CNGPCarMenu.SaveSettingsToPluginINIFile. %s INI writing failed", sIniFileName.c_str());
+		m_sMenuStatusText1 = sIniFileName + " INI writing failed";
+	}
+}
+
+void CNGPCarMenu::SaveSettingsToRBRTMRecentMaps()
+{
+	// Save RBRTM shakedown recent maps entries
+	if (this->m_iMenuRBRTMOption > 0)
+	{
+		std::string sIniFileNameRBRTMRecentMaps = m_sRBRRootDir + "\\Plugins\\" VS_PROJECT_NAME "\\RBRTMRecentMaps.ini";
+
+		CSimpleIni rbrtmRecentMapsINI;
+		//rbrtmRecentMapsINI.SetUnicode(TRUE);
+		rbrtmRecentMapsINI.LoadFile(sIniFileNameRBRTMRecentMaps.c_str());
+
 		int idx = 0;
 		for (auto& item : m_recentMapsRBRTM)
 		{
@@ -1018,12 +1051,26 @@ void CNGPCarMenu::SaveSettingsToPluginINIFile()
 			if (item->mapID > 0)
 			{
 				idx++;
-				pluginINIFile.SetLongValue(L"Default", (std::wstring(L"RBRTM_RecentMap").append(std::to_wstring(idx)).c_str()), item->mapID);
+				rbrtmRecentMapsINI.SetLongValue("Default", (std::string("RBRTM_RecentMap").append(std::to_string(idx)).c_str()), item->mapID);
 			}
 		}
 
-		// Save RBRRX recent maps entries
-		idx = 0;
+		rbrtmRecentMapsINI.SaveFile(sIniFileNameRBRTMRecentMaps.c_str());
+	}
+}
+
+void CNGPCarMenu::SaveSettingsToRBRRXRecentMaps()
+{
+	// Save RBRRX recent maps entries
+	if (this->m_iMenuRBRRXOption > 0)
+	{
+		std::string sIniFileNameRBRRXRecentMaps = m_sRBRRootDir + "\\Plugins\\" VS_PROJECT_NAME "\\RBRRXRecentMaps.ini";
+
+		CSimpleIni rbrrxRecentMapsINI;
+		//rbrrxRecentMapsINI.SetUnicode(TRUE);
+		rbrrxRecentMapsINI.LoadFile(sIniFileNameRBRRXRecentMaps.c_str());
+
+		int idx = 0;
 		for (auto& item : m_recentMapsRBRRX)
 		{
 			if (idx >= m_recentMapsMaxCountRBRRX) break;
@@ -1031,16 +1078,11 @@ void CNGPCarMenu::SaveSettingsToPluginINIFile()
 			if (!item->folderName.empty())
 			{
 				idx++;
-				pluginINIFile.SetValue(L"Default", (std::wstring(L"RBRRX_RecentMap").append(std::to_wstring(idx)).c_str()), _ToWString(item->folderName).c_str());
+				rbrrxRecentMapsINI.SetValue("Default", (std::string("RBRRX_RecentMap").append(std::to_string(idx)).c_str()), item->folderName.c_str());
 			}
 		}
 
-		pluginINIFile.SaveFile(sIniFileName.c_str());
-	}
-	catch (...)
-	{
-		LogPrint("ERROR CNGPCarMenu.SaveSettingsToPluginINIFile. %s INI writing failed", sIniFileName.c_str());
-		m_sMenuStatusText1 = sIniFileName + " INI writing failed";
+		rbrrxRecentMapsINI.SaveFile(sIniFileNameRBRRXRecentMaps.c_str());
 	}
 }
 
@@ -1204,24 +1246,39 @@ int CNGPCarMenu::InitAllNewCustomPluginIntegrations()
 
 				if (m_iRBRRXPluginMenuIdx > 0)
 				{
+					HMODULE hModule = nullptr;
+
 					try
 					{
-						HMODULE hModule = ::LoadLibraryA((m_sRBRRootDir + "\\Plugins\\rbr_rx.dll").c_str());
-						if (hModule != nullptr)
+						if(::GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, /*(m_sRBRRootDir + "\\Plugins\\rbr_rx.dll").c_str()*/ "RBR_RX.DLL", &hModule))
 						{
+							// Get the RBR_RX base offset and check that the DLL was already loaded by RBR executable (don't accept the DLL if this LoadLibrary call was the first one)
 							m_pRBRRXPlugin = (PRBRRXPlugin)hModule;
-							FreeLibrary(hModule);
 
 							m_pOrigMapMenuItemsRBRRX = m_pRBRRXPlugin->pMenuItems;
 							m_origNumOfItemsMenuItemsRBRRX = m_pRBRRXPlugin->numOfItems;
+
+							// Make the red focus bar a bit wider and move all menus few chars to the left to make more room for longer BTB stage names
+							DWORD dwValue;
+							dwValue = 0x43C00000;
+							WriteOpCodeBuffer(&m_pRBRRXPlugin->menuFocusWidth, (const BYTE*)&dwValue, sizeof(DWORD));
+							dwValue = 0x41800000;
+							WriteOpCodeBuffer(&m_pRBRRXPlugin->menuPosX, (const BYTE*)&dwValue, sizeof(DWORD));
 						}
+						else
+							hModule = nullptr;
 					}
 					catch (...)
 					{
+						hModule = nullptr;
+					}					
+
+					if (hModule == nullptr)
+					{
 						m_pRBRRXPlugin = nullptr;
 						m_iRBRRXPluginMenuIdx = -1;
-						LogPrint("ERROR CNGPCarMenu.InitAllNewCustomPluginIntegrations. Failed to init RBR_RX plugin integration");
-					}					
+						LogPrint("ERROR. Failed to read the base address of RBR_RX plugin. For some reason RBR_RX.DLL library is unavailable");
+					}
 				}
 			}
 			else
@@ -3455,7 +3512,7 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 			{
 				m_bRecentMapsRBRTMModified = FALSE;
 				AddMapToRecentList(m_latestMapRBRTM.mapID);
-				if (m_bRecentMapsRBRTMModified) SaveSettingsToPluginINIFile();
+				if (m_bRecentMapsRBRTMModified) SaveSettingsToRBRTMRecentMaps();
 			}
 
 			m_bRecentMapsRBRTMModified = FALSE;
@@ -3467,7 +3524,7 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 			{
 				m_bRecentMapsRBRRXModified = FALSE;
 				AddMapToRecentList(m_latestMapRBRRX.folderName);
-				if (m_bRecentMapsRBRRXModified) SaveSettingsToPluginINIFile();
+				if (m_bRecentMapsRBRRXModified) SaveSettingsToRBRRXRecentMaps();
 			}
 
 			m_bRecentMapsRBRRXModified = FALSE;

@@ -513,6 +513,44 @@ bool _StringToRect(const std::wstring& s, RECT* outRect, const wchar_t separator
 	return (items.size() >= 4);
 }
 
+bool _StringToRect(const std::string& s, RECT* outRect, const char separatorChar)
+{
+	std::vector<std::string> items;
+
+	if (outRect == nullptr) return false;
+
+	try
+	{
+		std::string item;
+		std::stringstream wss(s);
+		while (std::getline(wss, item, separatorChar))
+		{
+			_Trim(item);
+			if (!item.empty())
+				items.push_back(item);
+		}
+
+		if (items.size() >= 1) outRect->left = std::stoi(items[0]);
+		else outRect->left = 0;
+
+		if (items.size() >= 2) outRect->top = std::stoi(items[1]);
+		else outRect->top = 0;
+
+		if (items.size() >= 3) outRect->right = std::stoi(items[2]);
+		else outRect->right = 0;
+
+		if (items.size() >= 4) outRect->bottom = std::stoi(items[3]);
+		else outRect->bottom = 0;
+	}
+	catch (...)
+	{
+		// String to int conversion failed. Check input string value.
+		return false;
+	}
+
+	return (items.size() >= 4);
+}
+
 //
 // Split "12 14" string as POINT x y values
 //
@@ -534,6 +572,38 @@ bool _StringToPoint(const std::wstring& s, POINT* outPoint, const wchar_t separa
 		}
 
 		if (items.size() >= 1) outPoint->x= std::stoi(items[0]);
+		else outPoint->x = 0;
+
+		if (items.size() >= 2) outPoint->y = std::stoi(items[1]);
+		else outPoint->y = 0;
+	}
+	catch (...)
+	{
+		// String to int conversion failed. Check input string value.
+		return false;
+	}
+
+	return (items.size() >= 2);
+}
+
+bool _StringToPoint(const std::string& s, POINT* outPoint, const char separatorChar)
+{
+	std::vector<std::string> items;
+
+	if (outPoint == nullptr) return false;
+
+	try
+	{
+		std::string item;
+		std::stringstream wss(s);
+		while (std::getline(wss, item, separatorChar))
+		{
+			_Trim(item);
+			if (!item.empty())
+				items.push_back(item);
+		}
+
+		if (items.size() >= 1) outPoint->x = std::stoi(items[0]);
 		else outPoint->x = 0;
 
 		if (items.size() >= 2) outPoint->y = std::stoi(items[1]);

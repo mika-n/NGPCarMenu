@@ -209,15 +209,19 @@ typedef struct {
 } RBRRXMenuData;
 typedef RBRRXMenuData* PRBRRXMenuData;
 
-// Offset rbr_rx base
+// Offset rbr_rx.dll base addr
 typedef struct {
 #pragma pack(push,1)
-	BYTE pad1[0x608E4];			// 0x00	
+	BYTE pad1[0x52588];			// 0x00	
+	__int32 menuFocusWidth;		// 0x52588  (width of the red focus line in RBRRX menus)
+	BYTE pad2[0x52590 - 0x52588  - sizeof(__int32)];
+	__int32 menuPosX;			// 0x52590	(X pos of RBRRX menus)
+	BYTE pad3[0x608E4 - 0x52590 - sizeof(__int32)];
 	PRBRRXMenuItem pMenuItems;	// 0x608E4
 	__int32 numOfItems;			// 0x608E8
-	BYTE pad2[0x60918- 0x608E8 - sizeof(__int32)];
+	BYTE pad4[0x60918- 0x608E8 - sizeof(__int32)];
 	__int32 menuID;				// 0x60918			0=main, 1=stages, 2=replay
-	BYTE pad3[0x665F4 - 0x60918- sizeof(__int32)];
+	BYTE pad5[0x665F4 - 0x60918- sizeof(__int32)];
 	PRBRRXMenuData pMenuData;	// 0x665F4 
 #pragma pack(pop)
 } RBRRXPlugin;
@@ -464,7 +468,8 @@ public:
 
 	void RefreshSettingsFromPluginINIFile(bool addMissingSections = false);
 	void SaveSettingsToPluginINIFile();
-
+	void SaveSettingsToRBRTMRecentMaps();
+	void SaveSettingsToRBRRXRecentMaps();
 
 	int FindRBRTMMenuItemIdxByMapID(PRBRTMMenuData pMenuData, int mapID)
 	{
