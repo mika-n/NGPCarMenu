@@ -126,7 +126,8 @@ Also, some Windows OS setups limit writing new files under c:\program files\ or 
 
 ## BTB track authors and new metadata fields in a BTB map specific track.ini file (used by RBR_RX and NGPCarMenu plugins)
 
-NGPCarMenu plugin supports custom metadata tags in track.ini file. If these are set then NGPCarMenu plugin can show this information in RBR_RX stages menu list while people browse through their track collections. By default RBR_RX plugin has supported only name and physics metadata tags, but now following metadata fields are supported (no need to try to embed all information into name attribute and this way making the BTB menu ). Hopefully BTB track authors would add these tags to new maps and track.ini files. This way they will also get more well deserved visibility within the RBR game while people browse through a list of BTB tracks:
+NGPCarMenu plugin supports custom metadata tags in track.ini file. If these are set then NGPCarMenu plugin can show this information in RBR_RX stages menu list while people browse through their track collections. By default RBR_RX plugin has supported only name and physics metadata tags, but now following metadata fields are supported (no need to try to embed all information into name attribute and this way making the BTB menu ). Hopefully BTB track authors would add these tags to new maps and track.ini files. This way they will also get more well deserved visibility within the RBR game while people browse through a list of BTB tracks.
+
 Sample of RX_Content\tracks\myBTBMap\track.ini file:
   - [INFO]
   - name=Rally Universium 2020
@@ -137,7 +138,7 @@ Sample of RX_Content\tracks\myBTBMap\track.ini file:
   - date=2020-10-30
   - splashscreen=rallyUni2020.jpg
 
-If the length attribute is missing then NGPCarMenu plugin takes the length from BTB track model data when the map is loaded for the first time. If this value is invalid (<1km) then NGPCarMenu tries to estimate the stage length from start-finish markers in BTB pacenotes data. The value is stored in track.ini file automagically for later use.
+If the length attribute is missing then NGPCarMenu plugin takes the length from BTB track model data when the map is loaded for the first time. If this value is invalid (<1km) then NGPCarMenu tries to estimate the stage length from start-finish markers in BTB pacenotes data. The value is stored in track.ini file automatically for later use if the option was not there already.
 
 ## Additional links
 - Next Generation Physics RBR plugin, NGP. (author: WorkerBee). [NGP Home page](http://www.ly-racing.de/viewtopic.php?t=7878)
