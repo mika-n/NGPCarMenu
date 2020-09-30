@@ -9,7 +9,7 @@ The original "Select Car" menu within the RBR game has various problems:
 - The car menu name shows the original car name even when RBR would use custom cars published by WorkerBee (NGP models) or other custom 3D car models. 
 - The menu and model name has room for only short car model names (number of characters).
 - RBRTM car selection doesn't show NGP car information and car preview images. RBRTM stage selection doesn't show a map preview image and if there is a long list of stages then it takes several key presses to drive again the same stage.
-- RBR_RX stage selection list doesn't scroll if there are more than 20 BTB stages and the menu doesn't show a map preview image.
+- RBR_RX stage selection menu list doesn't scroll if there are more than 20 BTB stages and the menu doesn't show a map preview image.
 
 This **NGPCarMenu RBR plugin solves these problems** by doing following enhancements to the built-in "Select Car" menu:
 - Shows a custom car preview image using the actual 3D model of custom car models.
@@ -23,15 +23,14 @@ This **NGPCarMenu RBR plugin solves these problems** by doing following enhancem
 - RBRTM improvement 2: Shows the map information and a preview image in Shakedown menu while browsing through list of stages (supports custom user supplied PNG images also).
 - RBRTM improvement 3: Shows Nth recently driven stages as a shortcut menu entries on top of the Shakedown stage list (easier and faster to choose favourite stages to drive again when no need to browse through the long list of stages).
 - RBRTM improvement 4: Remembers the focused stage menu line even after visiting the RBRTM main menu (without NGPCarMenu plugin RBRTM would always reset back to the first menu line after visiting RBRTM main menu).
-- RBRRX improvement 1: Shows the car information and a car preview image in RBR_RX car selection menu.
-- RBRRX improvement 2: Shows a preview image in menu while browsing through list of BTB tracks (stages, custom user supplied PNG images).
-- RBRRX improvement 3: Shows Nth recently driven stages as a shortcut menu entries on top of the RBR_RX stage list.
-- RBRRX improvement 4: Remembers the focused stage menu line even after visiting the RBR main menu (without NGPCarMenu plugin RBR_RX would sometimes reset back to the first menu line).
+- RBRRX improvement 1: Scrollable BTB (RBR_RX) stage menu list (pageUp/pageDown/home/end/arrow keys navigation).
+- RBRRX improvement 2: Shows the car information and a car preview image in RBR_RX car selection menu.
+- RBRRX improvement 3: Shows the stage information (length, surface, author, version, date if set in BTB specific track.ini file) and a map preview image in BTB stages menu list (RBRRX_MapScreenShot path image if set, otherwise shows the image set in track.ini splashscreen option).
+- RBRRX improvement 4: Shows Nth recently driven stages as a shortcut menu entries on top of the RBR_RX stage list.
+- RBRRX improvement 5: Remembers the focused stage menu line even after visiting the RBR main menu (without NGPCarMenu plugin RBR_RX would sometimes reset back to the first menu line).
 
 The plugin supports **RBRTM Czech Tournament** plugin (V0.88) integration. Use NGPCarMenu in-game menu or INI file to enable/disable this integration.
 The plugin supports **RBR_RX** plugin (RBR_RX.dll with 417792 bytes, the file doesn't have version tag) integration. Use NGPCarMenu in-game menu or INI file to enable/disable this integration.
-
-Note! NGPCarMenu supports only the latest RichardBurnsRally_SSE.exe v1.02 version for Windows OS (haven't tested this under Wine/Linux, but the plugin probably works there also).
 
 ![](misc/NGPCarMenu_SelectCarMenu.png)
 ![](misc/NGPCarMenu_RBRTMMenu.png)
@@ -125,6 +124,21 @@ rbr\Plugins\NGPCarMenu.ini options (see the NGPCarMenu.ini.sample file for more 
 *One potential problem issue in WinOS FileExplorer integrated ZIP tool is that in some PC setups the extract DLL plugin file may be blocked* because the file was downloaded from Internet (GitHub). To solve this issue select properties of plugins\NGPCarMenu.dll file in FileExplorer (right mouse button) and tick "Unblock" option. Another solution is to use WinRAR or 7-Zip tools to extract the ZIP file.
 Also, some Windows OS setups limit writing new files under c:\program files\ or c:\program files (x86)\ folders. If creation of new car preview PNG image file fails then change the default ScreenshotPath option value or copy the whole RBR game to, for example, c:\apps\rbr\ folder. 
 
+## BTB track authors and new metadata fields in a BTB map specific track.ini file (used by RBR_RX and NGPCarMenu plugins)
+
+NGPCarMenu plugin supports custom metadata tags in track.ini file. If these are set then NGPCarMenu plugin can show this information in RBR_RX stages menu list while people browse through their track collections. By default RBR_RX plugin has supported only name and physics metadata tags, but now following metadata fields are supported (no need to try to embed all information into name attribute and this way making the BTB menu ). Hopefully BTB track authors would add these tags to new maps and track.ini files. This way they will also get more well deserved visibility within the RBR game while people browse through a list of BTB tracks:
+  Sample of RX_Content\tracks\myBTBMap\track.ini
+   [INFO]
+   name=Rally Universium 2020
+   physics=gravel
+   length=5.6
+   author=(c) Mat Mapper & Lisa Slider
+   version=1.0.1
+   date=2020-10-30
+   splashscreen=rallyUni2020.jpg
+
+If the length attribute is missing then NGPCarMenu plugin takes the length from BTB track model data when the map is loaded for the first time. If this value is invalid (<1km) then NGPCarMenu tries to estimate the stage length from start-finish markers in BTB pacenotes data. The value is stored in track.ini file automagically for later use.
+
 ## Additional links
 - Next Generation Physics RBR plugin, NGP. (author: WorkerBee). [NGP Home page](http://www.ly-racing.de/viewtopic.php?t=7878)
 - FixUp RBR plugin. (author: WorkerBee). [FixUp Home page](http://www.ly-racing.de/viewtopic.php?t=7878)
@@ -136,14 +150,13 @@ Also, some Windows OS setups limit writing new files under c:\program files\ or 
 - RBR Car Installation Tool, RBRCIT. (author: Zissakos). [RBRCIT Home page](https://github.com/zissakos/RBRCIT)
 - EasyRBR car and track manager tool. (author: Plankgas/PTD). [EasyRBR Home page](https://www.ptd-3d.com/easyrbr/)
 
-This plugin has been tested by NGPCarMenu author with these magnificent RBR plugins/tools and the plugin works great with those. In fact, this plugin should be compatible with any plugin because the plugin doesn't change how the RBR game handles racing and the actual car models.
-
 The customized "Select Car" menu works also with RBR_RX plugin and NGPCarMenu shows a scrolling stage menu list in RBR_RX "Tracks" menu list:
 - RBR_RX plugin and BTB tracks. (author: black f./jharron). 
   - ["Speedy Cereals" (Vauhtimurot in Finnish) info page for RX plugin and BTB tracks](https://vauhtimurot.blogspot.com/p/installing-btb-stages.html)
   - ["Another info page about RBR_RX"](https://www.racedepartment.com/threads/virtualmotorsports-rally-finland-rx-track-archive.35080/) 
-  - These are not "The official" home pages of RX plugin, but probably the best places for RBR_RX information.
- 
+  - These are not "The official" home pages of RX plugin, but still probably the best places for RBR_RX information.
 
+This plugin has been tested by NGPCarMenu author with these magnificent RBR plugins/tools and the plugin works great with these other plugins. In fact, this plugin should be compatible with any plugin because the plugin doesn't change how the RBR game handles racing and the actual car models.
+ 
 NGPCarMenu. Copyright (c) 2020 by MIKA-N. All rights reserved. See LicenseText.txt file for more information (don't worry, this is published free of charge but use at your own risk). 
 https://github.com/mika-n/NGPCarMenu

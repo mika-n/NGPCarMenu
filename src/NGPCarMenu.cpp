@@ -413,6 +413,7 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_numOfItemsCustomMapMenuRBRRX = 0;
 	m_currentCustomMapSelectedItemIdxRBRRX = 0;
 	m_prevCustomMapSelectedItemIdxRBRRX = 0;
+	//m_prevKeyCodeRBRRX = 0;
 
 	m_iCarMenuNameLen = 0;
 	
@@ -2179,6 +2180,215 @@ bool CNGPCarMenu::ReadCarPreviewImageFromFile(int selectedCarIdx, float x, float
 
 
 //------------------------------------------------------------------------------------------------
+// Focus Nth RBRRX menu row (scroll the menu if necessary, ie. change the first visible stage entry in the menu list)
+//
+void CNGPCarMenu::FocusRBRRXNthMenuIdxRow(int menuIdx)
+{
+	//if (m_currentCustomMapSelectedItemIdxRBRRX == menuIdx)
+	//	return;
+	m_latestMapRBRRX.mapIDMenuIdx = -1;
+
+	if (menuIdx <= 0)
+	{
+		// Activate the first row
+		m_pRBRRXPlugin->pMenuData->selectedItemIdx = m_prevCustomMapSelectedItemIdxRBRRX = m_currentCustomMapSelectedItemIdxRBRRX = 0;
+		m_pRBRRXPlugin->pMenuItems = &m_pCustomMapMenuRBRRX[0];
+	}
+	else
+	{
+		if (menuIdx >= m_numOfItemsCustomMapMenuRBRRX)
+			// Activate the last row
+			menuIdx = m_numOfItemsCustomMapMenuRBRRX-1;
+
+		// Activate Nth row
+		m_currentCustomMapSelectedItemIdxRBRRX = menuIdx;
+
+		if (m_currentCustomMapSelectedItemIdxRBRRX <= 8 || m_numOfItemsCustomMapMenuRBRRX <= (8 + 1 + 8))
+		{
+			// The new menuIdx row is the <=8 first rows or total num of BTB tracks is <=8+1+8, so no need to do any scrolling. Jump straight to the new menuIdx row and top menu row is the first stage
+			m_pRBRRXPlugin->pMenuData->selectedItemIdx = m_currentCustomMapSelectedItemIdxRBRRX;
+			m_pRBRRXPlugin->pMenuItems = &m_pCustomMapMenuRBRRX[0];
+		}
+		else if (m_numOfItemsCustomMapMenuRBRRX - m_currentCustomMapSelectedItemIdxRBRRX <= 8)
+		{
+			// The new menuIdx row is leq 8 rows from the end of the menu list, so move the focus line and show 8+1+8 last stages on the menu list
+			m_pRBRRXPlugin->pMenuData->selectedItemIdx = (8 + 1 + 8) - (m_numOfItemsCustomMapMenuRBRRX - m_currentCustomMapSelectedItemIdxRBRRX);
+			m_pRBRRXPlugin->pMenuItems = &m_pCustomMapMenuRBRRX[m_numOfItemsCustomMapMenuRBRRX - (8 + 1 + 8)];
+		}
+		else
+		{
+			// The new menuIdx row is "in the middle of the stage list", so focus the middle row and show the sliding window of stages on the menu list (8+1+8 rows visible at any time)
+			m_pRBRRXPlugin->pMenuData->selectedItemIdx = 8;
+			m_pRBRRXPlugin->pMenuItems = &m_pCustomMapMenuRBRRX[m_currentCustomMapSelectedItemIdxRBRRX - 8];
+		}
+
+		m_prevCustomMapSelectedItemIdxRBRRX = m_pRBRRXPlugin->pMenuData->selectedItemIdx;
+	}
+}
+
+
+//------------------------------------------------------------------------------------------------
+// Update RBRRX_MapInfo struct data up-to-date based on menuIdx or rbr track folderName
+//
+void CNGPCarMenu::UpdateRBRRXMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo)
+{
+	if (pRBRRXMapInfo == nullptr) 
+		return;
+
+	if (menuIdx < 0 || menuIdx >= m_numOfItemsCustomMapMenuRBRRX)
+	{
+		pRBRRXMapInfo->mapIDMenuIdx = -1;
+		pRBRRXMapInfo->folderName.clear();
+		return;
+	}
+
+	pRBRRXMapInfo->mapIDMenuIdx = menuIdx;
+	pRBRRXMapInfo->folderName = m_pCustomMapMenuRBRRX[menuIdx].szTrackFolder;
+	_ToLowerCase(pRBRRXMapInfo->folderName);
+
+	pRBRRXMapInfo->name = m_pCustomMapMenuRBRRX[menuIdx].szTrackName;
+	if (menuIdx < min((int)m_recentMapsRBRRX.size(), m_recentMapsMaxCountRBRRX))
+	{
+		// Shortcut menu name. Remove the "[N] " leading tag because it is not part of the stage name
+		size_t iPos = pRBRRXMapInfo->name.find_first_of(']');
+		if (iPos != std::string::npos && iPos <= 5)
+			pRBRRXMapInfo->name = (pRBRRXMapInfo->name.length() > iPos + 2 ? pRBRRXMapInfo->name.substr(iPos + 2) : "");
+	}
+	
+	try
+	{
+		std::string sBtbTrackFolderPath = m_sRBRRootDir + "\\RX_CONTENT\\" + pRBRRXMapInfo->folderName;
+
+		CSimpleIni btbPacenotesINIFile;
+		btbPacenotesINIFile.LoadFile((sBtbTrackFolderPath + "\\pacenotes.ini").c_str());
+		pRBRRXMapInfo->numOfPacenotes = btbPacenotesINIFile.GetLongValue("PACENOTES", "count", 0);
+		btbPacenotesINIFile.Reset();
+
+		CSimpleIni btbTrackINIFile;
+		//btbTrackINIFile.SetUnicode(true);
+		btbTrackINIFile.LoadFile((sBtbTrackFolderPath + "\\track.ini").c_str());
+		pRBRRXMapInfo->surface = _ToWString(btbTrackINIFile.GetValue("INFO", "physics", ""));
+		pRBRRXMapInfo->author  = btbTrackINIFile.GetValue("INFO", "author", "");
+		pRBRRXMapInfo->version = btbTrackINIFile.GetValue("INFO", "version", "");
+		pRBRRXMapInfo->date    = btbTrackINIFile.GetValue("INFO", "date", "");
+		pRBRRXMapInfo->length  = btbTrackINIFile.GetDoubleValue("INFO", "length", -1);		
+
+		// Skip map image initializations if the map preview img feature is disabled (RBRRX_MapPictureRect=0)
+		if (m_mapRBRRXPictureRect.bottom != -1)
+		{
+			std::wstring sTrackName = _ToWString(pRBRRXMapInfo->name);
+
+			// Use custom map image path at first (set in RBRRX_MapScreenshotPath ini option). If the option or file is missing then take the stage preview image name from rx_content\tracks\mapName\track.ini file
+			pRBRRXMapInfo->previewImageFile = ReplacePathVariables(m_screenshotPathMapRBRRX, -1, FALSE, -1, sTrackName.c_str(), pRBRRXMapInfo->folderName);
+			if (pRBRRXMapInfo->previewImageFile.empty() || !fs::exists(pRBRRXMapInfo->previewImageFile))
+			{
+				// Custom image missing. Try to use the splash screen supplied by the author. If missing but trackFolder has some jpg or png files then use the first file as splashScreen
+				const char* szSplashScreen = btbTrackINIFile.GetValue("INFO", "splashscreen", nullptr);
+
+				if(szSplashScreen != nullptr)
+				{ 
+					pRBRRXMapInfo->previewImageFile = _ToWString(szSplashScreen);
+					if (!pRBRRXMapInfo->previewImageFile.empty())
+						pRBRRXMapInfo->previewImageFile = _ToWString(sBtbTrackFolderPath) + L"\\" + pRBRRXMapInfo->previewImageFile;
+				}
+				else
+				{
+					pRBRRXMapInfo->previewImageFile.clear();
+
+					// SlashScreen option missing. If the trackFolder has an image file then use it and add it as default splashScreen value into the INI file for later use
+					for (auto& dit : fs::directory_iterator(sBtbTrackFolderPath))
+					{
+						if (_iEqual(dit.path().extension().string(), ".jpg", true))
+						{
+							pRBRRXMapInfo->previewImageFile = dit.path().filename();		
+							break;
+						}
+					}
+
+					btbTrackINIFile.SetValue("INFO", "splashscreen", _ToString(pRBRRXMapInfo->previewImageFile).c_str());
+					btbTrackINIFile.SaveFile((sBtbTrackFolderPath + "\\track.ini").c_str());
+				}
+			}
+
+			if (g_iLogMsgCount < 26)
+				//LogPrint(L"Custom preview image file %s for a RBRRX map %s", m_latestMapRBRRX.previewImageFile.c_str(), _ToWString(m_latestMapRBRRX.name).c_str());
+				LogPrint(L"Custom preview image file %s for a RBRRX map %s", pRBRRXMapInfo->previewImageFile.c_str(), sTrackName.c_str());
+		}
+	}
+	catch (...)
+	{
+		pRBRRXMapInfo->Clear();
+	}
+}
+
+
+//------------------------------------------------------------------------------------------------
+// Update rbrrx track.ini length= option value
+//
+double CNGPCarMenu::UpdateRBRRXINILengthOption(const std::string& folderName, double newLengthKm)
+{
+	std::string sIniFileName;
+
+	if (folderName.empty())
+		return newLengthKm;
+
+	try
+	{
+		if (newLengthKm < 0)
+		{
+			// Use pacenotes.ini file to estimate the length because RBR data structure doesn't define it or track.ini length option.
+			// Calculate type22 (finish line) - type21 (start line) difference to estimate the stage length
+			char szKeyName[12];
+			int iPacenotesIdx;
+			int iPacenoteType;
+			double startDistance = -1;
+			double finishDistance = -1;
+
+			CSimpleIni btbPaceotesINIFile;
+			sIniFileName = m_sRBRRootDir + "\\RX_CONTENT\\" + folderName + "\\pacenotes.ini";
+			btbPaceotesINIFile.LoadFile(sIniFileName.c_str());
+			iPacenotesIdx = min(btbPaceotesINIFile.GetLongValue("PACENOTES", "count", 0) - 1, 1000000);
+			
+			for (; iPacenotesIdx >= 0; iPacenotesIdx--)
+			{
+				snprintf(szKeyName, sizeof(szKeyName), "P%d", iPacenotesIdx);
+				iPacenoteType = btbPaceotesINIFile.GetLongValue(szKeyName, "type", -1);
+
+				if (iPacenoteType == 21 && startDistance < 0)
+				{
+					startDistance = btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0);
+					if (startDistance >= 0 && finishDistance >= 0) break;
+				}
+				else if (iPacenoteType == 22 && finishDistance < 0)
+				{
+					finishDistance = btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0);
+					if (startDistance >= 0 && finishDistance >= 0) break;
+				}
+			}
+
+			newLengthKm = (finishDistance - startDistance) / 1000.0f;
+			if (newLengthKm <= 0) newLengthKm = 1.0;
+		}
+
+		CSimpleIni btbTrackINIFile;
+		std::stringstream sLengthStr;
+		sLengthStr << std::setprecision(1) << std::fixed << newLengthKm;
+
+		sIniFileName = m_sRBRRootDir + "\\RX_CONTENT\\" + folderName + "\\track.ini";
+		btbTrackINIFile.LoadFile(sIniFileName.c_str());
+		btbTrackINIFile.SetValue("INFO", "length", sLengthStr.str().c_str());
+		btbTrackINIFile.SaveFile(sIniFileName.c_str());
+	}
+	catch (...)
+	{
+		// Do nothing
+	}
+
+	return newLengthKm;
+}
+
+
+//------------------------------------------------------------------------------------------------
 //
 const char* CNGPCarMenu::GetName(void)
 {
@@ -3199,6 +3409,8 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 					}
 				}
 			}
+
+
 			else if (m_bRBRRXPluginActive && g_pRBRPluginMenuSystem->customPluginMenuObj == g_pRBRMenuSystem->currentMenuObj)
 			{
 				//
@@ -3231,7 +3443,6 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 				else if (m_pRBRRXPlugin->menuID == 1 && m_pRBRRXPlugin->pMenuData->selectedItemIdx >= 0 && m_pRBRRXPlugin->pMenuData->selectedItemIdx < m_pRBRRXPlugin->numOfItems)
 				{
 					// RBRRX tracks menu 
-
 					if (m_pCustomMapMenuRBRRX == nullptr)
 					{
 						int numOfRecentMaps = CalculateNumOfValidMapsInRecentList(m_pOrigMapMenuItemsRBRRX, m_origNumOfItemsMenuItemsRBRRX);
@@ -3270,46 +3481,13 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 
 							// If the latest menuIdx is set then check the array by index access before trying to search through all menu items
 							if (m_latestMapRBRRX.mapIDMenuIdx >= 0 && m_latestMapRBRRX.mapIDMenuIdx < m_numOfItemsCustomMapMenuRBRRX
-								&& _iEqual(m_pCustomMapMenuRBRRX[m_latestMapRBRRX.mapIDMenuIdx].szTrackFolder, m_latestMapRBRRX.folderName, true) )
-							{
+								&& _iEqual(m_pCustomMapMenuRBRRX[m_latestMapRBRRX.mapIDMenuIdx].szTrackFolder, m_latestMapRBRRX.folderName, true) 
+							)
 								menuIdx = m_latestMapRBRRX.mapIDMenuIdx;
-							}
 							else
-							{
 								menuIdx = FindRBRRXMenuItemIdxByFolderName(m_pCustomMapMenuRBRRX, m_numOfItemsCustomMapMenuRBRRX, m_latestMapRBRRX.folderName);
-							}
 
-							if (menuIdx <= 0 || menuIdx >= m_numOfItemsCustomMapMenuRBRRX)
-							{
-								// Activate the first row
-								m_pRBRRXPlugin->pMenuData->selectedItemIdx = m_prevCustomMapSelectedItemIdxRBRRX = m_currentCustomMapSelectedItemIdxRBRRX = 0;
-								m_pRBRRXPlugin->pMenuItems = &m_pCustomMapMenuRBRRX[0];
-								m_latestMapRBRRX.mapIDMenuIdx = -1;
-							}
-							else
-							{
-								// Activate Nth row
-								m_currentCustomMapSelectedItemIdxRBRRX = menuIdx;
-								m_latestMapRBRRX.mapIDMenuIdx = -1;
-
-								if (m_currentCustomMapSelectedItemIdxRBRRX <= 8 || m_numOfItemsCustomMapMenuRBRRX <= (8+1+8) )
-								{
-									m_pRBRRXPlugin->pMenuData->selectedItemIdx = m_currentCustomMapSelectedItemIdxRBRRX;
-									m_pRBRRXPlugin->pMenuItems = &m_pCustomMapMenuRBRRX[0];
-								}
-								else if (m_numOfItemsCustomMapMenuRBRRX - m_currentCustomMapSelectedItemIdxRBRRX <= 8)
-								{
-									m_pRBRRXPlugin->pMenuData->selectedItemIdx = (8+1+8) - (m_numOfItemsCustomMapMenuRBRRX - m_currentCustomMapSelectedItemIdxRBRRX);
-									m_pRBRRXPlugin->pMenuItems = &m_pCustomMapMenuRBRRX[m_numOfItemsCustomMapMenuRBRRX - (8+1+8)];
-								}
-								else
-								{
-									m_pRBRRXPlugin->pMenuData->selectedItemIdx = 8;
-									m_pRBRRXPlugin->pMenuItems = &m_pCustomMapMenuRBRRX[m_currentCustomMapSelectedItemIdxRBRRX-8];
-								}
-
-								m_prevCustomMapSelectedItemIdxRBRRX = m_pRBRRXPlugin->pMenuData->selectedItemIdx;
-							}
+							FocusRBRRXNthMenuIdxRow(menuIdx);
 						}
 
 						// Stages menu is open, save recentMaps INI options when a stage is chosen for racing and the recent list is modified
@@ -3318,136 +3496,87 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 
 					if (m_pCustomMapMenuRBRRX != nullptr)
 					{
+						// Check normal RBR menu navigation (key up or down) and scroll the menu list if necessary
 						if (m_prevCustomMapSelectedItemIdxRBRRX != m_pRBRRXPlugin->pMenuData->selectedItemIdx)
 						{
-							if (m_prevCustomMapSelectedItemIdxRBRRX == 0 && m_pRBRRXPlugin->pMenuData->selectedItemIdx+1 == min(m_numOfItemsCustomMapMenuRBRRX, 17))
+							if (m_prevCustomMapSelectedItemIdxRBRRX == 0 && m_pRBRRXPlugin->pMenuData->selectedItemIdx + 1 == min(m_numOfItemsCustomMapMenuRBRRX, 8+1+8))
 								// Wrap to the last menu item
-								m_currentCustomMapSelectedItemIdxRBRRX = m_numOfItemsCustomMapMenuRBRRX - 1;
-							else if (m_prevCustomMapSelectedItemIdxRBRRX+1 == min(m_numOfItemsCustomMapMenuRBRRX, 17) && m_pRBRRXPlugin->pMenuData->selectedItemIdx == 0)
+								FocusRBRRXNthMenuIdxRow(m_numOfItemsCustomMapMenuRBRRX - 1);
+							else if (m_prevCustomMapSelectedItemIdxRBRRX + 1 == min(m_numOfItemsCustomMapMenuRBRRX, 8+1+8) && m_pRBRRXPlugin->pMenuData->selectedItemIdx == 0)
 								// Wrap to the first menu item 
-								m_currentCustomMapSelectedItemIdxRBRRX = 0;
+								FocusRBRRXNthMenuIdxRow(0);
 							else if (m_prevCustomMapSelectedItemIdxRBRRX < m_pRBRRXPlugin->pMenuData->selectedItemIdx)
-							{
-								// Next row
-								m_currentCustomMapSelectedItemIdxRBRRX++;
-
-								if (m_pRBRRXPlugin->pMenuData->selectedItemIdx == 9 && (m_numOfItemsCustomMapMenuRBRRX - m_currentCustomMapSelectedItemIdxRBRRX > 8))
-									// Scroll down because there are more than 8 stages below the focus line
-									m_pRBRRXPlugin->pMenuData->selectedItemIdx = 8;
-							}
+								FocusRBRRXNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX + 1); // Next row (scroll if necessary)
 							else if (m_prevCustomMapSelectedItemIdxRBRRX > m_pRBRRXPlugin->pMenuData->selectedItemIdx)
+								FocusRBRRXNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX - 1); // Prev row (scroll if necessary)
+						}
+						else
+						{
+							// Check custom pgup/pgdown/home/end navigation keys
+							if (m_pRBRRXPlugin->keyCode != -1)
 							{
-								// Prev row
-								m_currentCustomMapSelectedItemIdxRBRRX--;
+								switch (m_pRBRRXPlugin->keyCode)
+								{
+									case VK_PRIOR: FocusRBRRXNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX - (8+1+8)); break;	// PageUp key (move 8+1+8 rows up)
+									case VK_NEXT:  FocusRBRRXNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX + (8+1+8)); break;	// PageDown key (move 8+1+8 rows down)
+									case VK_END:   FocusRBRRXNthMenuIdxRow(m_numOfItemsCustomMapMenuRBRRX - 1); break;	// End key
+									case VK_HOME:  FocusRBRRXNthMenuIdxRow(0); break;									// Home key
+									case VK_LEFT:  FocusRBRRXNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX - 8); break;	// Left arrow key (move 8 rows up)
+									case VK_RIGHT: FocusRBRRXNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX + 8); break;	// Right arrow key (move 8 rows down)
+								}
 
-								if (m_pRBRRXPlugin->pMenuData->selectedItemIdx == 7 && (m_currentCustomMapSelectedItemIdxRBRRX >= 8))
-									// Scroll up because there are more than 8 stages above the focus line
-									m_pRBRRXPlugin->pMenuData->selectedItemIdx = 8;
+								// Don't repeat the same key until the key is released and re-pressed
+								m_pRBRRXPlugin->keyCode = -1;
 							}
-
-							m_prevCustomMapSelectedItemIdxRBRRX = m_pRBRRXPlugin->pMenuData->selectedItemIdx;
-
-							int iTopMenuRowIdx = max(m_currentCustomMapSelectedItemIdxRBRRX - m_pRBRRXPlugin->pMenuData->selectedItemIdx, 0);
-							m_pRBRRXPlugin->pMenuItems = &m_pCustomMapMenuRBRRX[iTopMenuRowIdx];
-
-							//m_latestMapRBRRX.mapIDMenuIdx = m_currentCustomMapSelectedItemIdxRBRRX;
-							//m_latestMapRBRRX.folderName = m_pCustomMapMenuRBRRX[m_currentCustomMapSelectedItemIdxRBRRX].szTrackFolder;
-							//_ToLowerCase(m_latestMapRBRRX.folderName);
 						}
+
+						// If the current menu row is different than the latest menu row then load new details (stage name, length, surface, previewImage)
+						if (m_latestMapRBRRX.mapIDMenuIdx != m_currentCustomMapSelectedItemIdxRBRRX)
+						{
+							UpdateRBRRXMapInfo(m_currentCustomMapSelectedItemIdxRBRRX, &m_latestMapRBRRX);
+
+							// Release previous map preview texture and read a new image file (if preview path is set and the image file exists and map preview img drawing is not disabled)
+							SAFE_RELEASE(m_latestMapRBRRX.imageTexture.pTexture);
+							if (!m_latestMapRBRRX.previewImageFile.empty() && fs::exists(m_latestMapRBRRX.previewImageFile) && m_mapRBRRXPictureRect.bottom != -1)
+							{
+								hResult = D3D9CreateRectangleVertexTexBufferFromFile(g_pRBRIDirect3DDevice9,
+									m_latestMapRBRRX.previewImageFile,
+									(float)m_mapRBRRXPictureRect.left, (float)m_mapRBRRXPictureRect.top, (float)(m_mapRBRRXPictureRect.right - m_mapRBRRXPictureRect.left), (float)(m_mapRBRRXPictureRect.bottom - m_mapRBRRXPictureRect.top),
+									&m_latestMapRBRRX.imageTexture,
+									0  /*IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_BOTTOM | IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER*/);
+
+								// Image not available or loading failed
+								if (!SUCCEEDED(hResult))
+									SAFE_RELEASE(m_latestMapRBRRX.imageTexture.pTexture);
+							}
+						}	
 					}
 
+					// Show details of the current stage (name, length, surface, previewImage, author, version, date)
+					// TODO: Personal track records per track per car
+					iFontHeight = g_pFontCarSpecCustom->GetTextHeight();
 
-					// If the the map row is different than the latest map row then load new details (stage name, length, surface, previewImage)
-					if (m_latestMapRBRRX.mapIDMenuIdx != m_currentCustomMapSelectedItemIdxRBRRX)
-					{
-						//CSimpleIniW btbTrackINIFile;
+					int iMapInfoPrintRow = 0;
+					//posX = m_mapRBRRXPictureRect.left;
+					//posY = m_mapRBRRXPictureRect.top - (4 * iFontHeight);
+					RBRAPI_MapRBRPointToScreenPoint(390.0f, 40.0f, &posX, &posY);
 
-						m_latestMapRBRRX.mapIDMenuIdx = m_currentCustomMapSelectedItemIdxRBRRX;
-						m_latestMapRBRRX.folderName = m_pCustomMapMenuRBRRX[m_currentCustomMapSelectedItemIdxRBRRX].szTrackFolder;
-						_ToLowerCase(m_latestMapRBRRX.folderName);
-						
-						m_latestMapRBRRX.name = m_pCustomMapMenuRBRRX[m_currentCustomMapSelectedItemIdxRBRRX].szTrackName;
-						if (m_currentCustomMapSelectedItemIdxRBRRX < min((int)m_recentMapsRBRRX.size(), m_recentMapsMaxCountRBRRX))
-						{
-							// Shortcut menu name. Remove the "[N] " leading tag because it is not part of the stage name
-							int iPos = m_latestMapRBRRX.name.find_first_of(']');
-							if (iPos >= 0)
-								m_latestMapRBRRX.name = (m_latestMapRBRRX.name.length() > iPos+2 ? m_latestMapRBRRX.name.substr(iPos+2) : "");
-						}
+					g_pFontCarSpecCustom->DrawText(posX, posY + (iMapInfoPrintRow++ * iFontHeight), C_CARMODELTITLETEXT_COLOR, _ToWString(m_latestMapRBRRX.name).c_str(), 0);
 
-						//btbTrackINIFile.SetUnicode(true);
-						//btbTrackINIFile.LoadFile((m_sRBRRootDirW + L"\\RX_CONTENT\\" + _ToWString(m_latestMapRBRRX.folderName) + L"\\track.ini").c_str());
+					std::wstringstream sStrStream;
+					sStrStream << std::fixed << std::setprecision(1);
 
-						// At first lookup the stage name from maps\Tracks.ini file. If the name is not set there then re-use the stage name used in RBRTM menus
-						//m_latestMapRBRRX.name = _ToString(btbTrackINIFile.GetValue(L"INFO", L"name", L""));
-						//m_latestMapRBRRX.surface = btbTrackINIFile.GetValue(L"INFO", L"physics", L"");
-
-						// Skip map image initializations if the map preview img feature is disabled (RBRTM_MapPictureRect=0)
-						if (m_mapRBRRXPictureRect.bottom != -1)
-						{
-							//CSimpleIni btbTrackINIFile;							
-							//btbTrackINIFile.SetUnicode(true);
-							//try
-							//{
-								//btbTrackINIFile.LoadFile((m_sRBRRootDirW + L"\\RX_CONTENT\\" + _ToWString(m_latestMapRBRRX.folderName) + L"\\track.ini").c_str());
-								//const CHAR* szTrackName = btbTrackINIFile.GetValue("INFO", "name", "");
-								//std::wstring sTrackName = _ToWString(szTrackName); //  _ToUTF8WString(szTrackName);
-								std::wstring sTrackName = _ToWString(m_latestMapRBRRX.name);
-
-								// Use custom map image path at first (set in RBRTM_MapScreenshotPath ini option). If the option or file is missing then take the stage preview image name from maps\Tracks.ini file
-								m_latestMapRBRRX.previewImageFile = ReplacePathVariables(m_screenshotPathMapRBRRX, -1, FALSE, -1, sTrackName.c_str(), m_latestMapRBRRX.folderName);
-
-								if (g_iLogMsgCount < 26)
-									//LogPrint(L"Custom preview image file %s for a RBRRX map %s", m_latestMapRBRRX.previewImageFile.c_str(), _ToWString(m_latestMapRBRRX.name).c_str());
-									LogPrint(L"Custom preview image file %s for a RBRRX map %s", m_latestMapRBRRX.previewImageFile.c_str(), sTrackName.c_str());
-							//}
-							//catch (...)
-							//{
-								// Error while reading BTB track settings
-							//	m_latestMapRBRRX.previewImageFile.clear();
-							//	LogPrint("Failed to read settings for a map preview image %s", m_latestMapRBRRX.name.c_str());
-							//}
-						}
-
-						// Release previous map preview texture and read a new image file (if preview path is set and the image file exists and map preview img drawing is not disabled)
-						SAFE_RELEASE(m_latestMapRBRRX.imageTexture.pTexture);
-						if (!m_latestMapRBRRX.previewImageFile.empty() && fs::exists(m_latestMapRBRRX.previewImageFile) && m_mapRBRRXPictureRect.bottom != -1)
-						{
-							hResult = D3D9CreateRectangleVertexTexBufferFromFile(g_pRBRIDirect3DDevice9,
-								m_latestMapRBRRX.previewImageFile,
-								(float)m_mapRBRRXPictureRect.left, (float)m_mapRBRRXPictureRect.top, (float)(m_mapRBRRXPictureRect.right - m_mapRBRRXPictureRect.left), (float)(m_mapRBRRXPictureRect.bottom - m_mapRBRRXPictureRect.top),
-								&m_latestMapRBRRX.imageTexture,
-								0  /*IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_BOTTOM | IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER*/);
-
-							// Image not available or loading failed
-							if (!SUCCEEDED(hResult))
-								SAFE_RELEASE(m_latestMapRBRRX.imageTexture.pTexture);
-						}
-					}
-
-					// Show details of the current stage (name, length, surface, previewImage)
-					//iFontHeight = g_pFontCarSpecCustom->GetTextHeight();
-
-					//std::wstringstream sStrStream;
-					//sStrStream << std::fixed << std::setprecision(1);
-
-					//posX = m_mapRBRTMPictureRect.left;
-					//posY = m_mapRBRTMPictureRect.top - (4 * iFontHeight);
-					//RBRAPI_MapRBRPointToScreenPoint(295.0f, 50.0f, &posX, &posY);
-
-					//int iMapInfoPrintRow = 0;
-					//g_pFontCarSpecCustom->DrawText(posX, posY + ((++iMapInfoPrintRow) * iFontHeight), C_CARMODELTITLETEXT_COLOR, (m_latestMapRBRTM.name + L"  (#" + std::to_wstring(g_pRBRPlugin->m_latestMapRBRTM.mapID) + L")").c_str(), 0);
-					//sStrStream << _ToWString(m_latestMapRBRRX.name) << L"   ";
-
-					//if (m_latestMapRBRRX.length > 0)
+					if (m_latestMapRBRRX.length > 0)
 						// TODO: KM to Miles miles=km*0.621371192 config option support
-						//sStrStream << m_latestMapRBRRX.length << L" km ";
+						sStrStream << m_latestMapRBRRX.length << L" km ";
 
-					//if (!m_latestMapRBRRX.surface.empty())
-					//	sStrStream << GetLangStr(m_latestMapRBRRX.surface.c_str());
+					if (!m_latestMapRBRRX.surface.empty())
+						sStrStream << GetLangStr(m_latestMapRBRRX.surface.c_str()) << L" ";
 
-					//g_pFontCarSpecCustom->DrawText(posX, posY + ((++iMapInfoPrintRow) * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), 0);
-					//g_pFontCarSpecCustom->DrawText(posX, posY, C_CARMODELTITLETEXT_COLOR, sStrStream.str().c_str(), 0);
+					if (m_latestMapRBRRX.numOfPacenotes >= 15)
+						sStrStream << GetLangStr(L"pacenotes");
+
+					g_pFontCarSpecCustom->DrawText(posX, posY + (iMapInfoPrintRow++ * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), 0);
 
 					if (m_latestMapRBRRX.imageTexture.pTexture != nullptr)
 					{
@@ -3455,6 +3584,22 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 						D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, m_latestMapRBRRX.imageTexture.pTexture, m_latestMapRBRRX.imageTexture.vertexes2D);
 						m_pD3D9RenderStateCache->RestoreState();
 					}
+
+					iMapInfoPrintRow = 0;
+					posY = m_mapRBRRXPictureRect.bottom - (1 * iFontHeight);
+
+					sStrStream.clear();
+					sStrStream.str(std::wstring());
+					if (!m_latestMapRBRRX.author.empty())
+						sStrStream << GetLangWString(L"author", true) << _ToWString(m_latestMapRBRRX.author);
+
+					if (!m_latestMapRBRRX.version.empty())
+						sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << GetLangWString(L"version", true) << _ToWString(m_latestMapRBRRX.version);
+
+					if (!m_latestMapRBRRX.date.empty())
+						sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << _ToWString(m_latestMapRBRRX.date);
+
+					g_pFontCarSpecCustom->DrawText(posX, posY + (iMapInfoPrintRow-- * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), (m_latestMapRBRRX.imageTexture.pTexture != nullptr ? D3DFONT_CLEARTARGET : 0));
 				}
 			}
 
@@ -3462,6 +3607,7 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 				&& m_pOrigMapMenuDataRBRTM->pMenuItems == m_pCustomMapMenuRBRTM 
 				&& g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN])
 			{
+				// RBRTM is no longer active, but the custom menu is created. Delete it and restore the original RBRTM menu objects (if RBR app is closed then these objects need to be the original pointers, because RBRTM releases the ptr memory block)
 				m_pOrigMapMenuDataRBRTM->pMenuItems = m_pOrigMapMenuItemsRBRTM;
 				m_pOrigMapMenuDataRBRTM->numOfItems = m_origNumOfItemsMenuItemsRBRTM;
 
@@ -3475,6 +3621,7 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 			if (!m_bRBRRXPluginActive && m_pRBRRXPlugin != nullptr
 				&& m_pRBRRXPlugin->pMenuItems != m_pOrigMapMenuItemsRBRRX && g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN])
 			{
+				// RBRRX is no longer active, but the custom menu is created. Clean it up and restore the original RBRRX menu obj
 				m_pRBRRXPlugin->pMenuData->selectedItemIdx = 0;
 				m_pRBRRXPlugin->numOfItems = m_origNumOfItemsMenuItemsRBRRX;
 				m_pRBRRXPlugin->pMenuItems = m_pOrigMapMenuItemsRBRRX;
@@ -3512,7 +3659,8 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 			}
 		}
 	}
-	else if (g_pRBRGameMode->gameMode == 05)
+
+	else if (g_pRBRGameMode->gameMode == 10)
 	{
 		if (m_bRBRTMPluginActive && m_iRBRTMCarSelectionType == 2 && m_bRecentMapsRBRTMModified)
 		{
@@ -3528,11 +3676,25 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 		}
 		else if (m_bRBRRXPluginActive && m_bRecentMapsRBRRXModified)
 		{
-			// Stage loading while RBRRX plugin is active in Shakedown mode. Add the latest map (=stage) to the top of the recent list
-			if (m_recentMapsMaxCountRBRRX > 0)
+			if (!m_latestMapRBRRX.name.empty())
 			{
-				// If BTB track name is empty then this must be a dummy non-BTB track folder entry (RBR_RX shows non-track folder as an empty menu line in the menu list)
-				if (!m_latestMapRBRRX.name.empty())
+				// RBR_RX has a bug where shorter track name is not null-terminated, so if the previous track name was longer then it is shown in "Loading: xxx" screen (restart of BTB track)
+				//wcsncpy(m_pRBRRXPlugin->wszTrackName, _ToWString(m_latestMapRBRRX.name).c_str(), min(m_latestMapRBRRX.name.length()+1, COUNT_OF_ITEMS(m_pRBRRXPlugin->wszTrackName)));
+				memcpy(m_pRBRRXPlugin->wszTrackName, _ToWString(m_latestMapRBRRX.name).c_str(), min(m_latestMapRBRRX.name.length() + 1, COUNT_OF_ITEMS(m_pRBRRXPlugin->wszTrackName)) * sizeof(WCHAR) );
+
+				if (m_latestMapRBRRX.length < 0)
+				{
+					// BTB track track.ini file doesn't have the Length attribute yet. Store it now when the BTB track was loaded for the first time. Round meters down to one decimal km value
+					m_latestMapRBRRX.length = floor((g_pRBRCarInfo != nullptr ? g_pRBRCarInfo->distanceToFinish : 0) / 100.0f) / 10.0f;
+					if (m_latestMapRBRRX.length < 1.0f)
+						// For some reason the BTB track data doesn't have a valid length (some very short tracks have this issue). Use dummy value and let UpdateRBRRXINILengthOption method to decide if it can use pacenotes.ini to estimate the length
+						m_latestMapRBRRX.length = -1;
+
+					UpdateRBRRXINILengthOption(m_latestMapRBRRX.folderName, m_latestMapRBRRX.length);
+				}
+
+				// Stage loading while RBRRX plugin is active. Add the latest map (=stage) to the top of the recent list and update RX_CONTENt\Tracks\myMap\track.ini Length parameter if it is missing
+				if (m_recentMapsMaxCountRBRRX > 0)
 				{
 					m_bRecentMapsRBRRXModified = FALSE;
 					AddMapToRecentList(m_latestMapRBRRX.folderName);

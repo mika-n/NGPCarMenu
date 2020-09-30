@@ -219,35 +219,60 @@ typedef struct {
 	BYTE pad3[0x608E4 - 0x52590 - sizeof(__int32)];
 	PRBRRXMenuItem pMenuItems;	// 0x608E4
 	__int32 numOfItems;			// 0x608E8
-	BYTE pad4[0x60918- 0x608E8 - sizeof(__int32)];
-	__int32 menuID;				// 0x60918			0=main, 1=stages, 2=replay
-	BYTE pad5[0x665F4 - 0x60918- sizeof(__int32)];
-	PRBRRXMenuData pMenuData;	// 0x665F4 
+	BYTE pad4[0x60914- 0x608E8 - sizeof(__int32)];
+	__int32 keyCode;			// 0x60914  The keycode of the last pressed key (key down) (37=Left arrowkey, 39=Right arrowkey, 36=Home, 35=End)
+	__int32 menuID;				// 0x60918  0=main, 1=stages, 2=replay
+	BYTE pad5[0x66528 - 0x60918- sizeof(__int32)];
+	WCHAR wszTrackName[60];	// 0x66528  The name of the last selected track
+	BYTE pad6[0x665F4 - 0x66528 - sizeof(WCHAR)*60];
+	PRBRRXMenuData pMenuData;	// 0x665F4  Ptr to selectedItemIdx struct
 #pragma pack(pop)
 } RBRRXPlugin;
 typedef RBRRXPlugin* PRBRRXPlugin;
 
 struct RBRRX_MapInfo {
-	int			  mapIDMenuIdx;		// Menu index (used when the previous menu line is automatically selected when user navigates back to Shakedown menu)
-	std::string   name;
-	std::string   folderName;
-	//double length;
-	std::wstring  surface;
+	int			  mapIDMenuIdx;		// Menu index (or -1 if this struct is not valid)
+	std::string   folderName;		// BTB map data folder (this folder should have track.ini file)
+
+	std::string   name;				// Track.ini metadata. name=
+	std::wstring  surface;			//		physics=
+	std::string   author;			//		author=
+	std::string   version;			//		version=
+	std::string   date;				//      date=
+
+	double length;					// The length of the stage set by track.ini length option or via BTB track data (split1-split2-finish distance in RBR data structure)
+	int    numOfPacenotes;			// Num of pacenotes entries in pacenotes.ini file (usually <20 notes means that notes are not set)
+
 	std::wstring  previewImageFile;
 	IMAGE_TEXTURE imageTexture;
 
 	RBRRX_MapInfo()
 	{
-		//name.reserve(256);
 		mapIDMenuIdx = -1;
-		//length = -1;
-		surface = L"";
+		length = -1;
+		numOfPacenotes = 0;
+
+		name.reserve(64);
+		folderName.reserve(260);
+		surface.reserve(16);
+		previewImageFile.reserve(260);
+
 		ZeroMemory(&imageTexture, sizeof(IMAGE_TEXTURE));
 	}
 
 	~RBRRX_MapInfo()
 	{
 		SAFE_RELEASE(imageTexture.pTexture);
+	}
+
+	void Clear()
+	{
+		length = -1;
+		numOfPacenotes = 0;
+		surface.clear();
+		author.clear();
+		version.clear();
+		date.clear();
 	}
 };
 
@@ -331,10 +356,13 @@ class CNGPCarMenu : public IPlugin
 {
 protected:
 	std::string m_sPluginTitle;		// Title of the plugin shown in NGPCarMenu menus
-
 	CSimpleIniW* m_pLangIniFile;	// NGPCarMenu language localization file
 
-	int	m_iCarMenuNameLen; // Max char space reserved for the current car menu name menu items (calculated in CalculateMaxLenCarMenuName method)
+	int	m_iCarMenuNameLen;			// Max char space reserved for the current car menu name menu items (calculated in CalculateMaxLenCarMenuName method)
+
+	std::string m_sMenuStatusText1;	// Status text message 
+	std::string m_sMenuStatusText2;
+	std::string m_sMenuStatusText3;
 
 	DetourXS* gtcDirect3DBeginScene;
 	DetourXS* gtcDirect3DEndScene;
@@ -350,9 +378,9 @@ protected:
 	int  CalculateMaxLenCarMenuName();
 	void ClearCachedCarPreviewImages();
 
-	std::string m_sMenuStatusText1;	// Status text message 
-	std::string m_sMenuStatusText2;
-	std::string m_sMenuStatusText3;
+	void FocusRBRRXNthMenuIdxRow(int menuIdx);
+	void UpdateRBRRXMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo);
+	double UpdateRBRRXINILengthOption(const std::string& sFolderName, double newLength);
 
 public:
 	IRBRGame*     m_pGame;
@@ -436,7 +464,7 @@ public:
 	int m_numOfItemsCustomMapMenuRBRRX;			// Num of items in m_pCustomMapMenuRBRRX (dynamic) array
 	int m_currentCustomMapSelectedItemIdxRBRRX;	// "Virtual" selected row running from 0..m_numOfItemsCustomMapMenuRBRRX-1 (the real row number. m_pRBRRXPlugin->pMenuData->selectedItemIdx is always between 0..16)
 	int m_prevCustomMapSelectedItemIdxRBRRX;
-
+	
 	std::string m_sRBRTMPluginTitle;			// "RBR Tournament" is the RBRTM plugin name by default, but in theory it is possible that this str is translated in RBRTM language files. The plugin name in use is stored here because the RBRTM integration routine needs this name.
 	int    m_iRBRTMPluginMenuIdx;				// Index of the RBRTM plugin in the RBR Plugins menu list (this way we know when RBRTM custom plugin in Nth index position is activated)
 	bool   m_bRBRTMPluginActive;				// TRUE/FALSE if the current active custom plugin is RBRTM (active = The RBRTM plugin handler is running in foreground)
@@ -660,16 +688,14 @@ public:
 			return szStrKey; 
 
 		const WCHAR* szResult = m_pLangIniFile->GetValue(L"Strings", szStrKey, nullptr);
-		/*
-		if (szResult == nullptr && szStrKey != nullptr)
-		{
-			// No match, but let's try again without leading and/or trailing whitespace chars
-			std::wstring sStrWithoutTrailingWhitespace(szStrKey);
-			_Trim(sStrWithoutTrailingWhitespace);
-			szResult = m_pLangIniFile->GetValue(L"Strings", sStrWithoutTrailingWhitespace.c_str(), szStrKey);
-		}
-		*/
 		return (szResult != nullptr ? szResult : szStrKey);
+	}
+
+	inline const std::wstring GetLangWString(const WCHAR* szStrKey, bool autoTrailingSpace = false)
+	{
+		std::wstring sResult = GetLangStr(szStrKey);
+		if (!sResult.empty()) sResult += L" ";
+		return sResult;
 	}
 
 	inline const void AddLangStr(const WCHAR* szStrKey, const WCHAR* szResult)
