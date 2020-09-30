@@ -127,7 +127,7 @@ Also, some Windows OS setups limit writing new files under c:\program files\ or 
 ## BTB track authors and new metadata fields in a BTB map specific track.ini file (used by RBR_RX and NGPCarMenu plugins)
 
 NGPCarMenu plugin supports custom metadata tags in track.ini file. If these are set then NGPCarMenu plugin can show this information in RBR_RX stages menu list while people browse through their track collections. By default RBR_RX plugin has supported only name and physics metadata tags, but now following metadata fields are supported (no need to try to embed all information into name attribute and this way making the BTB menu ). Hopefully BTB track authors would add these tags to new maps and track.ini files. This way they will also get more well deserved visibility within the RBR game while people browse through a list of BTB tracks:
-  - Sample of RX_Content\tracks\myBTBMap\track.ini:
+Sample of RX_Content\tracks\myBTBMap\track.ini file:
   - [INFO]
   - name=Rally Universium 2020
   - physics=gravel
