@@ -463,6 +463,7 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_iMenuRBRTMOption = 0;
 	m_iMenuRBRRXOption = 0;
 	m_iMenuAutoLogonOption = 0;
+	m_bAutoLogonWaitProfile = FALSE;
 
 	m_screenshotAPIType = C_SCREENSHOTAPITYPE_DIRECTX;
 
@@ -1017,14 +1018,18 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 			_Trim(m_sAutoLogon);
 			if (!_iEqual(m_sAutoLogon, "disabled", true) && m_sAutoLogon != "0")
 			{
-				g_bNewCustomPluginIntegrations = TRUE; // Custom plugin menu navigation needs a initialization of plugin menu
+				// Autologon navigation needs a initialization of plugin menu in case the target menu is a plugin
+				g_bNewCustomPluginIntegrations = TRUE;
 
-				// Autologon enabled. Do the trick and navigate automatically to the specified menu (Main, Plugins or custom plugin)
+				m_bAutoLogonWaitProfile = pluginINIFile.GetLongValue(L"Default", L"AutoLogonWaitProfileSelection", 0) == 1;
+
+				// Autologon enabled. Do the trick and navigate automatically to the specified menu (Main, Plugins or custom plugin).
+				// If user chooses the profile manually (NGPCarMenu AutoLogon waits for a profile) then skip autoLogon states 1-2 and go straight to wait for main menu (state 3)
 				m_dwAutoLogonEventStartTick = GetTickCount();
-				m_iAutoLogonMenuState = 1;
+				m_iAutoLogonMenuState = (m_bAutoLogonWaitProfile ? 3 : 1);
 			}
 			else
-				m_iAutoLogonMenuState = 0;
+				m_iAutoLogonMenuState = 0; // Autologon disable
 		}
 
 	}
@@ -1364,9 +1369,9 @@ int CNGPCarMenu::InitAllNewCustomPluginIntegrations()
 //
 void CNGPCarMenu::DoAutoLogonSequence()
 {
-	if (m_iAutoLogonMenuState > 1 && (GetTickCount() - m_dwAutoLogonEventStartTick) >= 4000)
+	if (m_iAutoLogonMenuState > 1 && (GetTickCount() - m_dwAutoLogonEventStartTick) >= (DWORD) (m_bAutoLogonWaitProfile ? 15000 : 4000))
 	{
-		// Autologon sequence step took too long to complete (more than 4 secs). Abort it. Maybe user pressed some keys to mess up it or RBR is waiting for something strange thing to happen
+		// Autologon sequence step took too long to complete (more than 15 secs if waitProfile enabled, otherwise 4 secs). Abort it. Maybe user pressed some keys to mess up it or RBR is waiting for something strange thing to happen
 		m_iAutoLogonMenuState = 0;
 		LogPrint("WARNING. Autologon sequence aborted because of timeout");
 		return;
@@ -1407,6 +1412,12 @@ void CNGPCarMenu::DoAutoLogonSequence()
 	{
 		if (g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN])
 		{
+			if (m_bAutoLogonWaitProfile)
+			{
+				m_dwAutoLogonEventStartTick = GetTickCount();
+				m_bAutoLogonWaitProfile = FALSE;
+			}
+
 			if (g_pRBRMenuSystem->currentMenuObj->selectedItemIdx == g_pRBRMenuSystem->currentMenuObj->firstSelectableItemIdx && !_iEqual(m_sAutoLogon, "main", true))
 			{
 				if ((GetTickCount() - m_dwAutoLogonEventStartTick) >= 150)
@@ -3184,8 +3195,16 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 		int posY;
 		int iFontHeight;
 
-		if (m_iAutoLogonMenuState > 0) 
+		if (m_iAutoLogonMenuState > 0)
+		{
+			RBRAPI_MapRBRPointToScreenPoint(50.0f, 0, &posX, nullptr);
+			if(m_bAutoLogonWaitProfile)
+				g_pFontCarSpecCustom->DrawText(posX, 10, C_CARSPECTEXT_COLOR, L"AUTOLOGON sequence of NGPCarMenu activated. Choose a profile to continue", D3DFONT_CLEARTARGET);
+			else
+				g_pFontCarSpecCustom->DrawText(posX, 10, C_CARSPECTEXT_COLOR, L"AUTOLOGON sequence of NGPCarMenu activated", D3DFONT_CLEARTARGET);
+
 			DoAutoLogonSequence();
+		} 
 		else if (g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_QUICKRALLY_CARS]
 			|| g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MULTIPLAYER_CARS_P1]
 			|| g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MULTIPLAYER_CARS_P2]
