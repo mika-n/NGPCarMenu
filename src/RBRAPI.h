@@ -228,18 +228,18 @@ typedef struct {
 	// gameMode
 	//		00 = (not available)
 	//		01 = driving (after 5secs or less left in start clock or already driving after GO! command)
-	//		02 = pause (when a menu is shown while stage or replay is running)
+	//		02 = pause (when a menu is shown while stage or replay is running, not the main menu)
 	//		03 = main menu or plugin menu (stage not running)
 	//		04 = ? (black out)
-	//		05 = loading track (race or replay)
+	//		05 = loading track (race or replay. When the track model is loaded the status goes briefly to 0x0D and when the countdown starts the status goes to 0x0A)
 	//		06 = exiting to menu from a race or replay (after this the mode goes to 12 for a few secs and finally to 3 when the game is showing the main or plugin menu)
 	//		07 = quit the application ?
 	//		08 = replay
 	//		09 = end lesson / finish race / retiring / end replay
-	//      0A = Before starting a replay (camera is spinning around the car)
+	//      0A = Before starting a race or replay (camera is spinning around the car. At this point map and car model has been loaded and is ready to rock)
 	//      0B = ? (black out)
-	//      0C = Game is starting (loading the initial "Load Profile" screen)
-	//      0D = (not available) (status goes to 0x0A, camera spins and then RBR crashes)
+	//      0C = Game is starting or racing ended and going back to main menu (loading the initial "Load Profile" screen or "RBR menu system". Status goes to 0x03 when the "Load Profile" menu is ready and shown)
+	//      0D = (not available) (0x0D status after 0x05 map loading step is completed. After few secs the status goes to 0x0A and camera starts to spin around the car)
     //      0E = (not available) (status goes to 0x0F and then RBR crashes)
 	//      0F = ? Doesnt work anymore. Goes to menu? Pause racing and replaying and hide all on-screen instruments and timers (supported only after the race or replay has started, ie 0x0A and 0x10 status has changed to 0x08 or 0x01)
 	//		10 = Before starting a race start countdown (the camera is moving around the car at starting line or in replay)
@@ -358,6 +358,24 @@ typedef struct {
 typedef RBRMenuItemPosition* PRBRMenuItemPosition;
 
 
+// RBRMenuItemPositionExt. Some special menus don't have RBRMenuItemPosition struct in RBRMenuObj.pMenuItemPosition pointer.
+// For example LoadProfile logon screen has a pointer to this struct with details about available profiles.
+typedef struct {
+#pragma pack(push,1)
+	BYTE    pad1[0x2C];
+	char*   szMenuTitleID;		// 0x2c  (LoadProfile logon screen has "SEL_PROF" string identifier)
+	WCHAR*  wszMenuTitleName;	// 0x30
+	void*   unknown1;			// 0x34
+	__int32 unknown2;			// 0x38	 (always 0x00?)
+	__int32 unknown3;			// 0x3C  (always 0x01?)
+	__int32 unknown4;			// 0x40  (always 0x0A?)
+	__int32 selectedItemIdx;	// 0x44  The current selected menu row (at least in LoadProfile logon menu)
+	__int32 numOfItems;			// 0x48  The num of available profiles (0 if no profiles)
+#pragma pack(pop)
+} RBRMenuItemExt;
+typedef RBRMenuItemExt* PRBRMenuItemExt;
+
+
 // RBRMenuItemCarSelectionCarSpecTexts. Properties of the "Select Car-Car specs" details
 typedef struct {
 #pragma pack(push,1)
@@ -412,7 +430,7 @@ typedef struct {
 } RBRPluginMenuItemObj3;
 typedef RBRPluginMenuItemObj3* PRBRPluginMenuItemObj3;
 
-
+/*
 // MenuObj->pItemObj pointer (obsolete?)
 typedef struct {
 #pragma pack(push,1)
@@ -422,20 +440,22 @@ typedef struct {
 #pragma pack(pop)
 } RBRPluginMenuItemObj;
 typedef RBRPluginMenuItemObj* PRBRPluginMenuItemObj;
-
+*/
 
 // Menu object (RBRMenuPoint has references to these objects)
 struct RBRMenuObj;
 typedef struct RBRMenuObj* PRBRMenuObj;
 typedef struct RBRMenuObj RBRMenuObj;
-
 struct RBRMenuObj {
 #pragma pack(push,1)
 	BYTE pad1[0x04];
 	PRBRMenuObj rootMenuObj;			// 0x04 (always points to PRBRMenuPoint->rootMenuObj?)
 	PRBRMenuObj prevMenuObj;			// 0x08 (ESC menu navigation key returns to this menu)
-	LPVOID* pItemObj;                    // 0x0C (pointer to a array of menu item objects. Array of "numOfItems" items)
-	PRBRMenuItemPosition pItemPosition;	// 0x10 (pointer to a array of menu item display properties like x/y pos and width/height)
+	LPVOID* pItemObj;                   // 0x0C (pointer to a array of menu item objects. Array of "numOfItems" items)
+	union {
+		PRBRMenuItemPosition pItemPosition;	// 0x10 (pointer to a array of menu item display properties like x/y pos and width/height)
+		PRBRMenuItemExt      pExtMenuObj;   // 0x10 (pointer to struct in some special menus like when RBRMENUIDX_STARTUP LoadProfile logon menu is the currentMenuObj)
+	};
 	__int32 numOfItems;					// 0x14 (numOfItems - firstSelectableItemIdx = total num of items. Sometimes some items may be hidden, so total num doesn't always match with the visible items)
 	__int32 selectedItemIdx;			// 0x18 (Index of the currently selected menu item if the firstItemIdx >=0, relative to firstItemIdx)
 	__int32 firstSelectableItemIdx;		// 0x1C (Index of the first selectable menu item or <0 if undefined. selectedItemIdx-firstItemIdx is the actual selected menu line in 0..N range)
@@ -543,7 +563,7 @@ typedef struct {
 	LPVOID unknown1;						   // 0x00 (Pointer to unknown RBR object)
 	PRBRMenuObj rootMenuObj;				   // 0x04 (Pointer to root menu obj?)
 	PRBRMenuObj currentMenuObj;				   // 0x08 (Poiter to the current menuObj or 0 if no menu open)
-	PRBRMenuObj currentMenuObj2;			   // 0x0C (always points to the same address as currentMenuObj?)
+	PRBRMenuObj currentMenuObj2;			   // 0x0C (always points to the same address as currentMenuObj?  RBR startup LoadProfile screen points to LoadProfile menu in this field)
 	BYTE pad1[0x48 - 0x0C - sizeof(PRBRMenuObj)];
 	float menuImagePosX;				   // 0x48 (X,Y,Width,Height of the current background menu image. Usually some animated scene image shown behind the menu layout)
 	float menuImagePosY;				   // 0x4C

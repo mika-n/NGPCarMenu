@@ -107,14 +107,16 @@ RBRCarSelectionMenuEntry g_RBRCarSelectionMenuEntry[8] = {
 #define C_MENUCMD_IMAGEOPTION		1
 #define C_MENUCMD_RBRTMOPTION		2
 #define C_MENUCMD_RBRRXOPTION		3
-#define C_MENUCMD_RELOAD			4
-#define C_MENUCMD_CREATE			5
+#define C_MENUCMD_AUTOLOGONOPTION	4
+#define C_MENUCMD_RELOAD			5
+#define C_MENUCMD_CREATE			6
 
-char* g_NGPCarMenu_PluginMenu[6] = {
+char* g_NGPCarMenu_PluginMenu[7] = {
 	 "> Create option"		// CreateOptions
 	,"> Image option"		    // ImageOptions
 	,"> RBRTM integration option"    // EnableDisableOptions
 	,"> RBRRX integration option"    // EnableDisableOptions
+	,"> Auto logon option"		     // AutoLogon option
 	,"RELOAD car images"	// Clear cached car images to force re-loading of new images
 	,"CREATE car images"	// Create new car images (all or only missing car iamges)
 };
@@ -131,11 +133,14 @@ char* g_NGPCarMenu_ImageOptions[2] = {
 	,"BMP"
 };
 
-// RMRTB integration option
+// Enable/Disable of various options
 char* g_NGPCarMenu_EnableDisableOptions[2] = {
 	"Disabled"
 	,"Enabled"
 };
+
+// AutoLogon options: Disabled, Main, Plugins and N custom plugin names (dynamically looked up from the current list of RBR plugins)
+std::vector<LPCSTR> g_NGPCarMenu_AutoLogonOptions;
 
 
 //-----------------------------------------------------------------------------------------------------------------------------
@@ -388,6 +393,9 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 
 	m_pLangIniFile = nullptr;
 
+	m_iAutoLogonMenuState = -1;			// AutoLogon sequence is not yet run
+	m_dwAutoLogonEventStartTick = 0;
+
 	m_pTracksIniFile = nullptr;
 	ZeroMemory(&m_mapRBRTMPictureRect, sizeof(m_mapRBRTMPictureRect));
 	m_latestMapRBRTM.mapID = -1;
@@ -454,6 +462,7 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_iMenuImageOption = 0;
 	m_iMenuRBRTMOption = 0;
 	m_iMenuRBRRXOption = 0;
+	m_iMenuAutoLogonOption = 0;
 
 	m_screenshotAPIType = C_SCREENSHOTAPITYPE_DIRECTX;
 
@@ -995,11 +1004,34 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		if(m_sMenuStatusText1.empty()) m_sMenuStatusText1 = _ReplaceStr(_ToString(ReplacePathVariables(m_screenshotPath)), "%", "");
 		m_sMenuStatusText2 = _ToString(std::wstring(szResolutionText)) + " native resolution detected";
 		m_sMenuStatusText3 = (m_easyRBRFilePath.empty() ? "RBRCIT " + _ToString(m_rbrCITCarListFilePath) : "EasyRBR " + _ToString(m_easyRBRFilePath));
+
+
+		//
+		// Check AutoLogon option. Do this as the last step in this method
+		//
+		if (m_iAutoLogonMenuState < 0)
+		{
+			// AutoLogon option is read only at first time this method is called (ie RBR launch time)
+			m_sAutoLogon = _ToString(pluginINIFile.GetValue(L"Default", L"AutoLogon", L"Disabled"));
+			_Trim(m_sAutoLogon);
+			if (!_iEqual(m_sAutoLogon, "disabled", true) && m_sAutoLogon != "0")
+			{
+				g_bNewCustomPluginIntegrations = TRUE; // Custom plugin menu navigation needs a initialization of plugin menu
+
+				// Autologon enabled. Do the trick and navigate automatically to the specified menu (Main, Plugins or custom plugin)
+				m_dwAutoLogonEventStartTick = GetTickCount();
+				m_iAutoLogonMenuState = 1;
+			}
+			else
+				m_iAutoLogonMenuState = 0;
+		}
+
 	}
 	catch (...)
 	{
 		LogPrint("ERROR CNGPCarMenu.RefreshSettingsFromPluginINIFile. %s INI reading failed", sIniFileName.c_str());
 		m_sMenuStatusText1 = sIniFileName + " file access error";
+		m_iAutoLogonMenuState = 0;
 	}
 	DebugPrint("Exit CNGPCarMenu.RefreshSettingsFromPluginINIFile");
 }
@@ -1023,6 +1055,8 @@ void CNGPCarMenu::SaveSettingsToPluginINIFile()
 
 		pluginINIFile.SetValue(L"Default", L"RBRTM_Integration", std::to_wstring(this->m_iMenuRBRTMOption).c_str());
 		pluginINIFile.SetValue(L"Default", L"RBRRX_Integration", std::to_wstring(this->m_iMenuRBRRXOption).c_str());
+
+		pluginINIFile.SetValue(L"Default", L"AutoLogon", _ToWString(std::string( m_iMenuAutoLogonOption < (int)g_NGPCarMenu_AutoLogonOptions.size() ? g_NGPCarMenu_AutoLogonOptions[m_iMenuAutoLogonOption] : m_sAutoLogon.c_str())).c_str());
 
 		pluginINIFile.SaveFile(sIniFileName.c_str());
 	}
@@ -1321,6 +1355,133 @@ int CNGPCarMenu::InitAllNewCustomPluginIntegrations()
 	}
 
 	return iInitCount;
+}
+
+
+//-------------------------------------------------------------------------------------------------------------------
+// AutoLogin feature enabled. Do the logon sequence and take the RBR menu automatically to the defined menu (Default profile, Main, Options, Plugins, Custom plugin)
+//
+void CNGPCarMenu::DoAutoLogonSequence()
+{
+	if (m_iAutoLogonMenuState > 1 && (GetTickCount() - m_dwAutoLogonEventStartTick) >= 4000)
+	{
+		// Autologon sequence step took too long to complete (more than 4 secs). Abort it. Maybe user pressed some keys to mess up it or RBR is waiting for something strange thing to happen
+		m_iAutoLogonMenuState = 0;
+		LogPrint("WARNING. Autologon sequence aborted because of timeout");
+		return;
+	} 
+
+	if (m_iAutoLogonMenuState == 1 && g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_STARTUP])
+	{
+		// Auto-load the first default profile. If there are no profiles then abort the logon sequence
+		if (g_pRBRMenuSystem->currentMenuObj->pExtMenuObj != nullptr)
+		{
+			if (g_pRBRMenuSystem->currentMenuObj->pExtMenuObj->numOfItems >= 1 && g_pRBRMenuSystem->currentMenuObj->pExtMenuObj->selectedItemIdx == 1)
+			{
+				m_dwAutoLogonEventStartTick = GetTickCount();
+				m_iAutoLogonMenuState++;
+
+				// Choose the first profile automatically
+				g_pRBRMenuSystem->currentMenuObj->pExtMenuObj->selectedItemIdx = 1;
+				SendMessage(g_hRBRWnd, WM_KEYDOWN, VK_RETURN, 0);
+				SendMessage(g_hRBRWnd, WM_KEYUP, VK_RETURN, 0);
+			}
+			else
+				// Abort auto-logon sequence because there are no profiles availabe. User should create the MULLIGATAWNY profile
+				m_iAutoLogonMenuState = 0;
+		}
+	}
+	else if (m_iAutoLogonMenuState == 2 && g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_STARTUP])
+	{
+		// Accept "OK profile load" screen, but give RBR few msecs time to complete the profile loading
+		if ( (GetTickCount() - m_dwAutoLogonEventStartTick) >= 100)
+		{
+			m_dwAutoLogonEventStartTick = GetTickCount();
+			m_iAutoLogonMenuState++;
+			SendMessage(g_hRBRWnd, WM_KEYDOWN, VK_RETURN, 0);
+			SendMessage(g_hRBRWnd, WM_KEYUP, VK_RETURN, 0);
+		}
+	}
+	else if (m_iAutoLogonMenuState == 3)
+	{
+		if (g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN])
+		{
+			if (g_pRBRMenuSystem->currentMenuObj->selectedItemIdx == g_pRBRMenuSystem->currentMenuObj->firstSelectableItemIdx && !_iEqual(m_sAutoLogon, "main", true))
+			{
+				if ((GetTickCount() - m_dwAutoLogonEventStartTick) >= 150)
+				{
+					// Choose Options menu in MainMenu
+					m_dwAutoLogonEventStartTick = GetTickCount();
+					m_iAutoLogonMenuState++;
+
+					g_pRBRMenuSystem->currentMenuObj->selectedItemIdx = 0x09;
+					SendMessage(g_hRBRWnd, WM_KEYDOWN, VK_RETURN, 0);
+					SendMessage(g_hRBRWnd, WM_KEYUP, VK_RETURN, 0);
+				}
+			}
+			else
+				// Abort because either "Main" menu autologon or menu row moved. Maybe user pressed some keys to mess up autologon?
+				m_iAutoLogonMenuState = 0;
+		}
+	}
+	else if (m_iAutoLogonMenuState == 4)
+	{
+		if (g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->optionsMenuObj)
+		{			
+			if (g_pRBRMenuSystem->currentMenuObj->selectedItemIdx == g_pRBRMenuSystem->currentMenuObj->firstSelectableItemIdx)
+			{
+				if ((GetTickCount() - m_dwAutoLogonEventStartTick) >= 150)
+				{
+					// Choose Plugins menu in OptionsMenu
+					m_dwAutoLogonEventStartTick = GetTickCount();
+					m_iAutoLogonMenuState++;
+					g_pRBRMenuSystem->currentMenuObj->selectedItemIdx = 0x0A;
+					SendMessage(g_hRBRWnd, WM_KEYDOWN, VK_RETURN, 0);
+					SendMessage(g_hRBRWnd, WM_KEYUP, VK_RETURN, 0);
+				}
+			}
+			else
+				// Abort auto-logon sequence because OptionsMenu didn't become active or menu row moved. Maybe user pressed some keys to mess up autologon?
+				m_iAutoLogonMenuState = 0;
+		}
+	}
+	else if (m_iAutoLogonMenuState == 5)
+	{
+		if (g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->pluginsMenuObj)
+		{
+			if (g_pRBRMenuSystem->currentMenuObj->selectedItemIdx == g_pRBRMenuSystem->currentMenuObj->firstSelectableItemIdx && !_iEqual(m_sAutoLogon, "plugins", true))
+			{
+				if ((GetTickCount() - m_dwAutoLogonEventStartTick) >= 150)
+				{
+					BOOL bCustomPluginFound = FALSE;
+					// Autologon sequence completed
+					m_iAutoLogonMenuState = 0;
+
+					// Open the selected customPlugin in PluginsMenu
+					for (int idx = g_pRBRPluginMenuSystem->pluginsMenuObj->firstSelectableItemIdx; idx < g_pRBRPluginMenuSystem->pluginsMenuObj->numOfItems - 1; idx++)
+					{
+						PRBRPluginMenuItemObj3 pItemArr = (PRBRPluginMenuItemObj3)g_pRBRPluginMenuSystem->pluginsMenuObj->pItemObj[idx];
+						if (pItemArr != nullptr && pItemArr->szItemName != nullptr && _iEqual(pItemArr->szItemName, m_sAutoLogon))
+						{
+							bCustomPluginFound = TRUE;
+							g_pRBRMenuSystem->currentMenuObj->selectedItemIdx = idx;
+							SendMessage(g_hRBRWnd, WM_KEYDOWN, VK_RETURN, 0);
+							SendMessage(g_hRBRWnd, WM_KEYUP, VK_RETURN, 0);
+							break;
+						}
+					}
+
+					if(bCustomPluginFound)
+						LogPrint("AutoLogon to %s plugin completed", m_sAutoLogon.c_str());
+					else
+						LogPrint("WARNING. AutoLogon to %s plugin failed because the plugin is not installed. Check AutoLogon option", m_sAutoLogon.c_str());
+				}
+			}
+			else
+				// Abort because Plugins menu autologon or or menu row moved. Maybe user pressed some keys to mess up autologon?
+				m_iAutoLogonMenuState = 0;
+		}
+	}
 }
 
 
@@ -2230,6 +2391,11 @@ void CNGPCarMenu::FocusRBRRXNthMenuIdxRow(int menuIdx)
 //------------------------------------------------------------------------------------------------
 // Update RBRRX_MapInfo struct data up-to-date based on menuIdx or rbr track folderName
 //
+#define ReadAndSetDefaultINIValue(section, key, str, defaultValue) \
+   { pszValue = btbTrackINIFile.GetValue(section, key, nullptr); \
+   if (pszValue == nullptr) { str.clear(); btbTrackINIFile.SetValue(section, key, defaultValue); btbTrackIniModified = TRUE; } \
+   else str = pszValue; }
+
 void CNGPCarMenu::UpdateRBRRXMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo)
 {
 	if (pRBRRXMapInfo == nullptr) 
@@ -2257,6 +2423,9 @@ void CNGPCarMenu::UpdateRBRRXMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo)
 	
 	try
 	{
+		const char* pszValue;
+		bool  btbTrackIniModified = false;
+
 		std::string sBtbTrackFolderPath = m_sRBRRootDir + "\\RX_CONTENT\\" + pRBRRXMapInfo->folderName;
 
 		CSimpleIni btbPacenotesINIFile;
@@ -2268,10 +2437,12 @@ void CNGPCarMenu::UpdateRBRRXMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo)
 		//btbTrackINIFile.SetUnicode(true);
 		btbTrackINIFile.LoadFile((sBtbTrackFolderPath + "\\track.ini").c_str());
 		pRBRRXMapInfo->surface = _ToWString(btbTrackINIFile.GetValue("INFO", "physics", ""));
-		pRBRRXMapInfo->author  = btbTrackINIFile.GetValue("INFO", "author", "");
-		pRBRRXMapInfo->version = btbTrackINIFile.GetValue("INFO", "version", "");
-		pRBRRXMapInfo->date    = btbTrackINIFile.GetValue("INFO", "date", "");
-		pRBRRXMapInfo->length  = btbTrackINIFile.GetDoubleValue("INFO", "length", -1);		
+		pRBRRXMapInfo->length  = btbTrackINIFile.GetDoubleValue("INFO", "length", -1);
+	
+		ReadAndSetDefaultINIValue("INFO", "author",  pRBRRXMapInfo->author, "");
+		ReadAndSetDefaultINIValue("INFO", "version", pRBRRXMapInfo->version, "");
+		ReadAndSetDefaultINIValue("INFO", "date",    pRBRRXMapInfo->date, "");
+		ReadAndSetDefaultINIValue("INFO", "comment", pRBRRXMapInfo->comment, "");
 
 		// Skip map image initializations if the map preview img feature is disabled (RBRRX_MapPictureRect=0)
 		if (m_mapRBRRXPictureRect.bottom != -1)
@@ -2298,7 +2469,7 @@ void CNGPCarMenu::UpdateRBRRXMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo)
 					// SlashScreen option missing. If the trackFolder has an image file then use it and add it as default splashScreen value into the INI file for later use
 					for (auto& dit : fs::directory_iterator(sBtbTrackFolderPath))
 					{
-						if (_iEqual(dit.path().extension().string(), ".jpg", true))
+						if (_iEqual(dit.path().extension().string(), ".jpg", true) || _iEqual(dit.path().extension().string(), ".png", true))
 						{
 							pRBRRXMapInfo->previewImageFile = dit.path().filename();		
 							break;
@@ -2306,7 +2477,7 @@ void CNGPCarMenu::UpdateRBRRXMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo)
 					}
 
 					btbTrackINIFile.SetValue("INFO", "splashscreen", _ToString(pRBRRXMapInfo->previewImageFile).c_str());
-					btbTrackINIFile.SaveFile((sBtbTrackFolderPath + "\\track.ini").c_str());
+					btbTrackIniModified = TRUE;			
 				}
 			}
 
@@ -2314,6 +2485,10 @@ void CNGPCarMenu::UpdateRBRRXMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo)
 				//LogPrint(L"Custom preview image file %s for a RBRRX map %s", m_latestMapRBRRX.previewImageFile.c_str(), _ToWString(m_latestMapRBRRX.name).c_str());
 				LogPrint(L"Custom preview image file %s for a RBRRX map %s", pRBRRXMapInfo->previewImageFile.c_str(), sTrackName.c_str());
 		}
+
+		// Save track.ini file is missing custom attributes were added (this is done only once when a new btb track is installed in RBR)
+		if(btbTrackIniModified)
+			btbTrackINIFile.SaveFile((sBtbTrackFolderPath + "\\track.ini").c_str());
 	}
 	catch (...)
 	{
@@ -2518,38 +2693,14 @@ const char* CNGPCarMenu::GetName(void)
 	return "NGPCarMenu";
 }
 
+
 //------------------------------------------------------------------------------------------------
 //
 void CNGPCarMenu::DrawResultsUI(void)
 {
-/*
-	m_pGame->SetMenuColor(IRBRGame::MENU_HEADING);
-	m_pGame->SetFont(IRBRGame::FONT_BIG);
-	m_pGame->WriteText(130.0f, 49.0f, "Results");
-
-	m_pGame->SetFont(IRBRGame::FONT_SMALL);
-	m_pGame->SetMenuColor(IRBRGame::MENU_TEXT);
-	if (m_fResults[2] <= 0.0f)
-	{
-		m_pGame->WriteText(200.0f, 100.0f, "DNF");
-	}
-	else
-	{
-		char txtCP1[32];
-		char txtTimeString[32];
-		char txtBuffer[128];
-
-		sprintf(txtBuffer, "Stage Result for \"%s\" ", m_szPlayerName);
-		m_pGame->WriteText(130.0f, 100.0f, txtBuffer);
-		sprintf(txtBuffer, "CheckPoint1 = %s", NPlugin::FormatTimeString(txtCP1, sizeof(txtCP1), m_fResults[0]));
-		m_pGame->WriteText(130.0f, 125.0f, txtBuffer);
-		sprintf(txtBuffer, "CheckPoint2 = %s", NPlugin::FormatTimeString(txtCP1, sizeof(txtCP1), m_fResults[1]));
-		m_pGame->WriteText(130.0f, 150.0f, txtBuffer);
-		sprintf(txtBuffer, "Finish = %s", NPlugin::FormatTimeString(txtTimeString, sizeof(txtTimeString), m_fResults[2]));
-		m_pGame->WriteText(130.0f, 175.0f, txtBuffer);
-	}
-*/
+	// Do nothing
 }
+
 
 //------------------------------------------------------------------------------------------------
 //
@@ -2558,6 +2709,38 @@ void CNGPCarMenu::DrawFrontEndPage(void)
 	char szTextBuf[128]; // This should be enough to hold the longest g_RBRPlugin menu string + the logest g_RBRPluginMenu_xxxOptions option string
 	float posY;
 	int iRow;
+
+	if (g_NGPCarMenu_AutoLogonOptions.size() == 0)
+	{
+		// First time initialization of NGPCarMenu plugin menu options
+		g_NGPCarMenu_AutoLogonOptions.push_back("Disabled");
+		g_NGPCarMenu_AutoLogonOptions.push_back("Main");
+		g_NGPCarMenu_AutoLogonOptions.push_back("Plugins");
+
+		if (g_pRBRPluginMenuSystem != nullptr)
+		{
+			for (int idx = g_pRBRPluginMenuSystem->pluginsMenuObj->firstSelectableItemIdx; idx < g_pRBRPluginMenuSystem->pluginsMenuObj->numOfItems - 1; idx++)
+			{
+				PRBRPluginMenuItemObj3 pItemArr = (PRBRPluginMenuItemObj3)g_pRBRPluginMenuSystem->pluginsMenuObj->pItemObj[idx];
+				if (pItemArr != nullptr && pItemArr->szItemName != nullptr && pItemArr->szItemName[0] != '\0')
+				{
+					g_NGPCarMenu_AutoLogonOptions.push_back(pItemArr->szItemName);
+
+					// Set the AutoLogon menu idx to the custom plugin idx in this vector
+					if (_iEqual(m_sAutoLogon, pItemArr->szItemName))
+						m_iMenuAutoLogonOption = max((idx - g_pRBRPluginMenuSystem->pluginsMenuObj->firstSelectableItemIdx) + 3, 0);
+				}
+			}
+		}	
+
+		if (m_iMenuAutoLogonOption <= 0)
+		{
+			if (_iEqual(m_sAutoLogon, "disabled", true)) m_iMenuAutoLogonOption = 0;
+			else if (_iEqual(m_sAutoLogon, "main", true)) m_iMenuAutoLogonOption = 1;
+			else if (_iEqual(m_sAutoLogon, "plugins", true)) m_iMenuAutoLogonOption = 2;
+			else m_iMenuAutoLogonOption = (int)g_NGPCarMenu_AutoLogonOptions.size();
+		}
+	}
 
 	// Draw blackout (coordinates specify the 'window' where you don't want black)
 	m_pGame->DrawBlackOut(420.0f, 0.0f, 420.0f, 480.0f);
@@ -2581,6 +2764,8 @@ void CNGPCarMenu::DrawFrontEndPage(void)
 			sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_EnableDisableOptions[m_iMenuRBRTMOption]);
 		else if (i == C_MENUCMD_RBRRXOPTION)
 			sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_EnableDisableOptions[m_iMenuRBRRXOption]);
+		else if (i == C_MENUCMD_AUTOLOGONOPTION)
+			sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], (m_iMenuAutoLogonOption < (int)g_NGPCarMenu_AutoLogonOptions.size() ? g_NGPCarMenu_AutoLogonOptions[m_iMenuAutoLogonOption] : "<unknown>"));
 		else
 			sprintf_s(szTextBuf, sizeof(szTextBuf), "%s", g_NGPCarMenu_PluginMenu[i]);
 
@@ -2610,7 +2795,6 @@ void CNGPCarMenu::DrawFrontEndPage(void)
 #define DO_MENUSELECTION_LEFTRIGHT(OptionID, OptionValueVariable, OptionArray) \
    if (m_iMenuSelection == OptionID && bLeft && (--OptionValueVariable) < 0) OptionValueVariable = 0; \
    else if (m_iMenuSelection == OptionID && bRight && (++OptionValueVariable) >= COUNT_OF_ITEMS(OptionArray)) OptionValueVariable = COUNT_OF_ITEMS(OptionArray)-1
-
 
 void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, bool bLeft, bool bRight, bool bSelect)
 {
@@ -2703,9 +2887,14 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 	if (m_iMenuRBRRXOption == 1 && iPrevMenuRBRRXOptionValue != m_iMenuRBRRXOption)
 		g_bNewCustomPluginIntegrations = TRUE;
 
-	if(iPrevMenuImageOptionValue != m_iMenuImageOption || iPrevMenuRBRTMOptionValue != m_iMenuRBRTMOption || iPrevMenuRBRRXOptionValue != m_iMenuRBRRXOption)
+	int iPrevMenuAutoLogonOptionValue = m_iMenuAutoLogonOption;
+	if (m_iMenuSelection == C_MENUCMD_AUTOLOGONOPTION && bLeft && (--m_iMenuAutoLogonOption) < 0) m_iMenuAutoLogonOption = 0;
+	else if (m_iMenuSelection == C_MENUCMD_AUTOLOGONOPTION && bRight && (++m_iMenuAutoLogonOption) >= (int)g_NGPCarMenu_AutoLogonOptions.size()) m_iMenuAutoLogonOption = g_NGPCarMenu_AutoLogonOptions.size() - 1;
+
+	if(iPrevMenuImageOptionValue != m_iMenuImageOption || iPrevMenuRBRTMOptionValue != m_iMenuRBRTMOption || iPrevMenuRBRRXOptionValue != m_iMenuRBRRXOption || iPrevMenuAutoLogonOptionValue != m_iMenuAutoLogonOption)
 		SaveSettingsToPluginINIFile();
 }
+
 
 //------------------------------------------------------------------------------------------------
 //
@@ -2975,13 +3164,28 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 {
 	HRESULT hResult;
 
+/*
+#if USE_DEBUG == 1
+	static int prevMode = -1;
+	static PRBRMenuObj prevMenu = nullptr;
+	if (g_pRBRGameMode->gameMode != prevMode || prevMenu != g_pRBRMenuSystem->currentMenuObj)
+	{
+		DebugPrint("Mode=%x Menu=%08x", g_pRBRGameMode->gameMode, (DWORD)g_pRBRMenuSystem->currentMenuObj);
+		prevMode = g_pRBRGameMode->gameMode;
+		prevMenu = g_pRBRMenuSystem->currentMenuObj;
+	}
+#endif
+*/
+
 	if (g_pRBRGameMode->gameMode == 03)
 	{
 		int posX;
 		int posY;
 		int iFontHeight;
 
-		if (g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_QUICKRALLY_CARS]
+		if (m_iAutoLogonMenuState > 0) 
+			DoAutoLogonSequence();
+		else if (g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_QUICKRALLY_CARS]
 			|| g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MULTIPLAYER_CARS_P1]
 			|| g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MULTIPLAYER_CARS_P2]
 			|| g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MULTIPLAYER_CARS_P3]
@@ -3568,13 +3772,16 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 
 					if (m_latestMapRBRRX.length > 0)
 						// TODO: KM to Miles miles=km*0.621371192 config option support
-						sStrStream << m_latestMapRBRRX.length << L" km ";
+						sStrStream << m_latestMapRBRRX.length << L" km";
 
 					if (!m_latestMapRBRRX.surface.empty())
-						sStrStream << GetLangStr(m_latestMapRBRRX.surface.c_str()) << L" ";
+						sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << GetLangStr(m_latestMapRBRRX.surface.c_str());
 
 					if (m_latestMapRBRRX.numOfPacenotes >= 15)
-						sStrStream << GetLangStr(L"pacenotes");
+						sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << GetLangStr(L"pacenotes");
+
+					if (!m_latestMapRBRRX.comment.empty())
+						sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << m_latestMapRBRRX.comment.c_str();
 
 					g_pFontCarSpecCustom->DrawText(posX, posY + (iMapInfoPrintRow++ * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), 0);
 

@@ -239,6 +239,7 @@ struct RBRRX_MapInfo {
 	std::string   author;			//		author=
 	std::string   version;			//		version=
 	std::string   date;				//      date=
+	std::string   comment;			//      comment=
 
 	double length;					// The length of the stage set by track.ini length option or via BTB track data (split1-split2-finish distance in RBR data structure)
 	int    numOfPacenotes;			// Num of pacenotes entries in pacenotes.ini file (usually <20 notes means that notes are not set)
@@ -360,12 +361,17 @@ protected:
 
 	int	m_iCarMenuNameLen;			// Max char space reserved for the current car menu name menu items (calculated in CalculateMaxLenCarMenuName method)
 
+	int   m_iAutoLogonMenuState;        // State step of the autologon procedure (0=completed or not used, 1=DoMulligallawyLoadProfile, 2=DoOptionsMenu, 3=DoPluginsMenu, 4=DoCustomPluginMenu)
+	DWORD m_dwAutoLogonEventStartTick;  // The start tick of the previous auto-logon event. If autologon takes too logn then it is aborted
+
 	std::string m_sMenuStatusText1;	// Status text message 
 	std::string m_sMenuStatusText2;
 	std::string m_sMenuStatusText3;
 
 	DetourXS* gtcDirect3DBeginScene;
 	DetourXS* gtcDirect3DEndScene;
+
+	void DoAutoLogonSequence();
 
 	void InitCarSpecData_RBRCIT();
 	void InitCarSpecData_EASYRBR();
@@ -393,12 +399,15 @@ public:
 	int	m_iMenuImageOption;		// 0 = Use PNG preview file format to read and create image files, 1 = BMP file format
 	int m_iMenuRBRTMOption;		// 0 = RBRTM integration disabled, 1 = Enabled
 	int m_iMenuRBRRXOption;		// 0 = RBRRX integration disabled, 1 = Enabled
+	int m_iMenuAutoLogonOption; // 0 = Disabled, 1=Main, 2=Plugins, 3+ custom plugin
 
 	bool m_bRBRFullscreenDX9;			// Is RBR running in fullscreen or windows DX9 mode? TRUE-fullscreen, FALSE=windowed
 	bool m_bPacenotePluginInstalled;	// Is Pacenote plugin used? RBR exit logic handles font cleanup a bit differently in fullscreen mode IF pacenote plugin is missing
 
 	std::string  m_sRBRRootDir;  // RBR app path, multibyte (or normal ASCII) string
 	std::wstring m_sRBRRootDirW; // RBR app path, widechar string
+
+	std::string m_sAutoLogon;					// The current auto-logon option name (Disabled, Main, Plugins or custom plugin name)
 
 	std::wstring m_screenshotPath;				// Path to car preview screenshot images (by default AppPath + \plugins\NGPCarMenu\preview\XResxYRes\)
 	int m_screenshotAPIType;					// Uses DIRECTX or GDI API technique to generate a new screenshot file. 0=DirectX (default), 1=GDI. No GUI option, so tweak this in NGPCarMenu.ini file.

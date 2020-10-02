@@ -28,6 +28,7 @@ This **NGPCarMenu RBR plugin solves these problems** by doing following enhancem
 - RBRRX improvement 3: Shows the stage information (length, surface, author, version, date if set in BTB specific track.ini file) and a map preview image in BTB stages menu list (RBRRX_MapScreenShot path image if set, otherwise shows the image set in track.ini splashscreen option).
 - RBRRX improvement 4: Shows Nth recently driven stages as a shortcut menu entries on top of the RBR_RX stage list.
 - RBRRX improvement 5: Remembers the focused stage menu line even after visiting the RBR main menu (without NGPCarMenu plugin RBR_RX would sometimes reset back to the first menu line).
+- AutoLogon feature opens automatically the menu screen of your favorite plugin when RBR is launched (for example takes you to RBRTM or RBR_RX menu screen).
 
 The plugin supports **RBRTM Czech Tournament** plugin (V0.88) integration. Use NGPCarMenu in-game menu or INI file to enable/disable this integration.
 The plugin supports **RBR_RX** plugin (RBR_RX.dll with 417792 bytes, the file doesn't have version tag) integration. Use NGPCarMenu in-game menu or INI file to enable/disable this integration.
@@ -51,6 +52,7 @@ The plugin supports **RBR_RX** plugin (RBR_RX.dll with 417792 bytes, the file do
 - Now you are ready to race! Go to *"Quick Rally/Multiplayer/Season"* in-game menu and verify that you can see the new information and car preview images in *"Select Car"* menu.
 - If you use RBRTM online tournament plugin then enable RBRTM_Integration option (enabled by default). If the car preview image is drawn at wrong location in RBRTM menus then check resolution specific RBRTM_CarPictureRect option in NGPCarMenu.ini file. Set correct rectangle coordinates where the car preview image should be dran (pro tip. Take fullscreen screenshot and use Paint app to see the correct coordinates of the bottom left "empty rectangle area" in Shakedown menu).
 - If you use RBR_RX BTB tracks plugin then enable RBRRX_Integration option (enabled by default). If the map preview image is drawn at wrong location in RBR_RX menus then check RBRRX_MapPictureRect INI option. See Plugins\NGPCarMenu\preview\maps\ folder for a sample BTB map preview image file.
+- If you are tired of doing half a dozen of key presses to open your favorite plugin ("Load profile/Options/Plugins/MyFavouritePlugin") then set AutoLogon option and NGPCarMenu takes you there automatically when RBR is launched.
 
 The NGPCarMenu.ini file has various screen resolution specific options. There are default values for the most common resolutions, but if the resolution you use is not there the plugin adds it there automatically with default values. Refer to NGPCarMenu.ini.sample for more information about new options.
 
@@ -66,6 +68,7 @@ Note! If you use Windows Explorer integrated unzip tool to unzip the package the
 rbr\Plugins\NGPCarMenu.ini options (see the NGPCarMenu.ini.sample file for more details):
 | Option                 | Comment                                                                                |
 |------------------------|----------------------------------------------------------------------------------------|
+| AutoLogon              | Disabled, Main, Plugins, custom plugin name. If this is set then NGPCarMenu opens the specified menu screen automatically when RBR is launched. |
 | ScreenshotPath         | Path of car preview images (relative to RBR executable location or absolute path). Supports various runtime variables (see NGPCarMenu.ini.sample for more details) |
 | ScreenshotReplay       | Replay filename the plugin uses to generate preview images. |
 | ScreenshotFileType     | PNG or BMP file format in car preview image files. There is also in-game plugin option to set this value. |
@@ -112,6 +115,7 @@ rbr\Plugins\NGPCarMenu.ini options (see the NGPCarMenu.ini.sample file for more 
 - **Why some maps in RBRTM Shakedown stages menu list doesn't have a map preview image?** Maps\Tracks.ini file doesn't define a map specific SplashScreen option and there are no custom image in Plugins\NGPCarMenu\preview\maps\ folder. You can add your own PNG images to the maps folder. See RBRTM_MapScreenshotPath option.
 - **Why map preview images in RBRTM Shakedown menu screen are drawn at wrong location?** If RBRTM_MapPictureRect option is not set in NGPCarMenu.ini file then the plugin draws the image at default location. If you are not happy with the location then use RBRTM_MapPictureRect option to re-locate and re-size map preview images.
 - **Why RBR_RX BTB stage menu list doesn't show a map preview image?** Usually BTB track packs don't supply a map preview image, so you have to create one (take a screenshot in RBR while driving a BTB stage). See RBRRX_MapScreenshotPath INI option where to copy these map preview image files (by default Plugins\NGPCarMenu\preview\map\BTB_trackFolderName.png files).
+- **Why autologon feature doesn't seem to work?** Check Plugins\NGPCarMenu\NGPCarMenu.log logfile for more information. Maybe the name of the custom plugin has been changed? Check the autologon option in NGPCarMenu menus.
 
 - **What is the folder structure used by this plugin?** The DLL and INI plugin files must be in the Plugins directory under the RBR game root folder. Replays RBR folder should have a replay file set in *ScreenshotReplay* option. The file hierarchy is something like this:
    c:\apps\richardBurnsRally\plugins\NGPCarMenu.dll
@@ -136,6 +140,7 @@ Sample of RX_Content\tracks\myBTBMap\track.ini file:
   - author=(c) Mat Mapper & Lisa Slider
   - version=1.0.1
   - date=2020-10-30
+  - comment=30% tarmac, 70% gravel, difficult
   - splashscreen=rallyUni2020.jpg
 
 If the length attribute is missing then NGPCarMenu plugin takes the length from BTB track model data when the map is loaded for the first time. If this value is invalid (<1km) then NGPCarMenu tries to estimate the stage length from start-finish markers in BTB pacenotes data. The value is stored in track.ini file automatically for later use if the option was not there already.
