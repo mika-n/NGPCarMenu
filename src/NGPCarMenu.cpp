@@ -475,6 +475,7 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_pRBRRXPlugin = nullptr;		// Pointer to RBRRX plugin object
 	m_iRBRRXPluginMenuIdx = 0;		// Index (Nth item) to RBRRX plugin in RBR in-game Plugins menu list (0=Not yet initialized, -1=Initialized but not found, >0=Initialized and found)
 	m_bRBRRXPluginActive = false;
+	m_pRBRRXPluginFirstTimeInitialization = true;
 
 	m_pD3D9RenderStateCache = nullptr; 
 	gtcDirect3DBeginScene = nullptr;
@@ -3642,6 +3643,12 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 							delete[] m_pCustomMapMenuRBRRX;
 							m_pCustomMapMenuRBRRX = nullptr;
 						}
+					}
+
+					if (m_pRBRRXPluginFirstTimeInitialization)
+					{
+						m_pRBRRXPluginFirstTimeInitialization = FALSE;
+						m_pRBRRXPlugin->menuID = 1;
 					}
 				}
 				else if (m_pRBRRXPlugin->menuID == 1 && m_pRBRRXPlugin->pMenuData->selectedItemIdx >= 0 && m_pRBRRXPlugin->pMenuData->selectedItemIdx < m_pRBRRXPlugin->numOfItems)

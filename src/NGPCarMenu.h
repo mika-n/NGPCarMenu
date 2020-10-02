@@ -481,6 +481,7 @@ public:
 
 	int    m_iRBRRXPluginMenuIdx;				// Index of the RBR_RX plugin in the RBR Plugins menu list (this way we know when RBRRX custom plugin in Nth index position is activated)
 	bool   m_bRBRRXPluginActive;				// TRUE/FALSE if the current active custom plugin is RBR_RX (active = The RBRTM plugin handler is running in foreground)
+	bool   m_pRBRRXPluginFirstTimeInitialization; // First time to open RBRRX plugin after RBR launch. Go automatically to Race screen and skip the race/replay menu
 
 	PRBRMenuObj  m_pRBRPrevCurrentMenu;			// If RBRTM or RBRRX integration is enabled then NGPCarMenu must try to identify Plugins menuobj and RBRTM/RBRRX plugin. This is just a "previous currentMenu" in order to optimize the check routine (ie. don't re-check if the plugin is RBRTM until new menu/plugin is activated)
 	
