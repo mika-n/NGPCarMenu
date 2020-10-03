@@ -1382,15 +1382,16 @@ void CNGPCarMenu::DoAutoLogonSequence()
 		// Auto-load the first default profile. If there are no profiles then abort the logon sequence
 		if (g_pRBRMenuSystem->currentMenuObj->pExtMenuObj != nullptr)
 		{
-			if (g_pRBRMenuSystem->currentMenuObj->pExtMenuObj->numOfItems >= 1 && g_pRBRMenuSystem->currentMenuObj->pExtMenuObj->selectedItemIdx == 1)
+			if (g_pRBRMenuSystem->currentMenuObj->pExtMenuObj->numOfItems >= 1 /*&& g_pRBRMenuSystem->currentMenuObj->pExtMenuObj->selectedItemIdx == 1*/)
 			{
-				m_dwAutoLogonEventStartTick = GetTickCount();
-				m_iAutoLogonMenuState++;
-
-				// Choose the first profile automatically
-				g_pRBRMenuSystem->currentMenuObj->pExtMenuObj->selectedItemIdx = 1;
+				// Choose the first profile automatically if the first profile is not yet selected
+				if(g_pRBRMenuSystem->currentMenuObj->pExtMenuObj->selectedItemIdx == 0)
+					g_pRBRMenuSystem->currentMenuObj->pExtMenuObj->selectedItemIdx = 1;
 				SendMessage(g_hRBRWnd, WM_KEYDOWN, VK_RETURN, 0);
 				SendMessage(g_hRBRWnd, WM_KEYUP, VK_RETURN, 0);
+
+				m_dwAutoLogonEventStartTick = GetTickCount();
+				m_iAutoLogonMenuState++;
 			}
 			else
 				// Abort auto-logon sequence because there are no profiles availabe. User should create the MULLIGATAWNY profile
@@ -1402,10 +1403,10 @@ void CNGPCarMenu::DoAutoLogonSequence()
 		// Accept "OK profile load" screen, but give RBR few msecs time to complete the profile loading
 		if ( (GetTickCount() - m_dwAutoLogonEventStartTick) >= 100)
 		{
-			m_dwAutoLogonEventStartTick = GetTickCount();
-			m_iAutoLogonMenuState++;
 			SendMessage(g_hRBRWnd, WM_KEYDOWN, VK_RETURN, 0);
 			SendMessage(g_hRBRWnd, WM_KEYUP, VK_RETURN, 0);
+			m_dwAutoLogonEventStartTick = GetTickCount();
+			m_iAutoLogonMenuState++;
 		}
 	}
 	else if (m_iAutoLogonMenuState == 3)
@@ -1424,12 +1425,11 @@ void CNGPCarMenu::DoAutoLogonSequence()
 				if ((GetTickCount() - m_dwAutoLogonEventStartTick) >= 150)
 				{
 					// Choose Options menu in MainMenu
-					m_dwAutoLogonEventStartTick = GetTickCount();
-					m_iAutoLogonMenuState++;
-
 					g_pRBRMenuSystem->currentMenuObj->selectedItemIdx = 0x09;
 					SendMessage(g_hRBRWnd, WM_KEYDOWN, VK_RETURN, 0);
 					SendMessage(g_hRBRWnd, WM_KEYUP, VK_RETURN, 0);
+					m_dwAutoLogonEventStartTick = GetTickCount();
+					m_iAutoLogonMenuState++;
 				}
 			}
 			else
@@ -1446,11 +1446,11 @@ void CNGPCarMenu::DoAutoLogonSequence()
 				if ((GetTickCount() - m_dwAutoLogonEventStartTick) >= 150)
 				{
 					// Choose Plugins menu in OptionsMenu
-					m_dwAutoLogonEventStartTick = GetTickCount();
-					m_iAutoLogonMenuState++;
 					g_pRBRMenuSystem->currentMenuObj->selectedItemIdx = 0x0A;
 					SendMessage(g_hRBRWnd, WM_KEYDOWN, VK_RETURN, 0);
 					SendMessage(g_hRBRWnd, WM_KEYUP, VK_RETURN, 0);
+					m_dwAutoLogonEventStartTick = GetTickCount();
+					m_iAutoLogonMenuState++;
 				}
 			}
 			else
