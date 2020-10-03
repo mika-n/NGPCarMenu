@@ -1414,6 +1414,7 @@ void CNGPCarMenu::DoAutoLogonSequence()
 		{
 			if (m_bAutoLogonWaitProfile)
 			{
+				// The plugin waited user to choose a profile. Now when user selected the profile continue the autologon sequence
 				m_dwAutoLogonEventStartTick = GetTickCount();
 				m_bAutoLogonWaitProfile = FALSE;
 			}
