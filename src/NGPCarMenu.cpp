@@ -476,7 +476,7 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_pRBRRXPlugin = nullptr;		// Pointer to RBRRX plugin object
 	m_iRBRRXPluginMenuIdx = 0;		// Index (Nth item) to RBRRX plugin in RBR in-game Plugins menu list (0=Not yet initialized, -1=Initialized but not found, >0=Initialized and found)
 	m_bRBRRXPluginActive = false;
-	m_pRBRRXPluginFirstTimeInitialization = true;
+	m_pRBRRXPluginFirstTimeInitialization = false;
 
 	m_pD3D9RenderStateCache = nullptr; 
 	gtcDirect3DBeginScene = nullptr;
@@ -1484,8 +1484,19 @@ void CNGPCarMenu::DoAutoLogonSequence()
 						}
 					}
 
-					if(bCustomPluginFound)
+					if (bCustomPluginFound)
+					{
 						LogPrint("AutoLogon to %s plugin completed", m_sAutoLogon.c_str());
+
+						// If autologon navigates to RBR_RX plugin then enable "skip Race/Replay" main menu
+						if (_iEqual(m_sAutoLogon, "rbr_rx", true))
+						{
+							m_pRBRRXPluginFirstTimeInitialization = TRUE;
+							m_dwAutoLogonEventStartTick = GetTickCount();
+						}
+						else
+							m_pRBRRXPluginFirstTimeInitialization = FALSE;
+					}
 					else
 						LogPrint("WARNING. AutoLogon to %s plugin failed because the plugin is not installed. Check AutoLogon option", m_sAutoLogon.c_str());
 				}
@@ -3665,15 +3676,24 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 						}
 					}
 
+					//if (m_pRBRRXPluginFirstTimeInitialization && m_pRBRRXPlugin->numOfItems >= 2)
 					if (m_pRBRRXPluginFirstTimeInitialization)
 					{
-						m_pRBRRXPluginFirstTimeInitialization = FALSE;
-						m_pRBRRXPlugin->menuID = 1;
+						if( (GetTickCount() - m_dwAutoLogonEventStartTick) > 150)
+						{
+							// Navigate automatically to Race menu when RBRRX was opened for the first time and autologon was activated
+							m_pRBRRXPluginFirstTimeInitialization = FALSE;
+							//m_pRBRRXPlugin->menuID = 1;
+							SendMessage(g_hRBRWnd, WM_KEYDOWN, VK_RETURN, 0);
+							SendMessage(g_hRBRWnd, WM_KEYUP, VK_RETURN, 0);
+						}
 					}
 				}
 				else if (m_pRBRRXPlugin->menuID == 1 && m_pRBRRXPlugin->pMenuData->selectedItemIdx >= 0 && m_pRBRRXPlugin->pMenuData->selectedItemIdx < m_pRBRRXPlugin->numOfItems)
 				{
 					// RBRRX tracks menu 
+					m_pRBRRXPluginFirstTimeInitialization = FALSE;
+
 					if (m_pCustomMapMenuRBRRX == nullptr)
 					{
 						int numOfRecentMaps = CalculateNumOfValidMapsInRecentList(m_pOrigMapMenuItemsRBRRX, m_origNumOfItemsMenuItemsRBRRX);
