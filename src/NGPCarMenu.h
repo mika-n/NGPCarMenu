@@ -196,7 +196,8 @@ struct RBRTM_MapInfo {
 typedef struct {
 #pragma pack(push,1)
 	char szTrackName[256];
-	char szTrackFolder[260];
+	char szTrackFolder[256];
+	__int32 physicsID;			// BTB physics 0=gravel, 1=tarmac, 2=snow (derived from track.ini physics option)
 #pragma pack(pop)
 } RBRRXMenuItem;
 typedef RBRRXMenuItem* PRBRRXMenuItem;
@@ -233,6 +234,7 @@ typedef RBRRXPlugin* PRBRRXPlugin;
 struct RBRRX_MapInfo {
 	int			  mapIDMenuIdx;		// Menu index (or -1 if this struct is not valid)
 	std::string   folderName;		// BTB map data folder (this folder should have track.ini file)
+	int			  physicsID;		// BTB physics 0=gravel, 1=tarmac, 2=snow (track.ini physics option)
 
 	std::string   name;				// Track.ini metadata. name=
 	std::wstring  surface;			//		physics=
@@ -253,8 +255,9 @@ struct RBRRX_MapInfo {
 		length = -1;
 		numOfPacenotes = 0;
 
+		physicsID = 0;
 		name.reserve(64);
-		folderName.reserve(260);
+		folderName.reserve(256);
 		surface.reserve(16);
 		previewImageFile.reserve(260);
 
@@ -529,7 +532,7 @@ public:
 		if (pMapMenuItemsRBRRX != nullptr && !folderName.empty())
 		{
 			std::string trackFolder;
-			trackFolder.reserve(260); // Max length of folder name in RBR_RX plugin
+			trackFolder.reserve(256); // Max length of folder name in RBR_RX plugin
 			//_ToLowerCase(folderName);
 
 			for (int idx = 0; idx < numOfItemsMenuItemsRBRRX; idx++)
@@ -609,6 +612,7 @@ public:
 					{
 						(*it)->name = "[" + std::to_string(numOfRecentMaps) + "] ";
 						(*it)->name.append(pMapMenuItemsRBRRX[menuIdx].szTrackName);
+						(*it)->physicsID = pMapMenuItemsRBRRX[menuIdx].physicsID;
 					}
 
 					// Go to the next item in list iterator

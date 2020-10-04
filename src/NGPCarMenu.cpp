@@ -476,7 +476,7 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_pRBRRXPlugin = nullptr;		// Pointer to RBRRX plugin object
 	m_iRBRRXPluginMenuIdx = 0;		// Index (Nth item) to RBRRX plugin in RBR in-game Plugins menu list (0=Not yet initialized, -1=Initialized but not found, >0=Initialized and found)
 	m_bRBRRXPluginActive = false;
-	m_pRBRRXPluginFirstTimeInitialization = false;
+	m_pRBRRXPluginFirstTimeInitialization = TRUE;
 
 	m_pD3D9RenderStateCache = nullptr; 
 	gtcDirect3DBeginScene = nullptr;
@@ -1492,10 +1492,10 @@ void CNGPCarMenu::DoAutoLogonSequence()
 						if (_iEqual(m_sAutoLogon, "rbr_rx", true))
 						{
 							m_pRBRRXPluginFirstTimeInitialization = TRUE;
-							m_dwAutoLogonEventStartTick = GetTickCount();
+							m_dwAutoLogonEventStartTick = 0;//  GetTickCount();
 						}
 						else
-							m_pRBRRXPluginFirstTimeInitialization = FALSE;
+							m_pRBRRXPluginFirstTimeInitialization = FALSE;						
 					}
 					else
 						LogPrint("WARNING. AutoLogon to %s plugin failed because the plugin is not installed. Check AutoLogon option", m_sAutoLogon.c_str());
@@ -3676,10 +3676,11 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 						}
 					}
 
-					//if (m_pRBRRXPluginFirstTimeInitialization && m_pRBRRXPlugin->numOfItems >= 2)
 					if (m_pRBRRXPluginFirstTimeInitialization)
 					{
-						if( (GetTickCount() - m_dwAutoLogonEventStartTick) > 150)
+						if (m_dwAutoLogonEventStartTick == 0)
+							m_dwAutoLogonEventStartTick = GetTickCount();
+						else if( (GetTickCount() - m_dwAutoLogonEventStartTick) > 150)
 						{
 							// Navigate automatically to Race menu when RBRRX was opened for the first time and autologon was activated
 							m_pRBRRXPluginFirstTimeInitialization = FALSE;
@@ -3722,6 +3723,7 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 							// At this point there are only max number of valid maps in the recent list (CalculateNumOfValidMapsInRecentList removed invalid and extra items)
 							strncpy_s(m_pCustomMapMenuRBRRX[numOfRecentMaps].szTrackName,   item->name.c_str(), COUNT_OF_ITEMS(m_pCustomMapMenuRBRRX[numOfRecentMaps].szTrackName));
 							strncpy_s(m_pCustomMapMenuRBRRX[numOfRecentMaps].szTrackFolder, item->folderName.c_str(), COUNT_OF_ITEMS(m_pCustomMapMenuRBRRX[numOfRecentMaps].szTrackFolder));
+							m_pCustomMapMenuRBRRX[numOfRecentMaps].physicsID = item->physicsID;
 							numOfRecentMaps++;
 						}
 
