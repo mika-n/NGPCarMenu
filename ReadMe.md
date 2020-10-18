@@ -21,10 +21,10 @@ Good news! **NGPCarMenu plugin solves these issues** by doing following enhancem
 - "AutoLogon" feature opens automatically the menu screen of your favorite plugin when RBR is launched (for example takes you to RBRTM, RBR_RX or RallySimFans menu screen).
 - "Rename profile" feature renames the driver profile while preserving profile settings (ie. you no longer have to call yourself as MULLIGATAWNY. Now you can rename the driver via NGPCarMenu plugin and still keep all maps and cars unlocked).
 
-The plugin supports **RBRTM Czech Tournament** plugin (V0.88) integration. Use NGPCarMenu in-game menu or INI file to enable/disable this integration.
-The plugin supports **RBR_RX** plugin (RBR_RX.dll with 417792 bytes, the file doesn't have version tag) integration. Use NGPCarMenu in-game menu or INI file to enable/disable this integration.
-The plugin supports **RallySimFans** plugin (RSF). Refer to RSF home page for more information.
-The plugin supports **RBRPro** RBR bundle. Refer to RBRPro home page for more information.
+The plugin supports **RBRTM Czech Tournament** plugin (V0.88) integration. Use NGPCarMenu in-game menu or INI file to enable/disable this integration. 
+**RBR_RX** plugin (RBR_RX.dll with 417792 bytes, the file doesn't have version tag) integration. Use NGPCarMenu in-game menu or INI file to enable/disable this integration. 
+**RallySimFans** plugin (RSF). Refer to RSF home page for more information. 
+**RBRPro** RBR bundle. Refer to RBRPro home page for more information. 
 
 ![](misc/NGPCarMenu_SelectCarMenu.png)
 ![](misc/NGPCarMenu_RBRTMMenu.png)
@@ -34,12 +34,12 @@ The plugin supports **RBRPro** RBR bundle. Refer to RBRPro home page for more in
 - **[The latest build of NGPCarMenu](https://github.com/mika-n/NGPCarMenu/releases)**
 
 ## Installation
-- Download the latest version from the link shown above (ZIP file).
-- Unzip the NGPCarMenu-versionTag.zip file to the root folder of existing installation of RBR game (for example *c:\games\richardBurnsRally*).
-- Launch RichardBurnsRally_SSE.exe and navigate to *Options/Plugins/NGPCarMenu* in-game menu to enable/disable various based on your personal preferences.
+- **Download the latest version** from the link shown above (ZIP file).
+- **Unzip the NGPCarMenu-versionTag.zip file** to the root folder of existing installation of RBR game (for example *c:\games\richardBurnsRally*).
+- **Launch RichardBurnsRally_SSE.exe** and navigate to *Options/Plugins/NGPCarMenu* in-game menu to enable/disable various options based on your personal preferences.
 - If this was the first time you used NGPCarMenu plugin in RBR then you probably don't have any car preview images. Choose "CREATE car images" command to generate new car preview images for the currently installed custom cars in RBR.
-- You are now ready to race!
-
+- **You are now ready to race!**
+-
 - For advanced tweaks you can customize various options in *Plugins\NGPCarMenu.ini* file.
 - See especially the *RBRCITCarListPath* option if NGP car spec details are missing in RBR in-game menus. This option should point to the carList.ini file from NGP physics plugin (by default *RBRCIT\carlist\carList.ini* which is a relative path under the RBR installation folder).
 - Alternatively you can use EasyRBR tool to setup cars. In that case uncomment the EasyRBRPath option in NGPCarMenu.ini and set path to EasyRBR\easyrbr.ini file.
