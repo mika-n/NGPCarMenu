@@ -52,6 +52,8 @@ inline FONT3DVERTEX InitFont3DVertex(const D3DXVECTOR3& p, const D3DXVECTOR3& n,
 }
 */
 
+BOOL g_bD3DFontReleaseStateBlocks = TRUE;  // TRUE=Font destructor releses state blocks, FALSE=Does not release because some external D3D9 handler has done it already (if Pacenote plugin is NOT installed then this should be FALSE, some weird reason)
+
 std::vector<std::shared_ptr<SharedFont>> CD3DFont::sharedFonts = std::vector<std::shared_ptr<SharedFont>>();
 
 std::shared_ptr<SharedFont> CD3DFont::GetFont(const std::wstring & fontName, DWORD dwHeight, DWORD dwFlags)
@@ -98,6 +100,11 @@ void CD3DFont::ReleaseFont(std::shared_ptr<SharedFont> font)
 	}
 }
 
+BOOL CD3DFont::IsFontIdentical(const std::wstring& fontName, DWORD dwHeight, DWORD dwFlags)
+{
+	return (m_font != nullptr ? m_font->Compare(fontName, dwHeight, dwFlags) : FALSE);
+}
+
 //-----------------------------------------------------------------------------
 // Name: CD3DFont()
 // Desc: Font class constructor
@@ -113,8 +120,6 @@ CD3DFont::CD3DFont(const std::wstring &fontName, DWORD dwHeight, DWORD dwFlags)
 
 	m_font = GetFont(fontName, dwHeight, dwFlags);
 	m_dwFlags = dwFlags;
-
-	m_ReleaseStateBlocks = TRUE;
 }
 
 //-----------------------------------------------------------------------------
@@ -221,7 +226,7 @@ HRESULT CD3DFont::InvalidateDeviceObjects()
 {
 	SAFE_RELEASE(m_pVB);
 	
-	if (m_ReleaseStateBlocks)
+	if (g_bD3DFontReleaseStateBlocks)
 	{
 		SAFE_RELEASE(m_pStateBlockSaved);
 		SAFE_RELEASE(m_pStateBlockDrawText);

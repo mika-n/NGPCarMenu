@@ -37,6 +37,7 @@
 #include <wincodec.h>			// GUID_ContainerFormatPng 
 
 #include "NGPCarMenu.h"
+#include "FileWatcher.h"
 
 namespace fs = std::filesystem;
 
@@ -49,25 +50,89 @@ BOOL g_bRBRHooksInitialized = FALSE; // TRUE-RBR main memory and DX9 function ho
 
 tRBRDirectXBeginScene Func_OrigRBRDirectXBeginScene = nullptr;  // Re-routed built-in DX9 RBR function pointers
 tRBRDirectXEndScene   Func_OrigRBRDirectXEndScene = nullptr;
+tRBRReplay            Func_OrigRBRReplay = nullptr;				// Re-routed RBR replay class method
+
 
 #if USE_DEBUG == 1
 CD3DFont* g_pFontDebug = nullptr;
 #endif 
 
 CD3DFont* g_pFontCarSpecCustom = nullptr;
+CD3DFont* g_pFontCarSpecModel  = nullptr;
 
 CNGPCarMenu*         g_pRBRPlugin = nullptr;			// The one and only RBRPlugin instance
 PRBRPluginMenuSystem g_pRBRPluginMenuSystem = nullptr;  // Pointer to RBR plugin menu system (for some reason Plugins menu is not part of the std menu arrays)
 
 
-std::vector<std::unique_ptr<CRBRPluginIntegratorLink>>* g_pRBRPluginIntegratorLinkList = nullptr; // List of custom plugin integration definitions (other plugin can use NGPCarMenu API to draw custom images)
-bool g_bNewCustomPluginIntegrations = false;  // TRUE if there are new custom plugin integrations waiting for to be initialized
+std::vector<std::unique_ptr<CRBRPluginIntegratorLink>>* g_pRBRPluginIntegratorLinkList = nullptr;	// List of custom plugin integration definitions (other plugin can use NGPCarMenu API to draw custom images)
+std::vector<std::unique_ptr<CD3DFont>>* g_pRBRPluginIntegratorFontList = nullptr;					// List of custom plugin font definitions (other plugin can use NGPCarMenu API to draw custom text using other than RBR fonts also)
+
+bool g_bNewCustomPluginIntegrations = false;														// TRUE if there are new custom plugin integrations waiting for to be initialized
 
 
 WCHAR* g_pOrigCarSpecTitleWeight = nullptr;				// The original RBR Weight and Transmission title string values
 WCHAR* g_pOrigCarSpecTitleTransmission = nullptr;
 WCHAR* g_pOrigCarSpecTitleHorsepower = nullptr;
 
+std::vector<std::string>* g_pRBRRXTrackNameListAlreadyInitialized = nullptr; // List of RBRRX track folder names with a missing track.ini splashscreen option and already scanned for default JPG/PNG preview image during this RBR process life time
+
+
+//--------------------------------------------------------------------------------------------------------------------------
+// Class to listen for new rbr\Replahs\*.rpl files after RBRRX/BTB racing has ended.
+//
+class RBRReplayFileWatcherListener : public IFileWatcherListener
+{
+protected:
+	std::list<std::wstring> replayFileQueue;
+
+	void AddReplayFileToQueue(const std::wstring& fileName)
+	{
+		std::filesystem::path fileNamePath(fileName);
+		if (_iEqual(fileNamePath.extension().wstring(), L".rpl", true))
+		{
+			// Add the filename if it is not yet in the list
+			if (std::find(replayFileQueue.begin(), replayFileQueue.end(), fileName) == replayFileQueue.end())
+				replayFileQueue.push_front(fileName);
+		}
+	}
+
+public:
+	virtual void OnError(const int errorCode) override
+	{
+		DebugPrint(L"OnError %d", errorCode);
+
+		// zero here is not an error, but just a notification that watcher thread has ended
+		if (errorCode != FILEWATCHER_ERR_NOERROR_CLOSING)
+			LogPrint("ERROR. RBRReplayFileWatcherListener.OnError %d", errorCode);
+	}
+
+	virtual void OnFileChange(const std::wstring& fileName) override
+	{
+		DebugPrint(L"OnFileChange %s", fileName.c_str());
+		AddReplayFileToQueue(fileName);
+	}
+
+	virtual void OnFileAdded(const std::wstring& fileName) override
+	{
+		DebugPrint(L"OnFileAdded %s", fileName.c_str());
+		AddReplayFileToQueue(fileName);
+	}
+
+	// Flush the queue and write out all replayFileName.ini files with the current track and car metadata
+	void DoCompletion(BOOL onlyForceCleanup)
+	{
+		if (!onlyForceCleanup)
+			g_pRBRPlugin->CompleteSaveReplayProcess(replayFileQueue);
+
+		replayFileQueue.clear();
+	}
+};
+
+CFileSystemWatcher    g_watcherNewReplayFiles;
+IFileWatcherListener* g_watcherNewReplayFileListener;
+
+
+//--------------------------------------------------------------------------------------------------------------------------
 //
 // Car details:
 //   rbr\cars\cars.ini					= List of active cars (8 slots). 
@@ -108,17 +173,19 @@ RBRCarSelectionMenuEntry g_RBRCarSelectionMenuEntry[8] = {
 #define C_MENUCMD_RBRTMOPTION		2
 #define C_MENUCMD_RBRRXOPTION		3
 #define C_MENUCMD_AUTOLOGONOPTION	4
-#define C_MENUCMD_RELOAD			5
-#define C_MENUCMD_CREATE			6
+#define C_MENUCMD_RENAMEDRIVER		5
+#define C_MENUCMD_RELOAD			6
+#define C_MENUCMD_CREATE			7
 
-char* g_NGPCarMenu_PluginMenu[7] = {
+char* g_NGPCarMenu_PluginMenu[8] = {
 	 "> Create option"		// CreateOptions
 	,"> Image option"		    // ImageOptions
 	,"> RBRTM integration option"    // EnableDisableOptions
 	,"> RBRRX integration option"    // EnableDisableOptions
 	,"> Auto logon option"		     // AutoLogon option
-	,"RELOAD car images"	// Clear cached car images to force re-loading of new images
-	,"CREATE car images"	// Create new car images (all or only missing car iamges)
+	,"RENAME driver profile" // "Rename driver MULLIGATAWNY -> SpeedRacer" in the profile to match the loaded pfXXXX.rbr profile filename (creates a new profile file. Take a backup copy of the old profile file)
+	,"RELOAD car images"	 // Clear cached car images to force re-loading of new images
+	,"CREATE car images"	 // Create new car images (all or only missing car iamges)
 };
 
 // CreateOption menu option names (option values in "Create option")
@@ -346,8 +413,147 @@ void APIENTRY API_MapRBRPointToScreenPoint(const float srcX, const float srcY, f
 	RBRAPI_MapRBRPointToScreenPoint(srcX, srcY, trgX, trgY);
 }
 
+BOOL APIENTRY API_GetVersionInfo(char* pOutTextBuffer, size_t textBufferSize, int* pOutMajor, int* pOutMinor, int* pOutPatch, int* pOutBuild)
+{
+	BOOL bResult; 
+
+	// Init app path value using RBR.EXE executable path
+	wchar_t  szModulePath[_MAX_PATH];
+	::GetModuleFileNameW(NULL, szModulePath, COUNT_OF_ITEMS(szModulePath));
+	::PathRemoveFileSpecW(szModulePath);
+
+	std::wstring sModulePath = std::wstring(szModulePath) + L"\\Plugins\\" L"" VS_PROJECT_NAME L".dll";
+
+	bResult = GetFileVersionInformationAsNumber(sModulePath, (UINT*)pOutMajor, (UINT*)pOutMinor, (UINT*)pOutPatch, (UINT*)pOutBuild);
+	if (pOutTextBuffer != nullptr && textBufferSize >= 32)
+	{
+		std::string sAPIVersionInfoTextBuffer;
+		sAPIVersionInfoTextBuffer = GetFileVersionInformationAsString(sModulePath);
+		strncpy_s(pOutTextBuffer, textBufferSize, sAPIVersionInfoTextBuffer.c_str(), 31);
+	}
+
+	return bResult;
+}
+
+
+//-------------------------------------------------------------------------------------------------
+// Initialize a new font for other custom plugins (all plugins share the same identical font object). Returns fontID value which is used in DrawText API functions or 0 if fails to create a font.
+//
+DWORD APIENTRY API_InitializeFont(const char* fontName, DWORD fontSize, DWORD fontStyle)
+{
+	if (fontName == nullptr || fontName[0] == '\0' || fontSize == 0)
+		return 0;
+
+	if(g_pRBRPluginIntegratorFontList == nullptr) 
+		g_pRBRPluginIntegratorFontList = new std::vector<std::unique_ptr<CD3DFont>>();
+
+	std::wstring sFontName = _ToWString(std::string(fontName));
+	CD3DFont* pFont = nullptr;
+
+	// Check if the font style already exists
+	for (auto& item : *g_pRBRPluginIntegratorFontList)
+	{
+		if (item->IsFontIdentical(sFontName, fontSize, fontStyle))
+		{
+			pFont = item.get();
+			break;
+		}
+	}
+
+	if (pFont == nullptr)
+	{
+		auto newFont= std::make_unique<CD3DFont>(sFontName, fontSize, fontStyle);
+		pFont = newFont.get();
+		g_pRBRPluginIntegratorFontList->push_back(std::move(newFont));
+	}
+
+	return (DWORD) pFont;
+}
+
+// CHAR and WCHAR handler to add a new custom text drawing using a custom DirectX font (private method, not exported. DrawTextA and DrawTextW calls this)
+BOOL API_AddLinkText(DWORD pluginID, int textID, int posX, int posY, const char* szText, const wchar_t* wszText, DWORD fontID, DWORD color, DWORD drawOptions)
+{
+	CRBRPluginIntegratorLink* pPluginIntegrationLink = nullptr;
+	for (auto& item : *g_pRBRPluginIntegratorLinkList)
+	{
+		if ((DWORD)item.get() == pluginID)
+		{
+			pPluginIntegrationLink = item.get();
+			break;
+		}
+	}
+
+	// Unknown plugin integration. Can't do anything
+	if (pPluginIntegrationLink == nullptr)
+		return FALSE;
+
+	CRBRPluginIntegratorLinkText* pPluginLinkText = nullptr;
+	for (auto& item : pPluginIntegrationLink->m_textList)
+	{
+		if (item->m_textID == textID)
+		{
+			pPluginLinkText = item.get();
+			break;
+		}
+	}
+
+	if (pPluginLinkText == nullptr)
+	{
+		auto newText = std::make_unique<CRBRPluginIntegratorLinkText>();
+		newText->m_textID = textID;
+		pPluginLinkText = newText.get();
+		pPluginIntegrationLink->m_textList.push_back(std::move(newText));
+	}
+
+	if (szText != nullptr)
+	{
+		pPluginLinkText->m_wsText.clear();
+		pPluginLinkText->m_sText = szText;
+	}
+	else
+	{
+		pPluginLinkText->m_sText.clear();
+		if (wszText == nullptr) pPluginLinkText->m_wsText.clear();
+		else pPluginLinkText->m_wsText = wszText;
+	}
+
+	pPluginLinkText->m_posX = posX;
+	pPluginLinkText->m_posY = posY;
+	pPluginLinkText->m_dwColor = color;
+	pPluginLinkText->m_dwDrawOptions = drawOptions;
+	pPluginLinkText->m_fontID = fontID;
+
+	// Initialize the font to use RBR D3D9 device
+	for (auto& fontItem : *g_pRBRPluginIntegratorFontList)
+	{
+		if ((DWORD)fontItem.get() == fontID)
+		{
+			if (fontItem->getDevice() == nullptr)
+			{
+				fontItem->InitDeviceObjects(g_pRBRIDirect3DDevice9);
+				fontItem->RestoreDeviceObjects();
+			}
+			break;
+		}
+	}
+
+	return TRUE;
+}
+
+BOOL APIENTRY API_DrawTextA(DWORD pluginID, int textID, int posX, int posY, const char* szText, DWORD fontID, DWORD color, DWORD drawOptions)
+{
+	return API_AddLinkText(pluginID, textID, posX, posY, szText, nullptr, fontID, color, drawOptions);
+}
+
+BOOL APIENTRY API_DrawTextW(DWORD pluginID, int textID, int posX, int posY, const wchar_t* wszText, DWORD fontID, DWORD color, DWORD drawOptions)
+{
+	return API_AddLinkText(pluginID, textID, posX, posY, nullptr, wszText, fontID, color, drawOptions);
+}
+
 
 //-----------------------------------------------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------------------------------------
+
 BOOL APIENTRY DllMain( HANDLE hModule,  DWORD  ul_reason_for_call, LPVOID lpReserved)
 {
 	return TRUE;
@@ -383,7 +589,9 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	CNGPCarMenu::m_sRBRRootDir = szTmpRBRRootDir;
 	CNGPCarMenu::m_sRBRRootDirW = _ToWString(CNGPCarMenu::m_sRBRRootDir);
 
-	m_bPacenotePluginInstalled = m_bRBRFullscreenDX9 = FALSE;
+	m_pGame = pGame;
+
+	m_bPacenotePluginInstalled = m_bRBRFullscreenDX9 = m_bRallySimFansPluginInstalled = FALSE;
 
 	// Init plugin title text with version tag of NGPCarMenu.dll file
 	char szTxtBuf[COUNT_OF_ITEMS(C_PLUGIN_TITLE_FORMATSTR) + 32];
@@ -431,6 +639,8 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_bCustomReplayShowCroppingRect = false;
 
 	m_screenshotCroppingRectVertexBuffer = nullptr;
+	m_screenshotCarPosition = 0;
+
 	ZeroMemory(m_carPreviewTexture, sizeof(m_carPreviewTexture));
 	ZeroMemory(m_carRBRTMPreviewTexture, sizeof(m_carRBRTMPreviewTexture));
 
@@ -456,7 +666,8 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 
 	m_bMenuSelectCarCustomized = false;
 
-	m_pGame = pGame;
+	m_iMenuCurrentScreen = 0;
+
 	m_iMenuSelection = 0;
 	m_iMenuCreateOption = 0;
 	m_iMenuImageOption = 0;
@@ -476,11 +687,23 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_pRBRRXPlugin = nullptr;		// Pointer to RBRRX plugin object
 	m_iRBRRXPluginMenuIdx = 0;		// Index (Nth item) to RBRRX plugin in RBR in-game Plugins menu list (0=Not yet initialized, -1=Initialized but not found, >0=Initialized and found)
 	m_bRBRRXPluginActive = false;
-	m_pRBRRXPluginFirstTimeInitialization = TRUE;
+	m_bRBRRXReplayActive = false;
+	m_bRBRRXReplayEnding = false;
+	//m_pRBRRXPluginFirstTimeInitialization = TRUE;
+	g_mapRBRRXRightBlackBarVertexBuffer = nullptr;
+
+	m_bRenameDriverNameActive = FALSE;
+	m_iProfileMenuPrevSelectedIdx = 0;
+
+	m_latestMapID = m_latestCarID = -1;
+
+	m_bGenerateReplayMetadataFile = TRUE;
 
 	m_pD3D9RenderStateCache = nullptr; 
+
 	gtcDirect3DBeginScene = nullptr;
 	gtcDirect3DEndScene = nullptr;
+	gtcRBRReplay = nullptr;
 
 	//RefreshSettingsFromPluginINIFile();
 
@@ -497,25 +720,20 @@ CNGPCarMenu::~CNGPCarMenu(void)
 	{
 		DebugPrint("Enter CNGPCarMenu.Destructor");
 
+		g_bD3DFontReleaseStateBlocks = m_bPacenotePluginInstalled; // CD3DFont bug workaround when Pacenote plugin is NOT installed (releaseStateBlocks should be FALSE if pacenotes plugin is not installed)
+
 		if (gtcDirect3DBeginScene != nullptr) delete gtcDirect3DBeginScene;
 		if (gtcDirect3DEndScene != nullptr) delete gtcDirect3DEndScene;
 
 #if USE_DEBUG == 1
-		if (g_pFontDebug != nullptr)
-		{
-			if(!m_bPacenotePluginInstalled) g_pFontDebug->m_ReleaseStateBlocks = FALSE;
-			delete g_pFontDebug;
-		}
+		SAFE_DELETE(g_pFontDebug);
 #endif
+		SAFE_DELETE(g_pFontCarSpecCustom);
+		SAFE_DELETE(g_pFontCarSpecModel);
 
-		if (g_pFontCarSpecCustom != nullptr)
-		{
-			if (!m_bPacenotePluginInstalled) g_pFontCarSpecCustom->m_ReleaseStateBlocks = FALSE;
-			delete g_pFontCarSpecCustom;
-		}
-		
 		SAFE_RELEASE(m_screenshotCroppingRectVertexBuffer);
 		ClearCachedCarPreviewImages();
+
 		SAFE_DELETE(g_pRBRPluginMenuSystem);
 		SAFE_DELETE(m_pLangIniFile);
 		SAFE_DELETE(m_pTracksIniFile);
@@ -523,11 +741,12 @@ CNGPCarMenu::~CNGPCarMenu(void)
 		if (m_pCustomMapMenuRBRTM != nullptr) delete[] m_pCustomMapMenuRBRTM;
 		if (m_pCustomMapMenuRBRRX != nullptr) delete[] m_pCustomMapMenuRBRRX;
 
-		if (g_pRBRPluginIntegratorLinkList != nullptr)
-		{
-			g_pRBRPluginIntegratorLinkList->clear();
-			SAFE_DELETE(g_pRBRPluginIntegratorLinkList);
-		}
+		SAFE_DELETE(g_pRBRPluginIntegratorLinkList);
+		SAFE_DELETE(g_pRBRPluginIntegratorFontList);
+
+		SAFE_DELETE(g_pRBRRXTrackNameListAlreadyInitialized);
+		SAFE_RELEASE(g_mapRBRRXRightBlackBarVertexBuffer);
+		SAFE_DELETE(g_watcherNewReplayFileListener);
 
 		SAFE_DELETE(m_pD3D9RenderStateCache);
 
@@ -629,7 +848,8 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		// The latest INI fileFormat is 2
 		sTextValue = pluginINIFile.GetValue(L"Default", L"FileFormat", L"2");
 		_Trim(sTextValue);
-		iFileFormat = std::stoi(sTextValue);
+		if (sTextValue.empty()) iFileFormat = 2;
+		else iFileFormat = std::stoi(sTextValue);
 
 		this->m_screenshotReplayFileName = pluginINIFile.GetValue(L"Default", L"ScreenshotReplay", L"");
 		_Trim(this->m_screenshotReplayFileName);
@@ -685,6 +905,11 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		sTextValue = pluginINIFile.GetValue(szResolutionText, L"ScreenshotCropping", L"");
 		_StringToRect(sTextValue, &this->m_screenshotCroppingRect);
 
+		sTextValue = pluginINIFile.GetValue(L"Default", L"ScreenshotCarPosition", L"0");
+		_Trim(sTextValue);
+		if (sTextValue.empty()) this->m_screenshotCarPosition = 0; // 0=default screeshot car position, 1=on the sky in the middle of nowhere
+		else this->m_screenshotCarPosition = std::stoi(sTextValue);
+
 		sTextValue = pluginINIFile.GetValue(szResolutionText, L"CarSelectLeftBlackBar", L"");
 		_StringToRect(sTextValue, &this->m_carSelectLeftBlackBarRect);
 
@@ -710,7 +935,9 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 
 		// DirectX (0) or GDI (1) screenshot logic
 		sTextValue = pluginINIFile.GetValue(L"Default", L"ScreenshotAPIType", L"0");
-		this->m_screenshotAPIType = std::stoi(sTextValue);
+		_Trim(sTextValue);
+		if (sTextValue.empty()) this->m_screenshotAPIType = 0;
+		else this->m_screenshotAPIType = std::stoi(sTextValue);
 
 		// Screenshot image format option. One of the values in g_RBRPluginMenu_ImageOptions array (the default is the item in the first index)
 		this->m_iMenuImageOption = 0;
@@ -760,6 +987,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		// RBRTM integration properties
 		sTextValue = pluginINIFile.GetValue(L"Default", L"RBRTM_Integration", L"1");
 		_Trim(sTextValue);
+		if (sTextValue.empty()) sTextValue = L"1";
 		try
 		{
 			m_iMenuRBRTMOption = (std::stoi(sTextValue) >= 1 ? 1 : 0);
@@ -785,7 +1013,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 						rbrTMLangINI.LoadFile(sRBRTMLangFile.c_str());
 						m_sRBRTMPluginTitle = rbrTMLangINI.GetValue("Strings", "1", "");
 
-						// FIXME: TODO: Disabled because RBRTM lang file should be read using the file specific codepage (CP). Not yet implemented. For now surface names can be translated via NGPCarMenu lang file.
+						// FIXME: Disabled because RBRTM lang file should be read using the file specific codepage (CP). Not yet implemented. For now surface names can be translated via NGPCarMenu lang file.
 						/*
 						if (m_pLangIniFile != nullptr)
 						{
@@ -841,23 +1069,25 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		else this->m_carRBRTMPictureUseTransparent = std::stoi(sTextValue);
 
 
-		// Read Tracks.ini map file if RBRTM integration is enabled (used in RBRTM integration to show map preview images)
-		if (m_iMenuRBRTMOption)
-		{			
-			if (m_pTracksIniFile == nullptr) m_pTracksIniFile = new CSimpleIniW();
-
-			try
+		// Read Tracks.ini map file because some custom plugins list stage names there for mapIDs
+		try
+		{
+			if (m_pTracksIniFile == nullptr)
 			{
+				m_pTracksIniFile = new CSimpleIniW();
 				sTextValue = m_sRBRRootDirW + L"\\Maps\\Tracks.ini";
 				m_pTracksIniFile->SetUnicode(true);
 				if (fs::exists(sTextValue)) m_pTracksIniFile->LoadFile(sTextValue.c_str());
-				else m_pTracksIniFile->Reset();
 			}
-			catch (...)
-			{
-				LogPrint("ERROR CNGPCarMenu.RefreshSettingsFromPluginINIFile. %s Tracks INI reading failed", sTextValue.c_str());
-			}
+		}
+		catch (...)
+		{
+			LogPrint("ERROR CNGPCarMenu.RefreshSettingsFromPluginINIFile. Maps\\Tracks.ini reading failed");
+		}
 
+
+		if (m_iMenuRBRTMOption)
+		{			
 			try
 			{
 				std::string sIniFileNameRBRTMRecentMaps = m_sRBRRootDir + "\\Plugins\\" VS_PROJECT_NAME "\\RBRTMRecentMaps.ini";
@@ -868,7 +1098,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 				// Read customized RBRTM Shakedown stages menu settings (recent maps)
 				m_recentMapsMaxCountRBRTM = min(pluginINIFile.GetLongValue(L"Default", L"RBRTM_RecentMapsMaxCount", 5), 500);
 
-				LogPrint("Notice. The list of recent driven RBRTM stages is no longer stored in Plugins\\NGPCarMenu.ini file. RBRTM_RecentMap1..N options are now stored in Plugins\\NGPCarMenu\\RBRTMRecentMaps.ini file");
+				//LogPrint("Notice. The list of recent driven RBRTM stages is no longer stored in Plugins\\NGPCarMenu.ini file. RBRTM_RecentMap1..N options are now stored in Plugins\\NGPCarMenu\\RBRTMRecentMaps.ini file");
 
 				for (int idx = m_recentMapsMaxCountRBRTM; idx > 0; idx--)
 					AddMapToRecentList(rbrtmRecentMapsINI.GetLongValue("Default", (std::string("RBRTM_RecentMap").append(std::to_string(idx)).c_str()), -1));
@@ -919,6 +1149,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		// RBRRX integration properties
 		sTextValue = pluginINIFile.GetValue(L"Default", L"RBRRX_Integration", L"1");
 		_Trim(sTextValue);
+		if (sTextValue.empty()) sTextValue = L"1";
 		try
 		{
 			m_iMenuRBRRXOption = (std::stoi(sTextValue) >= 1 ? 1 : 0);
@@ -989,6 +1220,11 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 			}
 		}
 
+		sTextValue = pluginINIFile.GetValue(L"Default", L"GenerateReplayMetadataFile", L"1");
+		_Trim(sTextValue);
+		if (sTextValue.empty()) m_bGenerateReplayMetadataFile = TRUE;
+		else m_bGenerateReplayMetadataFile = std::stoi(sTextValue) == 1;
+
 
 		//
 		// If the existing INI file format is an old version1 then save the file using the new format specifier
@@ -1013,7 +1249,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		//
 		if (m_iAutoLogonMenuState < 0)
 		{
-			// AutoLogon option is read only at first time this method is called (ie RBR launch time)
+			// RBR bootup autoLogon option is read only at first time this method is called (ie RBR launch time)
 			m_sAutoLogon = _ToString(pluginINIFile.GetValue(L"Default", L"AutoLogon", L"Disabled"));
 			_Trim(m_sAutoLogon);
 			if (!_iEqual(m_sAutoLogon, "disabled", true) && m_sAutoLogon != "0")
@@ -1023,13 +1259,29 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 
 				m_bAutoLogonWaitProfile = pluginINIFile.GetLongValue(L"Default", L"AutoLogonWaitProfileSelection", 0) == 1;
 
+				m_autoLogonSequenceSteps.clear();
+				m_autoLogonSequenceSteps.push_back("main");
+				if (!_iEqual(m_sAutoLogon, "main", true))
+				{
+					m_autoLogonSequenceSteps.push_back("options");
+					m_autoLogonSequenceSteps.push_back("plugins");
+					if (!_iEqual(m_sAutoLogon, "plugins", true))
+						m_autoLogonSequenceSteps.push_back(m_sAutoLogon);
+				}
+
+				StartNewAutoLogonSequence();
+				LogPrint(L"AutoLogon sequence enabled. %s", m_autoLogonSequenceLabel.str().c_str());
+
 				// Autologon enabled. Do the trick and navigate automatically to the specified menu (Main, Plugins or custom plugin).
 				// If user chooses the profile manually (NGPCarMenu AutoLogon waits for a profile) then skip autoLogon states 1-2 and go straight to wait for main menu (state 3)
-				m_dwAutoLogonEventStartTick = GetTickCount();
-				m_iAutoLogonMenuState = (m_bAutoLogonWaitProfile ? 3 : 1);
+				//m_dwAutoLogonEventStartTick = GetTickCount();
+				//m_iAutoLogonMenuState = (m_bAutoLogonWaitProfile ? 3 : 1);
 			}
 			else
-				m_iAutoLogonMenuState = 0; // Autologon disable
+			{
+				m_iAutoLogonMenuState = 0;			// Autologon disable
+				m_autoLogonSequenceSteps.clear();
+			}
 		}
 
 	}
@@ -1369,11 +1621,12 @@ int CNGPCarMenu::InitAllNewCustomPluginIntegrations()
 //
 void CNGPCarMenu::DoAutoLogonSequence()
 {
-	if (m_iAutoLogonMenuState > 1 && (GetTickCount() - m_dwAutoLogonEventStartTick) >= (DWORD) (m_bAutoLogonWaitProfile ? 15000 : 4000))
+	if (m_iAutoLogonMenuState > 1 && ((GetTickCount32() - m_dwAutoLogonEventStartTick) >= (DWORD) (m_bAutoLogonWaitProfile ? 15000 : 4000) || m_autoLogonSequenceSteps.size() <= 0) )
 	{
 		// Autologon sequence step took too long to complete (more than 15 secs if waitProfile enabled, otherwise 4 secs). Abort it. Maybe user pressed some keys to mess up it or RBR is waiting for something strange thing to happen
 		m_iAutoLogonMenuState = 0;
-		LogPrint("WARNING. Autologon sequence aborted because of timeout");
+		if(m_autoLogonSequenceSteps.size() <= 0) LogPrint("AutoLogon sequence queue empty. AutoLogon completed");
+		else LogPrint("WARNING. AutoLogon sequence aborted because of timeout");
 		return;
 	} 
 
@@ -1387,123 +1640,133 @@ void CNGPCarMenu::DoAutoLogonSequence()
 				// Choose the first profile automatically if the first profile is not yet selected
 				if(g_pRBRMenuSystem->currentMenuObj->pExtMenuObj->selectedItemIdx == 0)
 					g_pRBRMenuSystem->currentMenuObj->pExtMenuObj->selectedItemIdx = 1;
+
 				SendMessage(g_hRBRWnd, WM_KEYDOWN, VK_RETURN, 0);
 				SendMessage(g_hRBRWnd, WM_KEYUP, VK_RETURN, 0);
-
-				m_dwAutoLogonEventStartTick = GetTickCount();
+				m_dwAutoLogonEventStartTick = GetTickCount32();
 				m_iAutoLogonMenuState++;
 			}
 			else
+			{
 				// Abort auto-logon sequence because there are no profiles availabe. User should create the MULLIGATAWNY profile
 				m_iAutoLogonMenuState = 0;
+				LogPrint("WARNING. Autologon sequence aborted because there are no profiles available. Please create a driver profile");
+			}
 		}
 	}
 	else if (m_iAutoLogonMenuState == 2 && g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_STARTUP])
 	{
 		// Accept "OK profile load" screen, but give RBR few msecs time to complete the profile loading
-		if ( (GetTickCount() - m_dwAutoLogonEventStartTick) >= 100)
+		if ( (GetTickCount32() - m_dwAutoLogonEventStartTick) >= 100)
 		{
 			SendMessage(g_hRBRWnd, WM_KEYDOWN, VK_RETURN, 0);
 			SendMessage(g_hRBRWnd, WM_KEYUP, VK_RETURN, 0);
-			m_dwAutoLogonEventStartTick = GetTickCount();
+			m_dwAutoLogonEventStartTick = GetTickCount32();
 			m_iAutoLogonMenuState++;
 		}
 	}
-	else if (m_iAutoLogonMenuState == 3)
+	else
 	{
-		if (g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN])
-		{
-			if (m_bAutoLogonWaitProfile)
-			{
-				// The plugin waited user to choose a profile. Now when user selected the profile continue the autologon sequence
-				m_dwAutoLogonEventStartTick = GetTickCount();
-				m_bAutoLogonWaitProfile = FALSE;
-			}
+		// LogonMenuState==3 (profile is already loaded, so the actual menu navigation can proceed)
 
-			if (g_pRBRMenuSystem->currentMenuObj->selectedItemIdx == g_pRBRMenuSystem->currentMenuObj->firstSelectableItemIdx && !_iEqual(m_sAutoLogon, "main", true))
+		if (m_bAutoLogonWaitProfile && g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN])
+		{
+			// The plugin waited user to choose a profile. Now when user selected the profile continue the normal autologon sequence
+			m_dwAutoLogonEventStartTick = GetTickCount32();
+			m_bAutoLogonWaitProfile = FALSE;
+			return;
+		}
+
+		if ((GetTickCount32() - m_dwAutoLogonEventStartTick) >= 150)
+		{
+			int  newSelectedItemIdx = -1;
+			//bool bRBRRXAutoLogon = FALSE;
+
+			if (_iEqual(m_autoLogonSequenceSteps[0], "main", true) && g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN])
 			{
-				if ((GetTickCount() - m_dwAutoLogonEventStartTick) >= 150)
+				m_autoLogonSequenceSteps.pop_front();
+				if (m_autoLogonSequenceSteps.size() > 0)
 				{
-					// Choose Options menu in MainMenu
-					g_pRBRMenuSystem->currentMenuObj->selectedItemIdx = 0x09;
-					SendMessage(g_hRBRWnd, WM_KEYDOWN, VK_RETURN, 0);
-					SendMessage(g_hRBRWnd, WM_KEYUP, VK_RETURN, 0);
-					m_dwAutoLogonEventStartTick = GetTickCount();
-					m_iAutoLogonMenuState++;
+					// The next menu in mainMenu will be DriverProfile or Options
+					if (_iEqual(m_autoLogonSequenceSteps[0], "driverprofile", true)) newSelectedItemIdx = 0x08;
+					else if (_iEqual(m_autoLogonSequenceSteps[0], "options", true)) newSelectedItemIdx = 0x09;
+					else newSelectedItemIdx = -2;
 				}
 			}
-			else
-				// Abort because either "Main" menu autologon or menu row moved. Maybe user pressed some keys to mess up autologon?
-				m_iAutoLogonMenuState = 0;
-		}
-	}
-	else if (m_iAutoLogonMenuState == 4)
-	{
-		if (g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->optionsMenuObj)
-		{			
-			if (g_pRBRMenuSystem->currentMenuObj->selectedItemIdx == g_pRBRMenuSystem->currentMenuObj->firstSelectableItemIdx)
+			else if (_iEqual(m_autoLogonSequenceSteps[0], "driverprofile", true) && g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_DRIVERPROFILE])
 			{
-				if ((GetTickCount() - m_dwAutoLogonEventStartTick) >= 150)
+				m_autoLogonSequenceSteps.pop_front();
+				if (m_autoLogonSequenceSteps.size() > 0)
 				{
-					// Choose Plugins menu in OptionsMenu
-					g_pRBRMenuSystem->currentMenuObj->selectedItemIdx = 0x0A;
-					SendMessage(g_hRBRWnd, WM_KEYDOWN, VK_RETURN, 0);
-					SendMessage(g_hRBRWnd, WM_KEYUP, VK_RETURN, 0);
-					m_dwAutoLogonEventStartTick = GetTickCount();
-					m_iAutoLogonMenuState++;
+					// The next menu in driverProfile will be SaveProfile or LoadReplay
+					if (_iEqual(m_autoLogonSequenceSteps[0], "saveprofile", true)) newSelectedItemIdx = 0x05;
+					else if (_iEqual(m_autoLogonSequenceSteps[0], "loadreplay", true)) { newSelectedItemIdx = 0x06; m_autoLogonSequenceSteps.clear(); }
+					else newSelectedItemIdx = -2;
 				}
 			}
-			else
-				// Abort auto-logon sequence because OptionsMenu didn't become active or menu row moved. Maybe user pressed some keys to mess up autologon?
-				m_iAutoLogonMenuState = 0;
-		}
-	}
-	else if (m_iAutoLogonMenuState == 5)
-	{
-		if (g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->pluginsMenuObj)
-		{
-			if (g_pRBRMenuSystem->currentMenuObj->selectedItemIdx == g_pRBRMenuSystem->currentMenuObj->firstSelectableItemIdx && !_iEqual(m_sAutoLogon, "plugins", true))
+			else if (_iEqual(m_autoLogonSequenceSteps[0], "saveprofile", true) && g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_DRIVERPROFILE])
+			{				
+				// Restore focus line back to default selection and complete the sequence (profile menu screen resets always back to the first line when opened)
+				g_pRBRMenuSystem->menuObj[RBRMENUIDX_DRIVERPROFILE]->selectedItemIdx = g_pRBRMenuSystem->menuObj[RBRMENUIDX_DRIVERPROFILE]->firstSelectableItemIdx;
+				m_iProfileMenuPrevSelectedIdx = g_pRBRMenuSystem->menuObj[RBRMENUIDX_DRIVERPROFILE]->selectedItemIdx;
+				m_autoLogonSequenceSteps.clear();
+			}
+			else if (_iEqual(m_autoLogonSequenceSteps[0], "options", true) && g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->optionsMenuObj)
 			{
-				if ((GetTickCount() - m_dwAutoLogonEventStartTick) >= 150)
+				m_autoLogonSequenceSteps.pop_front();
+				if (m_autoLogonSequenceSteps.size() > 0)
 				{
-					BOOL bCustomPluginFound = FALSE;
-					// Autologon sequence completed
-					m_iAutoLogonMenuState = 0;
-
-					// Open the selected customPlugin in PluginsMenu
+					// The next menu in options will be Plugins
+					if (_iEqual(m_autoLogonSequenceSteps[0], "plugins", true)) newSelectedItemIdx = 0x0A;
+					else newSelectedItemIdx = -2;
+				}
+			}
+			else if (_iEqual(m_autoLogonSequenceSteps[0], "plugins", true) && g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->pluginsMenuObj)
+			{
+				m_autoLogonSequenceSteps.pop_front();
+				if (m_autoLogonSequenceSteps.size() > 0)
+				{
+					// The next menu in plugins will be a named custom plugin
 					for (int idx = g_pRBRPluginMenuSystem->pluginsMenuObj->firstSelectableItemIdx; idx < g_pRBRPluginMenuSystem->pluginsMenuObj->numOfItems - 1; idx++)
 					{
 						PRBRPluginMenuItemObj3 pItemArr = (PRBRPluginMenuItemObj3)g_pRBRPluginMenuSystem->pluginsMenuObj->pItemObj[idx];
-						if (pItemArr != nullptr && pItemArr->szItemName != nullptr && _iEqual(pItemArr->szItemName, m_sAutoLogon))
+						if (pItemArr != nullptr && pItemArr->szItemName != nullptr && _iEqual(pItemArr->szItemName, m_autoLogonSequenceSteps[0]))
 						{
-							bCustomPluginFound = TRUE;
-							g_pRBRMenuSystem->currentMenuObj->selectedItemIdx = idx;
-							SendMessage(g_hRBRWnd, WM_KEYDOWN, VK_RETURN, 0);
-							SendMessage(g_hRBRWnd, WM_KEYUP, VK_RETURN, 0);
+							LogPrint("AutoLogon to the custom plugin %s", m_autoLogonSequenceSteps[0].c_str());
+							//bRBRRXAutoLogon = _iEqual(m_autoLogonSequenceSteps[0], "rbr_rx", true);
+							newSelectedItemIdx = idx;
 							break;
 						}
-					}
+					}					
 
-					if (bCustomPluginFound)
-					{
-						LogPrint("AutoLogon to %s plugin completed", m_sAutoLogon.c_str());
+					if(newSelectedItemIdx < 0)
+						LogPrint("WARNING. AutoLogon to %s plugin failed because the plugin is not installed. Check AutoLogon option", m_autoLogonSequenceSteps[0].c_str());
 
-						// If autologon navigates to RBR_RX plugin then enable "skip Race/Replay" main menu
-						if (_iEqual(m_sAutoLogon, "rbr_rx", true))
-						{
-							m_pRBRRXPluginFirstTimeInitialization = TRUE;
-							m_dwAutoLogonEventStartTick = 0;//  GetTickCount();
-						}
-						else
-							m_pRBRRXPluginFirstTimeInitialization = FALSE;						
-					}
-					else
-						LogPrint("WARNING. AutoLogon to %s plugin failed because the plugin is not installed. Check AutoLogon option", m_sAutoLogon.c_str());
+					// Complete the sequence when custom plugin is activated
+					m_autoLogonSequenceSteps.clear();
 				}
 			}
-			else
-				// Abort because Plugins menu autologon or or menu row moved. Maybe user pressed some keys to mess up autologon?
+
+			if (newSelectedItemIdx >= 0)
+			{
+				g_pRBRMenuSystem->currentMenuObj->selectedItemIdx = newSelectedItemIdx;
+				SendMessage(g_hRBRWnd, WM_KEYDOWN, VK_RETURN, 0);
+				SendMessage(g_hRBRWnd, WM_KEYUP, VK_RETURN, 0);				
+				m_dwAutoLogonEventStartTick = GetTickCount32();
+			}
+			else if (newSelectedItemIdx == -2 && m_autoLogonSequenceSteps.size() > 0)
+			{
+				LogPrint("WARNING: Invalid AutoLogon sequence. Unexpected submenu entry %s. AutoLogon aborted", m_autoLogonSequenceSteps[0].c_str());
 				m_iAutoLogonMenuState = 0;
+			}
+			
+			if (m_autoLogonSequenceSteps.size() <= 0)
+			{
+				// Autlogon completed, all menu steps executed
+				m_iAutoLogonMenuState = 0;
+				m_dwAutoLogonEventStartTick = 0;
+				LogPrint("AutoLogon completed");
+			}
 		}
 	}
 }
@@ -1923,90 +2186,93 @@ bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, 
 		}
 
 		// Find all files without file extensions and see it the file is the NGP car model file (revison/specification date/3d model keyword in the beginning of line)
-		for (const auto& entry : fs::directory_iterator(fsFolderName))
+		if (fs::exists(fsFolderName))
 		{
-			if (entry.is_regular_file() && entry.path().extension().compare(".lsp") != 0 )
-			{			
-				fsFileName = entry.path().filename().string();
-				//DebugPrint(fsFileName.c_str());
-				//wfsFileName = _ToWString(fsFileName);
+			for (const auto& entry : fs::directory_iterator(fsFolderName))
+			{
+				if (entry.is_regular_file() && entry.path().extension().compare(".lsp") != 0)
+				{
+					fsFileName = entry.path().filename().string();
+					//DebugPrint(fsFileName.c_str());
+					//wfsFileName = _ToWString(fsFileName);
 
-				// Read NGP car model description file (it is in multibyte UTF8 format) and convert text lines to C++ UTF8 WCHAR strings
-				std::ifstream rbrFile(folderName + "\\" + fsFileName);
+					// Read NGP car model description file (it is in multibyte UTF8 format) and convert text lines to C++ UTF8 WCHAR strings
+					std::ifstream rbrFile(folderName + "\\" + fsFileName);
 
-				std::string sMultiByteUtf8TextLine;
-				sMultiByteUtf8TextLine.reserve(128);
+					std::string sMultiByteUtf8TextLine;
+					sMultiByteUtf8TextLine.reserve(128);
 
-				iReadRowCount = 0;
-				while (std::getline(rbrFile, sMultiByteUtf8TextLine) && iReadRowCount <= 6)
-				{	
-					iReadRowCount++;
-
-					wsTextLine = ::_ToUTF8WString(sMultiByteUtf8TextLine); // Mbc-UTF8 to widechar-UTF8
-					_Trim(wsTextLine);
-
-					/*
-					if (_iStarts_With(wsTextLine, wfsFileName))
+					iReadRowCount = 0;
+					while (std::getline(rbrFile, sMultiByteUtf8TextLine) && iReadRowCount <= 6)
 					{
-						bResult = TRUE;
+						iReadRowCount++;
 
-						// Usually the first line of NGP physics description file has the filename string (car model name)
-						wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarModel, wfsFileName.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarModel));
+						wsTextLine = ::_ToUTF8WString(sMultiByteUtf8TextLine); // Mbc-UTF8 to widechar-UTF8
+						_Trim(wsTextLine);
+
+						/*
+						if (_iStarts_With(wsTextLine, wfsFileName))
+						{
+							bResult = TRUE;
+
+							// Usually the first line of NGP physics description file has the filename string (car model name)
+							wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarModel, wfsFileName.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarModel));
+							pRBRCarSelectionMenuEntry->wszCarModel[COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarModel) - 1] = '\0';
+
+							continue;
+						}
+						*/
+
+						// Remove double whitechars from the string value
+						if (wsTextLine.length() >= 2)
+							wsTextLine.erase(std::unique(wsTextLine.begin(), wsTextLine.end(), [](WCHAR a, WCHAR b) { return iswspace(a) && iswspace(b); }), wsTextLine.end());
+
+						if (_iStarts_With(wsTextLine, L"revision", TRUE))
+						{
+							bResult = TRUE;
+
+							// Remove the revision tag and replace it with a language translated str version (or if missing then re-add the original "revision" text)
+							wsTextLine.erase(0, COUNT_OF_ITEMS(L"revision") - 1);
+							wsTextLine.insert(0, GetLangStr(L"revision"));
+
+							wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysicsRevision, wsTextLine.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsRevision));
+							pRBRCarSelectionMenuEntry->wszCarPhysicsRevision[COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsRevision) - 1] = '\0';
+						}
+						else if (_iStarts_With(wsTextLine, L"specification date", TRUE))
+						{
+							bResult = TRUE;
+
+							wsTextLine.erase(0, COUNT_OF_ITEMS(L"specification date") - 1);
+							wsTextLine.insert(0, GetLangStr(L"specification date"));
+
+							wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysicsSpecYear, wsTextLine.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsSpecYear));
+							pRBRCarSelectionMenuEntry->wszCarPhysicsSpecYear[COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsSpecYear) - 1] = '\0';
+						}
+						else if (_iStarts_With(wsTextLine, L"3d model", TRUE))
+						{
+							bResult = TRUE;
+
+							wsTextLine.erase(0, COUNT_OF_ITEMS(L"3d model") - 1);
+							wsTextLine.insert(0, GetLangStr(L"3d model"));
+
+							wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel, wsTextLine.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel));
+							pRBRCarSelectionMenuEntry->wszCarPhysics3DModel[COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel) - 1] = '\0';
+						}
+						else if (bResult && !wsTextLine.empty())
+						{
+							wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysicsCustomTxt, wsTextLine.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsCustomTxt));
+							pRBRCarSelectionMenuEntry->wszCarPhysicsCustomTxt[COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsCustomTxt) - 1] = '\0';
+						}
+					}
+
+					if (bResult)
+					{
+						// If NGP car model file found then set carModel string value and no need to iterate through other files (without file extension)
+						wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarModel, (_ToWString(fsFileName)).c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarModel));
 						pRBRCarSelectionMenuEntry->wszCarModel[COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarModel) - 1] = '\0';
 
-						continue;
+						break;
 					}
-					*/
-
-					// Remove double whitechars from the string value
-					if(wsTextLine.length() >= 2)
-						wsTextLine.erase(std::unique(wsTextLine.begin(), wsTextLine.end(), [](WCHAR a, WCHAR b) { return iswspace(a) && iswspace(b); }), wsTextLine.end());
-
-					if (_iStarts_With(wsTextLine, L"revision", TRUE))
-					{						
-						bResult = TRUE;
-
-						// Remove the revision tag and replace it with a language translated str version (or if missing then re-add the original "revision" text)
-						wsTextLine.erase(0, COUNT_OF_ITEMS(L"revision")-1);
-						wsTextLine.insert(0, GetLangStr(L"revision"));
-
-						wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysicsRevision, wsTextLine.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsRevision));
-						pRBRCarSelectionMenuEntry->wszCarPhysicsRevision[COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsRevision) - 1] = '\0';
-					}
-					else if (_iStarts_With(wsTextLine, L"specification date", TRUE))
-					{
-						bResult = TRUE;
-
-						wsTextLine.erase(0, COUNT_OF_ITEMS(L"specification date") - 1);
-						wsTextLine.insert(0, GetLangStr(L"specification date"));
-
-						wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysicsSpecYear, wsTextLine.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsSpecYear));
-						pRBRCarSelectionMenuEntry->wszCarPhysicsSpecYear[COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsSpecYear) - 1] = '\0';
-					}
-					else if (_iStarts_With(wsTextLine, L"3d model", TRUE))
-					{
-						bResult = TRUE;
-
-						wsTextLine.erase(0, COUNT_OF_ITEMS(L"3d model") - 1);
-						wsTextLine.insert(0, GetLangStr(L"3d model"));
-
-						wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel, wsTextLine.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel));
-						pRBRCarSelectionMenuEntry->wszCarPhysics3DModel[COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel) - 1] = '\0';
-					}
-					else if (bResult && !wsTextLine.empty())
-					{
-						wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysicsCustomTxt, wsTextLine.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsCustomTxt));
-						pRBRCarSelectionMenuEntry->wszCarPhysicsCustomTxt[COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysicsCustomTxt) - 1] = '\0';
-					}
-				}
-
-				if (bResult)
-				{
-					// If NGP car model file found then set carModel string value and no need to iterate through other files (without file extension)
-					wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarModel, (_ToWString(fsFileName)).c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarModel));
-					pRBRCarSelectionMenuEntry->wszCarModel[COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarModel) - 1] = '\0';
-
-					break;
 				}
 			}
 		}
@@ -2017,6 +2283,8 @@ bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, 
 			// Show warning that RBRCIT/NGP carModel file is missing
 			wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel, (wFolderName + L"\\<carModelName> NGP model description file missing").c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel));
 		}
+
+		//DebugPrint("DEBUG InitCarSpecDataFromPhysicsFile. bResult=%d folderName=%s CarModel=%s", bResult, folderName.c_str(), _ToString(pRBRCarSelectionMenuEntry->wszCarModel).c_str());
 	}
 	catch (const fs::filesystem_error& ex)
 	{
@@ -2025,7 +2293,7 @@ bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, 
 	}
 	catch(...)
 	{
-		LogPrint("ERROR CNGPCarMenu.InitCarSpecDataFromPhysicsFile. %s folder doesn't have or error while reading NGP model spec file", folderName.c_str());
+		LogPrint("ERROR CNGPCarMenu.InitCarSpecDataFromPhysicsFile. %s doesn't exist or error while reading NGP model spec file", folderName.c_str());
 		bResult = FALSE;
 	}
 
@@ -2365,229 +2633,6 @@ bool CNGPCarMenu::ReadCarPreviewImageFromFile(int selectedCarIdx, float x, float
 
 
 //------------------------------------------------------------------------------------------------
-// Focus Nth RBRRX menu row (scroll the menu if necessary, ie. change the first visible stage entry in the menu list)
-//
-void CNGPCarMenu::FocusRBRRXNthMenuIdxRow(int menuIdx)
-{
-	//if (m_currentCustomMapSelectedItemIdxRBRRX == menuIdx)
-	//	return;
-	m_latestMapRBRRX.mapIDMenuIdx = -1;
-
-	if (menuIdx <= 0)
-	{
-		// Activate the first row
-		m_pRBRRXPlugin->pMenuData->selectedItemIdx = m_prevCustomMapSelectedItemIdxRBRRX = m_currentCustomMapSelectedItemIdxRBRRX = 0;
-		m_pRBRRXPlugin->pMenuItems = &m_pCustomMapMenuRBRRX[0];
-	}
-	else
-	{
-		if (menuIdx >= m_numOfItemsCustomMapMenuRBRRX)
-			// Activate the last row
-			menuIdx = m_numOfItemsCustomMapMenuRBRRX-1;
-
-		// Activate Nth row
-		m_currentCustomMapSelectedItemIdxRBRRX = menuIdx;
-
-		if (m_currentCustomMapSelectedItemIdxRBRRX <= 8 || m_numOfItemsCustomMapMenuRBRRX <= (8 + 1 + 8))
-		{
-			// The new menuIdx row is the <=8 first rows or total num of BTB tracks is <=8+1+8, so no need to do any scrolling. Jump straight to the new menuIdx row and top menu row is the first stage
-			m_pRBRRXPlugin->pMenuData->selectedItemIdx = m_currentCustomMapSelectedItemIdxRBRRX;
-			m_pRBRRXPlugin->pMenuItems = &m_pCustomMapMenuRBRRX[0];
-		}
-		else if (m_numOfItemsCustomMapMenuRBRRX - m_currentCustomMapSelectedItemIdxRBRRX <= 8)
-		{
-			// The new menuIdx row is leq 8 rows from the end of the menu list, so move the focus line and show 8+1+8 last stages on the menu list
-			m_pRBRRXPlugin->pMenuData->selectedItemIdx = (8 + 1 + 8) - (m_numOfItemsCustomMapMenuRBRRX - m_currentCustomMapSelectedItemIdxRBRRX);
-			m_pRBRRXPlugin->pMenuItems = &m_pCustomMapMenuRBRRX[m_numOfItemsCustomMapMenuRBRRX - (8 + 1 + 8)];
-		}
-		else
-		{
-			// The new menuIdx row is "in the middle of the stage list", so focus the middle row and show the sliding window of stages on the menu list (8+1+8 rows visible at any time)
-			m_pRBRRXPlugin->pMenuData->selectedItemIdx = 8;
-			m_pRBRRXPlugin->pMenuItems = &m_pCustomMapMenuRBRRX[m_currentCustomMapSelectedItemIdxRBRRX - 8];
-		}
-
-		m_prevCustomMapSelectedItemIdxRBRRX = m_pRBRRXPlugin->pMenuData->selectedItemIdx;
-	}
-}
-
-
-//------------------------------------------------------------------------------------------------
-// Update RBRRX_MapInfo struct data up-to-date based on menuIdx or rbr track folderName
-//
-#define ReadAndSetDefaultINIValue(section, key, str, defaultValue) \
-   { pszValue = btbTrackINIFile.GetValue(section, key, nullptr); \
-   if (pszValue == nullptr) { str.clear(); btbTrackINIFile.SetValue(section, key, defaultValue); btbTrackIniModified = TRUE; } \
-   else str = pszValue; }
-
-void CNGPCarMenu::UpdateRBRRXMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo)
-{
-	if (pRBRRXMapInfo == nullptr) 
-		return;
-
-	if (menuIdx < 0 || menuIdx >= m_numOfItemsCustomMapMenuRBRRX)
-	{
-		pRBRRXMapInfo->mapIDMenuIdx = -1;
-		pRBRRXMapInfo->folderName.clear();
-		return;
-	}
-
-	pRBRRXMapInfo->mapIDMenuIdx = menuIdx;
-	pRBRRXMapInfo->folderName = m_pCustomMapMenuRBRRX[menuIdx].szTrackFolder;
-	_ToLowerCase(pRBRRXMapInfo->folderName);
-
-	pRBRRXMapInfo->name = m_pCustomMapMenuRBRRX[menuIdx].szTrackName;
-	if (menuIdx < min((int)m_recentMapsRBRRX.size(), m_recentMapsMaxCountRBRRX))
-	{
-		// Shortcut menu name. Remove the "[N] " leading tag because it is not part of the stage name
-		size_t iPos = pRBRRXMapInfo->name.find_first_of(']');
-		if (iPos != std::string::npos && iPos <= 5)
-			pRBRRXMapInfo->name = (pRBRRXMapInfo->name.length() > iPos + 2 ? pRBRRXMapInfo->name.substr(iPos + 2) : "");
-	}
-	
-	try
-	{
-		const char* pszValue;
-		bool  btbTrackIniModified = false;
-
-		std::string sBtbTrackFolderPath = m_sRBRRootDir + "\\RX_CONTENT\\" + pRBRRXMapInfo->folderName;
-
-		CSimpleIni btbPacenotesINIFile;
-		btbPacenotesINIFile.LoadFile((sBtbTrackFolderPath + "\\pacenotes.ini").c_str());
-		pRBRRXMapInfo->numOfPacenotes = btbPacenotesINIFile.GetLongValue("PACENOTES", "count", 0);
-		btbPacenotesINIFile.Reset();
-
-		CSimpleIni btbTrackINIFile;
-		//btbTrackINIFile.SetUnicode(true);
-		btbTrackINIFile.LoadFile((sBtbTrackFolderPath + "\\track.ini").c_str());
-		pRBRRXMapInfo->surface = _ToWString(btbTrackINIFile.GetValue("INFO", "physics", ""));
-		pRBRRXMapInfo->length  = btbTrackINIFile.GetDoubleValue("INFO", "length", -1);
-	
-		ReadAndSetDefaultINIValue("INFO", "author",  pRBRRXMapInfo->author, "");
-		ReadAndSetDefaultINIValue("INFO", "version", pRBRRXMapInfo->version, "");
-		ReadAndSetDefaultINIValue("INFO", "date",    pRBRRXMapInfo->date, "");
-		ReadAndSetDefaultINIValue("INFO", "comment", pRBRRXMapInfo->comment, "");
-
-		// Skip map image initializations if the map preview img feature is disabled (RBRRX_MapPictureRect=0)
-		if (m_mapRBRRXPictureRect.bottom != -1)
-		{
-			std::wstring sTrackName = _ToWString(pRBRRXMapInfo->name);
-
-			// Use custom map image path at first (set in RBRRX_MapScreenshotPath ini option). If the option or file is missing then take the stage preview image name from rx_content\tracks\mapName\track.ini file
-			pRBRRXMapInfo->previewImageFile = ReplacePathVariables(m_screenshotPathMapRBRRX, -1, FALSE, -1, sTrackName.c_str(), pRBRRXMapInfo->folderName);
-			if (pRBRRXMapInfo->previewImageFile.empty() || !fs::exists(pRBRRXMapInfo->previewImageFile))
-			{
-				// Custom image missing. Try to use the splash screen supplied by the author. If missing but trackFolder has some jpg or png files then use the first file as splashScreen
-				const char* szSplashScreen = btbTrackINIFile.GetValue("INFO", "splashscreen", nullptr);
-
-				if(szSplashScreen != nullptr)
-				{ 
-					pRBRRXMapInfo->previewImageFile = _ToWString(szSplashScreen);
-					if (!pRBRRXMapInfo->previewImageFile.empty())
-						pRBRRXMapInfo->previewImageFile = _ToWString(sBtbTrackFolderPath) + L"\\" + pRBRRXMapInfo->previewImageFile;
-				}
-				else
-				{
-					pRBRRXMapInfo->previewImageFile.clear();
-
-					// SlashScreen option missing. If the trackFolder has an image file then use it and add it as default splashScreen value into the INI file for later use
-					for (auto& dit : fs::directory_iterator(sBtbTrackFolderPath))
-					{
-						if (_iEqual(dit.path().extension().string(), ".jpg", true) || _iEqual(dit.path().extension().string(), ".png", true))
-						{
-							pRBRRXMapInfo->previewImageFile = dit.path().filename();		
-							break;
-						}
-					}
-
-					btbTrackINIFile.SetValue("INFO", "splashscreen", _ToString(pRBRRXMapInfo->previewImageFile).c_str());
-					btbTrackIniModified = TRUE;			
-				}
-			}
-
-			if (g_iLogMsgCount < 26)
-				//LogPrint(L"Custom preview image file %s for a RBRRX map %s", m_latestMapRBRRX.previewImageFile.c_str(), _ToWString(m_latestMapRBRRX.name).c_str());
-				LogPrint(L"Custom preview image file %s for a RBRRX map %s", pRBRRXMapInfo->previewImageFile.c_str(), sTrackName.c_str());
-		}
-
-		// Save track.ini file is missing custom attributes were added (this is done only once when a new btb track is installed in RBR)
-		if(btbTrackIniModified)
-			btbTrackINIFile.SaveFile((sBtbTrackFolderPath + "\\track.ini").c_str());
-	}
-	catch (...)
-	{
-		pRBRRXMapInfo->Clear();
-	}
-}
-
-
-//------------------------------------------------------------------------------------------------
-// Update rbrrx track.ini length= option value
-//
-double CNGPCarMenu::UpdateRBRRXINILengthOption(const std::string& folderName, double newLengthKm)
-{
-	std::string sIniFileName;
-
-	if (folderName.empty())
-		return newLengthKm;
-
-	try
-	{
-		if (newLengthKm < 0)
-		{
-			// Use pacenotes.ini file to estimate the length because RBR data structure doesn't define it or track.ini length option.
-			// Calculate type22 (finish line) - type21 (start line) difference to estimate the stage length
-			char szKeyName[12];
-			int iPacenotesIdx;
-			int iPacenoteType;
-			double startDistance = -1;
-			double finishDistance = -1;
-
-			CSimpleIni btbPaceotesINIFile;
-			sIniFileName = m_sRBRRootDir + "\\RX_CONTENT\\" + folderName + "\\pacenotes.ini";
-			btbPaceotesINIFile.LoadFile(sIniFileName.c_str());
-			iPacenotesIdx = min(btbPaceotesINIFile.GetLongValue("PACENOTES", "count", 0) - 1, 1000000);
-			
-			for (; iPacenotesIdx >= 0; iPacenotesIdx--)
-			{
-				snprintf(szKeyName, sizeof(szKeyName), "P%d", iPacenotesIdx);
-				iPacenoteType = btbPaceotesINIFile.GetLongValue(szKeyName, "type", -1);
-
-				if (iPacenoteType == 21 && startDistance < 0)
-				{
-					startDistance = btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0);
-					if (startDistance >= 0 && finishDistance >= 0) break;
-				}
-				else if (iPacenoteType == 22 && finishDistance < 0)
-				{
-					finishDistance = btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0);
-					if (startDistance >= 0 && finishDistance >= 0) break;
-				}
-			}
-
-			newLengthKm = (finishDistance - startDistance) / 1000.0f;
-			if (newLengthKm <= 0) newLengthKm = 1.0;
-		}
-
-		CSimpleIni btbTrackINIFile;
-		std::stringstream sLengthStr;
-		sLengthStr << std::setprecision(1) << std::fixed << newLengthKm;
-
-		sIniFileName = m_sRBRRootDir + "\\RX_CONTENT\\" + folderName + "\\track.ini";
-		btbTrackINIFile.LoadFile(sIniFileName.c_str());
-		btbTrackINIFile.SetValue("INFO", "length", sLengthStr.str().c_str());
-		btbTrackINIFile.SaveFile(sIniFileName.c_str());
-	}
-	catch (...)
-	{
-		// Do nothing
-	}
-
-	return newLengthKm;
-}
-
-
-//------------------------------------------------------------------------------------------------
 //
 const char* CNGPCarMenu::GetName(void)
 {
@@ -2634,8 +2679,9 @@ const char* CNGPCarMenu::GetName(void)
 		rbrINI.Reset();
 
 		m_bPacenotePluginInstalled = fs::exists(m_sRBRRootDir + "\\Plugins\\PaceNote.dll");
+		m_bRallySimFansPluginInstalled = fs::exists(m_sRBRRootDir + "\\Plugins\\RSFstub.dll");
 
-		LogPrint("RBR Fullscreen mode=%d   PacenotePlugin installed=%d", m_bRBRFullscreenDX9, m_bPacenotePluginInstalled);
+		LogPrint("RBR FullscreenMode=%d PacenotePluginInstalled=%d RallySimFansPluginInstalled=%d", m_bRBRFullscreenDX9, m_bPacenotePluginInstalled, m_bRallySimFansPluginInstalled);
 	
 		// Init RBR API objects
 		RBRAPI_InitializeObjReferences();
@@ -2644,13 +2690,20 @@ const char* CNGPCarMenu::GetName(void)
 		RefreshSettingsFromPluginINIFile(true);
 
 		// Init font to draw custom car spec info text (3D model and custom livery text)
-		int iFontSize = 12;
+		int iFontSize = 14;
 		if (g_rectRBRWndClient.bottom < 600) iFontSize = 7;
 		else if (g_rectRBRWndClient.bottom < 768) iFontSize = 9;
+		else if (g_rectRBRWndClient.bottom == 768) iFontSize = 12;
 
-		g_pFontCarSpecCustom = new CD3DFont(L"Trebuchet MS", iFontSize, 0);
+		// Font to draw car spec details in QuickRally, RBRTM and RBRRX car selection screens (FIA Category, HP, Transmission etc)
+		g_pFontCarSpecCustom = new CD3DFont(L"Trebuchet MS", iFontSize, 0 /*D3DFONT_BOLD*/);
 		g_pFontCarSpecCustom->InitDeviceObjects(g_pRBRIDirect3DDevice9);
 		g_pFontCarSpecCustom->RestoreDeviceObjects();	
+
+		// Font to draw car and track model author/credit detail text (a bit smaller font than CarSpecCustom font)
+		g_pFontCarSpecModel = new CD3DFont(L"Trebuchet MS", (iFontSize >= 14 ? iFontSize - 2 : iFontSize), 0 /*D3DFONT_BOLD*/);
+		g_pFontCarSpecModel->InitDeviceObjects(g_pRBRIDirect3DDevice9);
+		g_pFontCarSpecModel->RestoreDeviceObjects();
 
 		// If EASYRBRPath is not set then assume cars have been setup using RBRCIT car manager tool
 		if (m_easyRBRFilePath.empty()) InitCarSpecData_RBRCIT();
@@ -2702,6 +2755,9 @@ const char* CNGPCarMenu::GetName(void)
 		gtcDirect3DEndScene = new DetourXS((LPVOID)0x0040E890, ::CustomRBRDirectXEndScene, TRUE);
 		Func_OrigRBRDirectXEndScene = (tRBRDirectXEndScene)gtcDirect3DEndScene->GetTrampoline();	 
 
+		gtcRBRReplay = new DetourXS((LPVOID)0x4999B0, ::CustomRBRReplay, TRUE);
+		Func_OrigRBRReplay = (tRBRReplay)gtcRBRReplay->GetTrampoline();
+
 		//DebugPrint("CRBRNetTNG.GetName. BeginSceneIsFirst=%d  EndSceneIsFirst=%d", gtcDirect3DBeginScene->IsFirstHook(), gtcDirect3DEndScene->IsFirstHook());
 
 		// RBR memory and DX9 function hooks in place. Ready to do customized RBR logic
@@ -2715,6 +2771,62 @@ const char* CNGPCarMenu::GetName(void)
 	//DebugPrint("Exit CNGPCarMenu.GetName");
 
 	return "NGPCarMenu";
+}
+
+
+//------------------------------------------------------------------------------------------------
+// If profile renaming was active. Complete the process (either accept the new profile name or restore the previous name depending on if the new savedGames\pfProfileName.rbr file exists)
+//
+void CNGPCarMenu::CompleteProfileRenaming()
+{
+	if (m_bRenameDriverNameActive)
+	{
+		std::string sNewProfileFileNameWithoutPostfix;
+		std::string sPrevProfileFileName;
+		std::string sBakPrefix;
+
+		m_bRenameDriverNameActive = FALSE;
+
+		try
+		{
+			sNewProfileFileNameWithoutPostfix = m_sRBRRootDir + "\\SavedGames\\pf" + g_pRBRProfile->szProfileName;
+
+			// If the new profile file exists the backup the previous profile before removing it (RBR uses profileName as a savedGames file name).
+			// If the new file does NOT exist then restore the previous profile name.
+			if (fs::exists(sNewProfileFileNameWithoutPostfix + ".rbr") /*&& fs::exists(sNewProfileFileNameWithoutPostfix + ".acm")*/)
+			{
+				LogPrint("Renaming a driver profile from %s to %s", m_sMenuPrevDriverName.c_str(), g_pRBRProfile->szProfileName);
+
+				int idx = 1;
+				while (idx < 200)
+				{
+					// Find unique backup profile filename
+					sBakPrefix = "z_" + std::to_string(idx) + "_";
+					sPrevProfileFileName = m_sRBRRootDir + "\\SavedGames\\" + sBakPrefix + "pf" + m_sMenuPrevDriverName;
+					if (!fs::exists(sPrevProfileFileName + ".rbr.bak"))
+						break;
+					idx++;
+				}
+
+				// The new profile filename exists (the new profile name must be valid and creation succeeded). Backup the previous profile file just-in-case
+				fs::rename(m_sRBRRootDir + "\\SavedGames\\pf" + m_sMenuPrevDriverName + ".rbr", sPrevProfileFileName + ".rbr.bak");
+				fs::rename(m_sRBRRootDir + "\\SavedGames\\pf" + m_sMenuPrevDriverName + ".acm", sPrevProfileFileName + ".acm.bak");
+			}
+			else
+			{
+				// Restore the previous profile name because renaming was canceled or profile file creation failed (invalid filename chars? out of disk space?)
+				strncpy_s(g_pRBRProfile->szProfileName, m_sMenuPrevDriverName.c_str(), COUNT_OF_ITEMS(g_pRBRProfile->szProfileName));
+			}
+		}
+		catch (const fs::filesystem_error& ex)
+		{
+			LogPrint("ERROR. Failed to backup a profile file. %s.rbr.bak. %s", sPrevProfileFileName, ex.what());
+		}
+		catch (...)
+		{
+			// Eat all exceptions
+		}
+	}
 }
 
 
@@ -2736,7 +2848,7 @@ void CNGPCarMenu::DrawFrontEndPage(void)
 
 	if (g_NGPCarMenu_AutoLogonOptions.size() == 0)
 	{
-		// First time initialization of NGPCarMenu plugin menu options
+		// First time initialization of NGPCarMenu plugin menu options. When RBR calls this method for the first time the Options and Plugins and custom plugin menu objects have been created by RBR game engine (those are not initialized until users navigates there for the first time)
 		g_NGPCarMenu_AutoLogonOptions.push_back("Disabled");
 		g_NGPCarMenu_AutoLogonOptions.push_back("Main");
 		g_NGPCarMenu_AutoLogonOptions.push_back("Plugins");
@@ -2766,34 +2878,53 @@ void CNGPCarMenu::DrawFrontEndPage(void)
 		}
 	}
 
-	// Draw blackout (coordinates specify the 'window' where you don't want black)
-	m_pGame->DrawBlackOut(420.0f, 0.0f, 420.0f, 480.0f);
+	// Draw blackout (coordinates specify the 'window' where you don't want black background but the "RBR world" to be visible)
+	m_pGame->DrawBlackOut(450.0f, 0.0f, 190.0f, 480.0f);
 
 	// Draw custom plugin header line
 	m_pGame->SetMenuColor(IRBRGame::MENU_HEADING);
 	m_pGame->SetFont(IRBRGame::FONT_BIG);
 	m_pGame->WriteText(65.0f, 49.0f, m_sPluginTitle.c_str());
 
-	// The red menu selection line
-	m_pGame->DrawSelection(0.0f, 68.0f + (static_cast< float >(m_iMenuSelection) * 21.0f), 360.0f);
-
-	m_pGame->SetMenuColor(IRBRGame::MENU_TEXT);
-	for (unsigned int i = 0; i < COUNT_OF_ITEMS(g_NGPCarMenu_PluginMenu); ++i)
+	if (m_iMenuCurrentScreen == C_MENUCMD_RENAMEDRIVER)
 	{
-		if (i == C_MENUCMD_CREATEOPTION)
-			sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_CreateOptions[m_iMenuCreateOption]);
-		else if (i == C_MENUCMD_IMAGEOPTION)
-			sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_ImageOptions[m_iMenuImageOption]);
-		else if (i == C_MENUCMD_RBRTMOPTION)
-			sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_EnableDisableOptions[m_iMenuRBRTMOption]);
-		else if (i == C_MENUCMD_RBRRXOPTION)
-			sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_EnableDisableOptions[m_iMenuRBRRXOption]);
-		else if (i == C_MENUCMD_AUTOLOGONOPTION)
-			sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], (m_iMenuAutoLogonOption < (int)g_NGPCarMenu_AutoLogonOptions.size() ? g_NGPCarMenu_AutoLogonOptions[m_iMenuAutoLogonOption] : "<unknown>"));
-		else
-			sprintf_s(szTextBuf, sizeof(szTextBuf), "%s", g_NGPCarMenu_PluginMenu[i]);
+		// Draw gray background in the "text editbox" area
+		m_pGame->SetColor(0x20, 0x20, 0x20, 180);
+		m_pGame->DrawFlatBox(63.0f, 68.0f + (2 * 21.0f), 160.0f, 23.0f);
 
-		m_pGame->WriteText(65.0f, 70.0f + (static_cast< float >(i) * 21.0f), szTextBuf);
+		m_pGame->SetMenuColor(IRBRGame::MENU_TEXT);
+		
+		sprintf_s(szTextBuf, sizeof(szTextBuf), "Rename driver profile: '%s'", g_pRBRProfile->szProfileName);
+		m_pGame->WriteText(65.0f, 70.0f, szTextBuf);
+
+		m_pGame->WriteText(65.0f, 70.0f + (1 * 21.0f), "Enter the new driver name:");
+		m_pGame->WriteText(65.0f, 70.0f + (2 * 21.0f), m_sMenuNewDriverName.c_str());
+	}
+	else
+	{
+		// The red menu selection line (background color of the focused menu line)
+		m_pGame->DrawSelection(0.0f, 68.0f + (static_cast<float>(m_iMenuSelection) * 21.0f), 370.0f);
+		
+		m_pGame->SetMenuColor(IRBRGame::MENU_TEXT);
+		for (unsigned int i = 0; i < COUNT_OF_ITEMS(g_NGPCarMenu_PluginMenu); ++i)
+		{
+			if (i == C_MENUCMD_CREATEOPTION)
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_CreateOptions[m_iMenuCreateOption]);
+			else if (i == C_MENUCMD_IMAGEOPTION)
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_ImageOptions[m_iMenuImageOption]);
+			else if (i == C_MENUCMD_RBRTMOPTION)
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_EnableDisableOptions[m_iMenuRBRTMOption]);
+			else if (i == C_MENUCMD_RBRRXOPTION)
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_EnableDisableOptions[m_iMenuRBRRXOption]);
+			else if (i == C_MENUCMD_AUTOLOGONOPTION)
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], (m_iMenuAutoLogonOption < (int)g_NGPCarMenu_AutoLogonOptions.size() ? g_NGPCarMenu_AutoLogonOptions[m_iMenuAutoLogonOption] : "<unknown>"));
+			else if (i == C_MENUCMD_RENAMEDRIVER)
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: '%s'", g_NGPCarMenu_PluginMenu[i], g_pRBRProfile->szProfileName);
+			else
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s", g_NGPCarMenu_PluginMenu[i]);
+
+			m_pGame->WriteText(65.0f, 70.0f + (static_cast<float>(i) * 21.0f), szTextBuf);
+		}
 	}
 
 	m_pGame->SetFont(IRBRGame::FONT_SMALL);
@@ -2822,101 +2953,183 @@ void CNGPCarMenu::DrawFrontEndPage(void)
 
 void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, bool bLeft, bool bRight, bool bSelect)
 {
+	static std::string sWinInvalidFileChars = "<>:""/\\|?*";
+
+	//DebugPrint("FrontEvent: Kbd=%d Up=%d Dow=%d Left=%d Right=%d Select=%d", (BYTE)txtKeyboard, bUp, bDown, bLeft, bRight, bSelect);
+
 	// Clear the previous status text when menu selection changes
-	if (bUp || bDown || bSelect)
+	if (m_iMenuCurrentScreen == 0 && (bUp || bDown || bSelect))
 		m_sMenuStatusText1.clear();
 
-	if (bSelect)
+	if (m_iMenuCurrentScreen == C_MENUCMD_RENAMEDRIVER)
 	{
-		//
-		// Menu item "selected". Do the action.
-		//
-
-		if (m_iMenuSelection == C_MENUCMD_RELOAD)
+		if (bSelect)
 		{
-			// Re-read car preview images from source files
-			ClearCachedCarPreviewImages();
-			RefreshSettingsFromPluginINIFile();
+			//
+			// Save new profile
+			//
 
-			// DEBUG. Show/Hide cropping area
-			//bool bNewStatus = !m_bCustomReplayShowCroppingRect;
-			m_bCustomReplayShowCroppingRect = false;
-			//D3D9CreateRectangleVertexBuffer(g_pRBRIDirect3DDevice9, (float)this->m_screenshotCroppingRect.left, (float)this->m_screenshotCroppingRect.top, (float)(this->m_screenshotCroppingRect.right - this->m_screenshotCroppingRect.left), (float)(this->m_screenshotCroppingRect.bottom - this->m_screenshotCroppingRect.top), &m_screenshotCroppingRectVertexBuffer);
-			//m_bCustomReplayShowCroppingRect = bNewStatus;		
-		}
-		//else if (m_iMenuSelection == C_MENUCMD_CREATEOPTION || m_iMenuSelection == C_MENUCMD_IMAGEOPTION)
-		//{
-			// Do nothing when option line is selected
-		//}
-		else if (m_iMenuSelection == C_MENUCMD_CREATE)
-		{
-			// Create new car preview images using BMP or PNG format
+			// Set NGPCarMenu back to main menu before saving a new profile
+			m_iMenuCurrentScreen = 0;
 
-			m_bCustomReplayShowCroppingRect = false;
-			m_iCustomReplayScreenshotCount = 0;
+			m_sMenuStatusText1.clear();
+			m_sMenuStatusText2.clear();
+			m_sMenuStatusText3.clear();
 
-			RefreshSettingsFromPluginINIFile();
-
-			// Get the first carID without an image (or the carID=0 if all images should be overwritten). Value -1 indicates that no more screenshots to generate.
-			m_iCustomReplayCarID = GetNextScreenshotCarID(-1);
-
-			// Prepare replay to show custom car 3D model and car position
-			if (m_iCustomReplayCarID >= 0 && CNGPCarMenu::PrepareScreenshotReplayFile(m_iCustomReplayCarID))
-			{
-				ClearCachedCarPreviewImages();
-
-				// Create the preview rectangle around the screenshot cropping area to highlight the screenshot area (user can tweak INI file settings if cropping area is not perfect)
-				D3D9CreateRectangleVertexBuffer(g_pRBRIDirect3DDevice9, (float)this->m_screenshotCroppingRect.left, (float)this->m_screenshotCroppingRect.top, (float)(this->m_screenshotCroppingRect.right - this->m_screenshotCroppingRect.left), (float)(this->m_screenshotCroppingRect.bottom - this->m_screenshotCroppingRect.top), &m_screenshotCroppingRectVertexBuffer);
-
-				// Set a flag that custom replay generation is active during replays. If this is zero then replay plays the file normally
-				m_iCustomReplayState = 1;
-				
-				::RBRAPI_Replay(this->m_sRBRRootDir, C_REPLAYFILENAME_SCREENSHOT);
-			}
+			if (m_sMenuNewDriverName.empty())
+				m_sMenuStatusText1 = "Profile renaming canceled";
+			else if (fs::exists(m_sRBRRootDir + "\\SavedGames\\pf" + m_sMenuNewDriverName + ".rbr") /*|| fs::exists(m_sRBRRootDir + "\\SavedGames\\pf" + m_sMenuNewDriverName + ".acm")*/)
+				m_sMenuStatusText1 = std::string("WARNING. Failed to rename driver profile. The profile ") + m_sMenuNewDriverName + " already exists";
 			else
-				m_sMenuStatusText1 = "All cars already have a preview image. Did not create any new images.";
+			{
+				// Auto-navigate to SaveProfile YES/NO screen
+				m_autoLogonSequenceSteps.clear();
+				m_autoLogonSequenceSteps.push_back("main");
+				m_autoLogonSequenceSteps.push_back("driverprofile");
+				m_autoLogonSequenceSteps.push_back("saveprofile");
 
+				m_sMenuPrevDriverName = g_pRBRProfile->szProfileName;
+				strncpy_s(g_pRBRProfile->szProfileName, m_sMenuNewDriverName.c_str(), COUNT_OF_ITEMS(g_pRBRProfile->szProfileName));
+				StartNewAutoLogonSequence();
+				//LogPrint(L"SaveProfile sequence. %s", m_autoLogonSequenceLabel.str().c_str());
+
+				// Navigate to main menu to start a new autologon sequence
+				g_pRBRMenuSystem->currentMenuObj = g_pRBRMenuSystem->currentMenuObj2 = g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN];
+				m_bRenameDriverNameActive = TRUE;
+			}
+		}
+		else if (bLeft)
+		{
+			// Left arrow is the "backspace" key because the real backspace closes the custom plugin (TODO. Find out how to trick RBR not to close the custom plugin in backspace key)
+			if (m_sMenuNewDriverName.length() > 0)
+				m_sMenuNewDriverName.pop_back();
+		}
+		else if (bUp || bDown)
+		{
+			// Change the ascii code of the last char (this way it is possible to set those chars not supported by RBR txtKeyboard events)
+			if (m_sMenuNewDriverName.length() <= 0)
+				m_sMenuNewDriverName += ' ';
+
+			BYTE lastChar = m_sMenuNewDriverName[m_sMenuNewDriverName.length() - 1];
+			while (TRUE)
+			{
+				lastChar += (bUp ? 1 : -1);
+				if (lastChar <= 32) lastChar = 254;
+				else if (lastChar >= 255) lastChar = 33;
+
+				if (sWinInvalidFileChars.find_first_of(lastChar) == std::string::npos)
+					break;
+			}
+
+			m_sMenuNewDriverName[m_sMenuNewDriverName.length() - 1] = lastChar;
+		}
+		else
+		{
+			// Add new char to a new driver name string (if valid char and the string is not yet 15 chars and char is not invalid Win filename char. 
+			// The RBR profile name char array is 16 bytes=15 chars+nullTerminator)
+			if (txtKeyboard >= 32 && m_sMenuNewDriverName.length() < 15 && sWinInvalidFileChars.find_first_of(txtKeyboard) == std::string::npos)
+				m_sMenuNewDriverName += txtKeyboard;
 		}
 	}
+	else
+	{
+		if (bSelect)
+		{
+			//
+			// Menu item "selected". Do the action.
+			//
+
+			if (m_iMenuSelection == C_MENUCMD_RELOAD)
+			{
+				// Re-read car preview images from source files
+				ClearCachedCarPreviewImages();
+				RefreshSettingsFromPluginINIFile();
+				m_bCustomReplayShowCroppingRect = false;
+			}
+			//else if (m_iMenuSelection == C_MENUCMD_CREATEOPTION || m_iMenuSelection == C_MENUCMD_IMAGEOPTION)
+			//{
+				// Do nothing when option line is selected
+			//}
+			else if (m_iMenuSelection == C_MENUCMD_CREATE)
+			{
+				// Create new car preview images using BMP or PNG format
+
+				m_bCustomReplayShowCroppingRect = false;
+				m_iCustomReplayScreenshotCount = 0;
+
+				RefreshSettingsFromPluginINIFile();
+
+				// Get the first carID without an image (or the carID=0 if all images should be overwritten). Value -1 indicates that no more screenshots to generate.
+				m_iCustomReplayCarID = GetNextScreenshotCarID(-1);
+
+				// Prepare replay to show custom car 3D model and car position
+				if (m_iCustomReplayCarID >= 0 && CNGPCarMenu::PrepareScreenshotReplayFile(m_iCustomReplayCarID))
+				{
+					ClearCachedCarPreviewImages();
+
+					// Create the preview rectangle around the screenshot cropping area to highlight the screenshot area (user can tweak INI file settings if cropping area is not perfect)
+					D3D9CreateRectangleVertexBuffer(g_pRBRIDirect3DDevice9, (float)this->m_screenshotCroppingRect.left, (float)this->m_screenshotCroppingRect.top, (float)(this->m_screenshotCroppingRect.right - this->m_screenshotCroppingRect.left), (float)(this->m_screenshotCroppingRect.bottom - this->m_screenshotCroppingRect.top), &m_screenshotCroppingRectVertexBuffer);
+
+					// Set a flag that custom replay generation is active during replays. If this is zero then replay plays the file normally
+					m_iCustomReplayState = 1;
+
+					::RBRAPI_Replay(this->m_sRBRRootDir, C_REPLAYFILENAME_SCREENSHOT);
+				}
+				else
+					m_sMenuStatusText1 = "All cars already have a preview image. Did not create any new images.";
+
+			}
+			else if (m_iMenuSelection == C_MENUCMD_RENAMEDRIVER)
+			{
+				m_bRenameDriverNameActive = FALSE;	// Renaming and saving a new profile is not yet active (user could cancel the process)
+				m_sMenuNewDriverName.clear();
+				m_iMenuCurrentScreen = C_MENUCMD_RENAMEDRIVER;
+
+				m_sMenuStatusText1 = "BACKSPACE key closes this screen. Use LEFT ARROW key as backspace.";
+				m_sMenuStatusText2 = "Use UP/DOWN ARROW keys to choose characters not supported by the original RBR profile name editor.";
+				m_sMenuStatusText3 = "The profile name can have only valid WinOS filename characters.";
+			}
+		}
 
 
-	//
-	// Menu focus line moved up or down
-	//
-	if (bUp && (--m_iMenuSelection) < 0)
-		//m_iMenuSelection = COUNT_OF_ITEMS(g_RBRPluginMenu) - 1;  // Wrap around logic
-		m_iMenuSelection = 0;  // No wrapping logic
+		//
+		// Menu focus line moved up or down
+		//
+		if (bUp && (--m_iMenuSelection) < 0)
+			//m_iMenuSelection = COUNT_OF_ITEMS(g_RBRPluginMenu) - 1;  // Wrap around logic
+			m_iMenuSelection = 0;  // No wrapping logic
 
-	if (bDown && (++m_iMenuSelection) >= COUNT_OF_ITEMS(g_NGPCarMenu_PluginMenu))
-		//m_iMenuSelection = 0; // Wrap around logic
-		m_iMenuSelection = COUNT_OF_ITEMS(g_NGPCarMenu_PluginMenu) - 1;
+		if (bDown && (++m_iMenuSelection) >= COUNT_OF_ITEMS(g_NGPCarMenu_PluginMenu))
+			//m_iMenuSelection = 0; // Wrap around logic
+			m_iMenuSelection = COUNT_OF_ITEMS(g_NGPCarMenu_PluginMenu) - 1;
 
 
-	//
-	// Menu options changed in the current menu line. Options don't wrap around.
-	// Note! Not all menu lines have any additional options.
-	//
-	DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_CREATEOPTION, m_iMenuCreateOption, g_NGPCarMenu_CreateOptions);
+		//
+		// Menu options changed in the current menu line. Options don't wrap around.
+		// Note! Not all menu lines have any additional options.
+		//
+		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_CREATEOPTION, m_iMenuCreateOption, g_NGPCarMenu_CreateOptions);
 
-	int iPrevMenuImageOptionValue = m_iMenuImageOption;
-	DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_IMAGEOPTION, m_iMenuImageOption, g_NGPCarMenu_ImageOptions);
+		int iPrevMenuImageOptionValue = m_iMenuImageOption;
+		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_IMAGEOPTION, m_iMenuImageOption, g_NGPCarMenu_ImageOptions);
 
-	int iPrevMenuRBRTMOptionValue = m_iMenuRBRTMOption;
-	DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_RBRTMOPTION, m_iMenuRBRTMOption, g_NGPCarMenu_EnableDisableOptions);
-	if (m_iMenuRBRTMOption == 1 && iPrevMenuRBRTMOptionValue != m_iMenuRBRTMOption)
-		g_bNewCustomPluginIntegrations = TRUE;
+		int iPrevMenuRBRTMOptionValue = m_iMenuRBRTMOption;
+		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_RBRTMOPTION, m_iMenuRBRTMOption, g_NGPCarMenu_EnableDisableOptions);
+		if (m_iMenuRBRTMOption == 1 && iPrevMenuRBRTMOptionValue != m_iMenuRBRTMOption)
+			g_bNewCustomPluginIntegrations = TRUE;
 
-	int iPrevMenuRBRRXOptionValue = m_iMenuRBRRXOption;
-	DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_RBRRXOPTION, m_iMenuRBRRXOption, g_NGPCarMenu_EnableDisableOptions);
-	if (m_iMenuRBRRXOption == 1 && iPrevMenuRBRRXOptionValue != m_iMenuRBRRXOption)
-		g_bNewCustomPluginIntegrations = TRUE;
+		int iPrevMenuRBRRXOptionValue = m_iMenuRBRRXOption;
+		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_RBRRXOPTION, m_iMenuRBRRXOption, g_NGPCarMenu_EnableDisableOptions);
+		if (m_iMenuRBRRXOption == 1 && iPrevMenuRBRRXOptionValue != m_iMenuRBRRXOption)
+			g_bNewCustomPluginIntegrations = TRUE;
 
-	int iPrevMenuAutoLogonOptionValue = m_iMenuAutoLogonOption;
-	if (m_iMenuSelection == C_MENUCMD_AUTOLOGONOPTION && bLeft && (--m_iMenuAutoLogonOption) < 0) m_iMenuAutoLogonOption = 0;
-	else if (m_iMenuSelection == C_MENUCMD_AUTOLOGONOPTION && bRight && (++m_iMenuAutoLogonOption) >= (int)g_NGPCarMenu_AutoLogonOptions.size()) m_iMenuAutoLogonOption = g_NGPCarMenu_AutoLogonOptions.size() - 1;
+		int iPrevMenuAutoLogonOptionValue = m_iMenuAutoLogonOption;
+		if (m_iMenuSelection == C_MENUCMD_AUTOLOGONOPTION && bLeft && (--m_iMenuAutoLogonOption) < 0) m_iMenuAutoLogonOption = 0;
+		else if (m_iMenuSelection == C_MENUCMD_AUTOLOGONOPTION && bRight && (++m_iMenuAutoLogonOption) >= (int)g_NGPCarMenu_AutoLogonOptions.size()) m_iMenuAutoLogonOption = g_NGPCarMenu_AutoLogonOptions.size() - 1;
 
-	if(iPrevMenuImageOptionValue != m_iMenuImageOption || iPrevMenuRBRTMOptionValue != m_iMenuRBRTMOption || iPrevMenuRBRRXOptionValue != m_iMenuRBRRXOption || iPrevMenuAutoLogonOptionValue != m_iMenuAutoLogonOption)
-		SaveSettingsToPluginINIFile();
+		if (iPrevMenuImageOptionValue != m_iMenuImageOption || iPrevMenuRBRTMOptionValue != m_iMenuRBRTMOption || iPrevMenuRBRRXOptionValue != m_iMenuRBRRXOption || iPrevMenuAutoLogonOptionValue != m_iMenuAutoLogonOption)
+			SaveSettingsToPluginINIFile();
+	}
 }
 
 
@@ -2939,10 +3152,9 @@ void CNGPCarMenu::HandleResults(float fCheckPoint1, float fCheckPoint2,	float fF
 //------------------------------------------------------------------------------------------------
 // Is called when a player passed a checkpoint 
 //
- void CNGPCarMenu::CheckPoint(float fCheckPointTime, int iCheckPointID, const char* ptxtPlayerName)
- {
-	//m_pGame->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
-	//m_pGame->WriteGameMessage("CHECKPOINT!!!!!!!!!!", 5.0f, 50.0f, 250.0f);
+void CNGPCarMenu::CheckPoint(float fCheckPointTime, int iCheckPointID, const char* ptxtPlayerName)
+{
+	// Do nothing
 }
 
 
@@ -2961,6 +3173,13 @@ inline void CNGPCarMenu::CustomRBRDirectXBeginScene()
 {
 	if (g_pRBRGameMode->gameMode == 03)
 	{
+		if (m_bRenameDriverNameActive)
+		{
+			// If the current menu or the focused profile menu line has changed then user has either accepted or canceled the profile saving (renaming)
+			if (m_iAutoLogonMenuState == 0 && (g_pRBRMenuSystem->currentMenuObj != g_pRBRMenuSystem->menuObj[RBRMENUIDX_DRIVERPROFILE] || g_pRBRMenuSystem->currentMenuObj->selectedItemIdx != m_iProfileMenuPrevSelectedIdx) )
+				CompleteProfileRenaming();
+		}
+
 		if (g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_QUICKRALLY_CARS]
 			|| g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MULTIPLAYER_CARS_P1]
 			|| g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MULTIPLAYER_CARS_P2]
@@ -2986,7 +3205,7 @@ inline void CNGPCarMenu::CustomRBRDirectXBeginScene()
 					// Car selection menu. Make the car model preview screen few pixels bigger and modify car details based on the currently selected car menu row
 
 					// Hide the default "SelectCar" preview image (zero height and width)
-					// TODO: Find where these menu specific pos/width/height values are originally stored. Now tweak the height everytime car menu selection is about to be shown.
+					// Find where these menu specific pos/width/height values are originally stored. Now tweak the height everytime car menu selection is about to be shown.
 					g_pRBRMenuSystem->menuImageHeight = g_pRBRMenuSystem->menuImageWidth = 0;
 
 					if (pCarMenuSpecTexts->wszTorqueTitle != g_pOrigCarSpecTitleWeight)
@@ -3123,7 +3342,6 @@ inline void CNGPCarMenu::CustomRBRDirectXBeginScene()
 
 			g_pRBRCameraInfo->cameraType = 3;
 
-			// TODO. Read from INI file
 			// Set car and camera position to create a cool car preview image
 			g_pRBRCameraInfo->camOrientation.x = 0.664824f;
 			g_pRBRCameraInfo->camOrientation.y = -0.747000f;
@@ -3144,10 +3362,24 @@ inline void CNGPCarMenu::CustomRBRDirectXBeginScene()
 			g_pRBRCarMovement->carQuat.y = 0.008247f;
 			g_pRBRCarMovement->carQuat.z = 0.982173f;
 			g_pRBRCarMovement->carQuat.w = -0.186811f;
-			g_pRBRCarMovement->carMapLocation.m[0][0] = -0.929464f;
-			g_pRBRCarMovement->carMapLocation.m[0][1] = -0.367257f;
-			g_pRBRCarMovement->carMapLocation.m[0][2] = -0.032216f;
-			g_pRBRCarMovement->carMapLocation.m[0][3] = 0.366664f;
+			
+			if (m_screenshotCarPosition != 1)
+			{
+				// Normal car position (screenshotCarPosition==0)
+				g_pRBRCarMovement->carMapLocation.m[0][0] = -0.929464f;
+				g_pRBRCarMovement->carMapLocation.m[0][1] = -0.367257f;
+				g_pRBRCarMovement->carMapLocation.m[0][2] = -0.032216f;
+				g_pRBRCarMovement->carMapLocation.m[0][3] = 0.366664f;
+			}
+			else
+			{
+				// Car in the middle of nowhere, in the sky (screenshotCarPosition==1)
+				g_pRBRCarMovement->carMapLocation.m[0][0] = 4000.929464f;
+				g_pRBRCarMovement->carMapLocation.m[0][1] = 4000.367257f;
+				g_pRBRCarMovement->carMapLocation.m[0][2] = 4000.032216f;
+				g_pRBRCarMovement->carMapLocation.m[0][3] = 4000.366664f;
+			}
+
 			g_pRBRCarMovement->carMapLocation.m[1][0] = -0.929974f;
 			g_pRBRCarMovement->carMapLocation.m[1][1] = 0.022913f;
 			g_pRBRCarMovement->carMapLocation.m[1][2] = -0.038378f;
@@ -3188,20 +3420,94 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 {
 	HRESULT hResult;
 
-/*
+
 #if USE_DEBUG == 1
 	static int prevMode = -1;
+	static int prevModeExt = -1;
 	static PRBRMenuObj prevMenu = nullptr;
-	if (g_pRBRGameMode->gameMode != prevMode || prevMenu != g_pRBRMenuSystem->currentMenuObj)
+	if (g_pRBRGameMode->gameMode != prevMode || prevMenu != g_pRBRMenuSystem->currentMenuObj || g_pRBRGameModeExt->gameModeExt != prevModeExt)
 	{
-		DebugPrint("Mode=%x Menu=%08x", g_pRBRGameMode->gameMode, (DWORD)g_pRBRMenuSystem->currentMenuObj);
+		int menuIdx;
+		for (menuIdx = 0; menuIdx < RBRMENUSYSTEM_NUM_OF_MENUS; menuIdx++)
+			if (g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[menuIdx])
+				break;
+
+		if (menuIdx >= RBRMENUSYSTEM_NUM_OF_MENUS) 
+			menuIdx = -1;
+
+		DebugPrint("Mode=%x ModeExt=%x Mnu=%08x MnuIdx=%d %s", 
+			g_pRBRGameMode->gameMode, 
+			g_pRBRGameModeExt->gameModeExt, 
+			(DWORD)g_pRBRMenuSystem->currentMenuObj, 
+			menuIdx,
+			(g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->customPluginMenuObj ? "customPlugin" : 
+			 g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->optionsMenuObj ? "optionsMenu" :
+			 g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->pluginsMenuObj ? "pluginsMenu" : ""
+			));
+
 		prevMode = g_pRBRGameMode->gameMode;
+		prevModeExt = g_pRBRGameModeExt->gameModeExt;
 		prevMenu = g_pRBRMenuSystem->currentMenuObj;
 	}
 #endif
-*/
 
-	if (g_pRBRGameMode->gameMode == 03)
+	if ((g_pRBRGameMode->gameMode == 0x02 /*&& m_bRBRTMPluginActive*/) || g_pRBRGameMode->gameMode == 0x09)
+	{
+		// Racing is about to end (but RBRB is still in "Restart/SaveReplay" menu). 
+		// Start a watcher thread to receive notifications of new rbr\Replays\fileName.rpl replay files
+		if (!g_watcherNewReplayFiles.Running() && m_bGenerateReplayMetadataFile)
+		{
+			if (g_watcherNewReplayFileListener == nullptr)
+			{
+				g_watcherNewReplayFiles.SetDir(m_sRBRRootDirW + L"\\Replays");
+				g_watcherNewReplayFileListener = new RBRReplayFileWatcherListener();
+				g_watcherNewReplayFiles.AddFileChangeListener(g_watcherNewReplayFileListener);
+			}
+
+			// Make sure the fileQueue is empty before starting a new watcher thread (usually at this point the queue should be empty)
+			g_watcherNewReplayFileListener->DoCompletion(TRUE);
+			g_watcherNewReplayFiles.Start();
+		}
+	}
+
+	else if (/*g_pRBRGameMode->gameMode == 0x0A ||*/ g_pRBRGameMode->gameMode == 0x0D)
+	{
+		// Racing is about to begin. Store the current racing carID and trackID because replay metadata INI file needs this information
+		m_latestCarID = g_pRBRMapSettings->carID;
+		m_latestMapID = g_pRBRMapSettings->trackID;
+
+		// If RBRTM Shakedown/RBRRX plugin is the active custom plugin (ie. rally started under this plugins) and the "N recently driven stages" shortcut 
+		// list was modified (ie. this stage about to start was added on top of the shortcut list) then register the new stage in a "recently driven" shortcut INI file.
+		if (m_bRBRTMPluginActive && m_iRBRTMCarSelectionType == 0x02)
+			RBRTM_EndScene();
+		else if (m_bRBRRXPluginActive || m_bRBRRXReplayActive)
+			RBRRX_EndScene();
+/*		else if (m_bCustomReplayShowCroppingRect && m_iCustomReplayState >= 2 && m_iCustomReplayState != 4)
+			// Draw rectangle to highlight the screenshot capture area (except when state == 4 because then this plugin takes the car preview screenshot and we don't want to see the gray box in a preview image)
+			D3D9DrawVertex2D(g_pRBRIDirect3DDevice9, m_screenshotCroppingRectVertexBuffer);
+*/
+	}
+	else if (g_pRBRGameMode->gameMode == 0x0C)
+	{
+		// RBRRX integration and replays need this 0x0C gameMode to prepare for returning to main menu
+		RBRRX_EndScene();
+	}
+
+	else if (m_iCustomReplayState >= 2 && g_pRBRGameMode->gameMode == 0x0A && m_bCustomReplayShowCroppingRect && m_iCustomReplayState != 4)
+		// Draw rectangle to highlight the screenshot capture area (except when state == 4 because then this plugin takes the car preview screenshot and we don't want to see the gray box in a preview image)
+		D3D9DrawVertex2D(g_pRBRIDirect3DDevice9, m_screenshotCroppingRectVertexBuffer);
+
+	else if (g_pRBRGameMode->gameMode == 0x06) // && !m_bRBRTMPluginActive)
+	{
+		if (g_watcherNewReplayFiles.Running())
+		{
+			// Racing has ended. Check if there are new replay files and create replayFileName.ini metadata file if necessary
+			g_watcherNewReplayFiles.Stop();
+			g_watcherNewReplayFileListener->DoCompletion();
+		}
+	}
+
+	else if (g_pRBRGameMode->gameMode == 0x03)
 	{
 		int posX;
 		int posY;
@@ -3209,11 +3515,13 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 
 		if (m_iAutoLogonMenuState > 0)
 		{
+			std::wstringstream sLogonSequenceText;
+			sLogonSequenceText << L"AUTOLOGON sequence of NGPCarMenu activated. ";
+			if (m_bAutoLogonWaitProfile) sLogonSequenceText << L"Choose a profile to continue. ";
+			sLogonSequenceText << m_autoLogonSequenceLabel.str();
+
 			RBRAPI_MapRBRPointToScreenPoint(50.0f, 0, &posX, nullptr);
-			if(m_bAutoLogonWaitProfile)
-				g_pFontCarSpecCustom->DrawText(posX, 10, C_CARSPECTEXT_COLOR, L"AUTOLOGON sequence of NGPCarMenu activated. Choose a profile to continue", D3DFONT_CLEARTARGET);
-			else
-				g_pFontCarSpecCustom->DrawText(posX, 10, C_CARSPECTEXT_COLOR, L"AUTOLOGON sequence of NGPCarMenu activated", D3DFONT_CLEARTARGET);
+			g_pFontCarSpecCustom->DrawText(posX, 10, C_CARSPECTEXT_COLOR, sLogonSequenceText.str().c_str(), D3DFONT_CLEARTARGET);
 
 			DoAutoLogonSequence();
 		} 
@@ -3225,7 +3533,9 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 			|| g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_RBRCHALLENGE_CARS]
 			)
 		{
-			// Show custom car details in "SelectCar" menu
+			//
+			// Show custom car details in "SelectCar" menu (RBR menu screen)
+			//
 
 			int selectedCarIdx = g_pRBRMenuSystem->currentMenuObj->selectedItemIdx - g_pRBRMenuSystem->currentMenuObj->firstSelectableItemIdx;
 
@@ -3271,18 +3581,21 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 				{
 					D3DRECT rec;
 
+					//int r, g, b, a;
+					//RBRAPI_MapRBRColorToRGBA(IRBRGame::EMenuColors::MENU_BKGROUND, &r, &g, &b, &a);
+
 					// Draw black side bars (if set in INI file)
 					rec.x1 = m_carSelectLeftBlackBarRect.left;
 					rec.y1 = m_carSelectLeftBlackBarRect.top;
 					rec.x2 = m_carSelectLeftBlackBarRect.right;
 					rec.y2 = m_carSelectLeftBlackBarRect.bottom;
-					g_pRBRIDirect3DDevice9->Clear(1, &rec, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 0, 0, 0), 0, 0);
+					g_pRBRIDirect3DDevice9->Clear(1, &rec, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 0, 0, 0) /*D3DCOLOR_ARGB(a, r, g, b)*/ , 0, 0);
 
 					rec.x1 = m_carSelectRightBlackBarRect.left;
 					rec.y1 = m_carSelectRightBlackBarRect.top;
 					rec.x2 = m_carSelectRightBlackBarRect.right;
 					rec.y2 = m_carSelectRightBlackBarRect.bottom;
-					g_pRBRIDirect3DDevice9->Clear(1, &rec, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 0, 0, 0), 0, 0);
+					g_pRBRIDirect3DDevice9->Clear(1, &rec, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 0, 0, 0) /*D3DCOLOR_ARGB(a, r, g, b)*/, 0, 0);
 
 					// Draw car preview image (use transparent alpha channel bits if those are set in PNG file)
 					if (m_carPictureUseTransparent)
@@ -3340,558 +3653,18 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 		}
 		else
 		{
-			int menuIdx;
-
-			if (/*m_iMenuRBRTMOption == 1*/ m_bRBRTMPluginActive)
-			{
-				//
-				// RBRTM integration enabled. Check if RMRTB is in "SelectCar" menu in Shakedown or OnlineTournament menus
-				//
-
-				bool bRBRTMCarSelectionMenu = false;
-				bool bRBRTMStageSelectionMenu = false; // Is stage selection menu of Shakedown RBRTM menu active?
-
-				if (g_pRBRPluginMenuSystem->customPluginMenuObj != nullptr && m_pRBRTMPlugin != nullptr && m_pRBRTMPlugin->pCurrentRBRTMMenuObj != nullptr)
-				{
-					// If the active custom plugin is RBRTM and RBR shows a custom plugin menuObj and the internal RBRTM menu is the Shakedown "car selection" menuID then prepare to render a car preview image
-					if (m_bRBRTMPluginActive && g_pRBRPluginMenuSystem->customPluginMenuObj == g_pRBRMenuSystem->currentMenuObj && m_pRBRTMPlugin->pCurrentRBRTMMenuObj != nullptr)
-					{
-						switch (m_pRBRTMPlugin->pCurrentRBRTMMenuObj->menuID)
-						{
-						case RBRTMMENUIDX_CARSELECTION:							// RBRTM car selection screen (either below Shakedown or OnlineTournament menu tree)
-							bRBRTMCarSelectionMenu = true;
-							break;
-
-						case RBRTMMENUIDX_MAIN:									// Back to RBRTM main menu, so the RBRTM menu is no longer below Shakedown or OnlineTournament menu tree
-							m_iRBRTMCarSelectionType = 0;
-							break;
-
-						case RBRTMMENUIDX_ONLINEOPTION1:						// RBRTM OnlineTournament menu tree
-							[[fallthrough]];
-
-						case RBRTMMENUIDX_ONLINEOPTION2:
-							m_iRBRTMCarSelectionType = 1;
-							break;
-
-						case RBRTMMENUIDX_SHAKEDOWNSTAGES:						// Shakedown - Stage selection screen. Let to fall through to the next case to flag the shakedown menu type
-							bRBRTMStageSelectionMenu = true;
-							[[fallthrough]];
-
-						case RBRTMMENUIDX_SHAKEDOWNOPTION1:						// RBRTM Shakedown menu tree
-							m_iRBRTMCarSelectionType = 2;
-							break;
-						}
-
-						if (m_pRBRTMPlugin->pRBRTMStageOptions1 == nullptr || m_pRBRTMPlugin->pRBRTMStageOptions1->selectedCarID < 0 || m_pRBRTMPlugin->pRBRTMStageOptions1->selectedCarID > 7)
-							bRBRTMCarSelectionMenu = false;
-
-						// If Shakedown stages menu is no longer active then restore the original data and delete the custom stages data (RBRTM may re-create the menu each time it is opened
-						if (!bRBRTMStageSelectionMenu)
-						{
-							if (m_pOrigMapMenuDataRBRTM != nullptr && m_pCustomMapMenuRBRTM != nullptr && m_pOrigMapMenuDataRBRTM->pMenuItems == m_pCustomMapMenuRBRTM)
-							{
-								m_pOrigMapMenuDataRBRTM->pMenuItems = m_pOrigMapMenuItemsRBRTM;
-								m_pOrigMapMenuDataRBRTM->numOfItems = m_origNumOfItemsMenuItemsRBRTM;
-							}
-
-							if (m_pCustomMapMenuRBRTM != nullptr)
-							{
-								delete[] m_pCustomMapMenuRBRTM;
-								m_pCustomMapMenuRBRTM = nullptr;
-							}
-						}
-					}
-
-					if (bRBRTMCarSelectionMenu && (m_iRBRTMCarSelectionType == 2 || (m_iRBRTMCarSelectionType == 1 && m_pRBRTMPlugin->selectedItemIdx == 1)))
-					{
-						//
-						// RBRTM car selection in Shakedown or OnlineTournament menu
-						//
-
-						int iCarSpecPrintRow;
-						int selectedCarIdx = ::RBRAPI_MapCarIDToMenuIdx(m_pRBRTMPlugin->pRBRTMStageOptions1->selectedCarID);
-						PRBRCarSelectionMenuEntry pCarSelectionMenuEntry = &g_RBRCarSelectionMenuEntry[selectedCarIdx];
-
-						iFontHeight = g_pFontCarSpecCustom->GetTextHeight();
-
-						if (m_carRBRTMPreviewTexture[selectedCarIdx].pTexture == nullptr && m_carRBRTMPreviewTexture[selectedCarIdx].imgSize.cx >= 0 && g_RBRCarSelectionMenuEntry[selectedCarIdx].wszCarModel[0] != '\0')
-						{
-							ReadCarPreviewImageFromFile(selectedCarIdx,
-								(float)m_carRBRTMPictureRect.left, (float)m_carRBRTMPictureRect.top,
-								(float)(m_carRBRTMPictureRect.right - m_carRBRTMPictureRect.left),
-								(float)(m_carRBRTMPictureRect.bottom - m_carRBRTMPictureRect.top),
-								&m_carRBRTMPreviewTexture[selectedCarIdx],
-								m_carRBRTMPictureScale /*IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO | IMAGE_TEXTURE_POSITION_BOTTOM*/,
-								true);
-						}
-
-						// If the car preview image is successfully initialized (imgSize.cx >= 0) and texture (=image) is prepared then draw it on the screen
-						if (m_carRBRTMPreviewTexture[selectedCarIdx].imgSize.cx >= 0 && m_carRBRTMPreviewTexture[selectedCarIdx].pTexture != nullptr)
-						{
-							iCarSpecPrintRow = 0;
-
-							if (m_carRBRTMPictureUseTransparent)
-								m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
-
-							D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, m_carRBRTMPreviewTexture[selectedCarIdx].pTexture, m_carRBRTMPreviewTexture[selectedCarIdx].vertexes2D);
-
-							if (m_carRBRTMPictureUseTransparent)
-								m_pD3D9RenderStateCache->RestoreState();
-
-							// 3D model and custom livery text is drawn on top of the car preview image (bottom left corner)
-							if (pCarSelectionMenuEntry->wszCarPhysicsLivery[0] != L'\0')
-								g_pFontCarSpecCustom->DrawText(m_carRBRTMPictureRect.left + 2, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsLivery, 0);
-
-							if (pCarSelectionMenuEntry->wszCarPhysics3DModel[0] != L'\0')
-								g_pFontCarSpecCustom->DrawText(m_carRBRTMPictureRect.left + 2, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysics3DModel, 0);
-						}
-
-						// FIACategory, HP, Year, Weight, Transmission, AudioFMOD
-						iCarSpecPrintRow = 0;
-						//posX = g_pRBRPlugin->m_carRBRTMPictureRect.right + 16;
-						RBRAPI_MapRBRPointToScreenPoint(460.0f, 0.0f, &posX, nullptr);
-
-						if (pCarSelectionMenuEntry->wszCarFMODBank[0] != L'\0')
-							g_pFontCarSpecCustom->DrawText(posX, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarFMODBank, 0);
-
-						if (pCarSelectionMenuEntry->wszCarYear[0] != L'\0')
-							g_pFontCarSpecCustom->DrawText(posX, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarYear, 0);
-
-						if (pCarSelectionMenuEntry->wszCarTrans[0] != L'\0')
-							g_pFontCarSpecCustom->DrawText(posX, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarTrans, 0);
-
-						if (pCarSelectionMenuEntry->wszCarWeight[0] != L'\0')
-							g_pFontCarSpecCustom->DrawText(posX, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarWeight, 0);
-
-						if (pCarSelectionMenuEntry->wszCarPower[0] != L'\0')
-							g_pFontCarSpecCustom->DrawText(posX, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPower, 0);
-
-						if (pCarSelectionMenuEntry->szCarCategory[0] != L'\0')
-							g_pFontCarSpecCustom->DrawText(posX, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->szCarCategory, 0);
-
-						if (pCarSelectionMenuEntry->wszCarModel[0] != L'\0')
-							g_pFontCarSpecCustom->DrawText(posX, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARMODELTITLETEXT_COLOR, pCarSelectionMenuEntry->wszCarModel, 0);
-
-					}
-					else if (bRBRTMStageSelectionMenu && m_iRBRTMCarSelectionType == 2
-						&& m_pTracksIniFile != nullptr
-						&& m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData != nullptr
-						&& m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems != nullptr
-						&& m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->numOfItems > 0
-						&& m_pRBRTMPlugin->selectedItemIdx >= 0)
-					{
-						//
-						// RBRTM stage selection list in Shakedown menu is the active RBRTM menu
-						//
-
-						// Hide the annoying "moving background box" on the bottom right corner in RBRTM Shakedown stages menu
-						g_pRBRMenuSystem->menuImageHeight = g_pRBRMenuSystem->menuImageWidth = 0;
-
-						if (m_pRBRTMPlugin->selectedItemIdx < m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->numOfItems)
-						{
-							if (m_pCustomMapMenuRBRTM == nullptr)
-							{
-								int numOfRecentMaps = CalculateNumOfValidMapsInRecentList(m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData);
-
-								// Initialization of custom RBRTM stages menu list in Shakedown menu (Nth recent stages on top of the menu and then the original RBRTM stage list).
-								// Use the custom list if there are recent mapIDs in the list and the feature is enabled (recent items max count > 0)
-								m_pCustomMapMenuRBRTM = new RBRTMMenuItem[m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->numOfItems + numOfRecentMaps];
-
-								if (m_pCustomMapMenuRBRTM != nullptr && numOfRecentMaps > 0 && m_recentMapsMaxCountRBRTM > 0)
-								{
-									m_pOrigMapMenuDataRBRTM = m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData;
-									m_pOrigMapMenuItemsRBRTM = m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems;
-									m_origNumOfItemsMenuItemsRBRTM = m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->numOfItems;
-
-									m_numOfItemsCustomMapMenuRBRTM = m_origNumOfItemsMenuItemsRBRTM + numOfRecentMaps;
-
-									// Clear shortcut stage items and copy the original RBRTM stages list at the end of custom menu list
-									ZeroMemory(m_pCustomMapMenuRBRTM, sizeof(RBRTMMenuItem) * numOfRecentMaps);
-									memcpy(&m_pCustomMapMenuRBRTM[numOfRecentMaps], m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems, m_origNumOfItemsMenuItemsRBRTM * sizeof(RBRTMMenuItem));
-
-									// Activate the custom stages menu
-									m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems = m_pCustomMapMenuRBRTM;
-									m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->numOfItems = m_numOfItemsCustomMapMenuRBRTM;
-									m_pRBRTMPlugin->numOfMenuItems = m_numOfItemsCustomMapMenuRBRTM + 1;
-
-									numOfRecentMaps = 0;
-									for (auto& item : m_recentMapsRBRTM)
-									{
-										// At this point there are only max number of valid mapID values in the recent list (CalculateNumOfValidMapsInRecentList removed invalid and extra items)
-										m_pCustomMapMenuRBRTM[numOfRecentMaps].mapID = item->mapID;
-										m_pCustomMapMenuRBRTM[numOfRecentMaps].wszMenuItemName = item->name.c_str();
-										numOfRecentMaps++;
-									}
-								}
-
-
-								// Activate the latest mapID menu row automatically (by default RBRTM would wrap back to the first stage menu line when user navigates back to Shakedown menu, very annoying)
-								if (m_latestMapRBRTM.mapID > 0 && m_pCustomMapMenuRBRTM != nullptr)
-								{
-									// If the latest menuIdx is set then check the array by index access before trying to search through all menu items
-									if (m_latestMapRBRTM.mapIDMenuIdx >= 0 && m_latestMapRBRTM.mapIDMenuIdx < m_numOfItemsCustomMapMenuRBRTM
-										&& m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems[m_latestMapRBRTM.mapIDMenuIdx].mapID == m_latestMapRBRTM.mapID)
-									{
-										m_pRBRTMPlugin->selectedItemIdx = m_latestMapRBRTM.mapIDMenuIdx;
-									}
-									else
-									{
-										menuIdx = FindRBRTMMenuItemIdxByMapID(m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData, m_latestMapRBRTM.mapID);
-										if (menuIdx >= 0)
-											m_pRBRTMPlugin->selectedItemIdx = menuIdx;
-									}
-								}
-
-								// Shakedown stages menu is open, save recentMaps INI options when a stage is chosen for racing and the recent list is modified
-								m_bRecentMapsRBRTMModified = TRUE;
-							}
-
-
-							// If the mapID is different than the latest mapID then load new details (stage name, length, surface, previewImage)
-							if (m_latestMapRBRTM.mapID != m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems[m_pRBRTMPlugin->selectedItemIdx].mapID)
-							{
-								WCHAR wszMapINISection[16];
-
-								m_latestMapRBRTM.mapID = m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems[m_pRBRTMPlugin->selectedItemIdx].mapID;
-								m_latestMapRBRTM.mapIDMenuIdx = m_pRBRTMPlugin->selectedItemIdx;
-
-								swprintf_s(wszMapINISection, COUNT_OF_ITEMS(wszMapINISection), L"Map%02d", m_latestMapRBRTM.mapID);
-
-								// At first lookup the stage name from maps\Tracks.ini file. If the name is not set there then re-use the stage name used in RBRTM menus
-								m_latestMapRBRTM.name = _RemoveEnclosingChar(m_pTracksIniFile->GetValue(wszMapINISection, L"StageName", L""), L'"', false);
-								if (m_latestMapRBRTM.name.empty())
-									m_latestMapRBRTM.name = m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems[m_pRBRTMPlugin->selectedItemIdx].wszMenuItemName;
-
-								// Take stage len and surface type from maps\Tracks.ini file
-								m_latestMapRBRTM.length = m_pTracksIniFile->GetDoubleValue(wszMapINISection, L"Length", -1.0);
-
-								// Check surface type for the original map. If the map was not original then check Tracks.ini file Surface option
-								m_latestMapRBRTM.surface = NPlugin::GetStageSurface(m_latestMapRBRTM.mapID);
-								if (m_latestMapRBRTM.surface < 0) m_latestMapRBRTM.surface = m_pTracksIniFile->GetLongValue(wszMapINISection, L"Surface", -1);
-
-								// Skip map image initializations if the map preview img feature is disabled (RBRTM_MapPictureRect=0)
-								if (m_mapRBRTMPictureRect.bottom != -1)
-								{
-									// Use custom map image path at first (set in RBRTM_MapScreenshotPath ini option). If the option or file is missing then take the stage preview image name from maps\Tracks.ini file
-									m_latestMapRBRTM.previewImageFile = ReplacePathVariables(m_screenshotPathMapRBRTM, -1, TRUE, m_latestMapRBRTM.mapID, m_latestMapRBRTM.name.c_str());
-
-									if (g_iLogMsgCount < 26)
-										LogPrint(L"Custom preview image file %s for a map #%d %s", m_latestMapRBRTM.previewImageFile.c_str(), m_latestMapRBRTM.mapID, m_latestMapRBRTM.name.c_str());
-
-									if (m_latestMapRBRTM.previewImageFile.empty() || !fs::exists(m_latestMapRBRTM.previewImageFile))
-									{
-										m_latestMapRBRTM.previewImageFile = _RemoveEnclosingChar(m_pTracksIniFile->GetValue(wszMapINISection, L"SplashScreen", L""), L'"', false);
-
-										if (m_latestMapRBRTM.previewImageFile.length() >= 2 && m_latestMapRBRTM.previewImageFile[0] != L'\\' && m_latestMapRBRTM.previewImageFile[1] != L':')
-											m_latestMapRBRTM.previewImageFile = this->m_sRBRRootDirW + L"\\" + m_latestMapRBRTM.previewImageFile;
-
-										if (g_iLogMsgCount < 26)
-											LogPrint(L"Custom image not found. Using Maps\\Tracks.ini SplashScreen image option %s", m_latestMapRBRTM.previewImageFile.c_str());
-									}
-								}
-
-								// Release previous map preview texture and read a new image file (if preview path is set and the image file exists and map preview img drawing is not disabled)
-								SAFE_RELEASE(m_latestMapRBRTM.imageTexture.pTexture);
-								if (!m_latestMapRBRTM.previewImageFile.empty() && fs::exists(m_latestMapRBRTM.previewImageFile) && m_mapRBRTMPictureRect.bottom != -1)
-								{
-									hResult = D3D9CreateRectangleVertexTexBufferFromFile(g_pRBRIDirect3DDevice9,
-										m_latestMapRBRTM.previewImageFile,
-										(float)m_mapRBRTMPictureRect.left, (float)m_mapRBRTMPictureRect.top, (float)(m_mapRBRTMPictureRect.right - m_mapRBRTMPictureRect.left), (float)(m_mapRBRTMPictureRect.bottom - m_mapRBRTMPictureRect.top),
-										&m_latestMapRBRTM.imageTexture,
-										0  /*IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_BOTTOM | IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER*/);
-
-									// Image not available or loading failed
-									if (!SUCCEEDED(hResult))
-										SAFE_RELEASE(m_latestMapRBRTM.imageTexture.pTexture);
-								}
-							}
-
-							// Show details of the current stage (name, length, surface, previewImage)
-							iFontHeight = g_pFontCarSpecCustom->GetTextHeight();
-
-							std::wstringstream sStrStream;
-							sStrStream << std::fixed << std::setprecision(1);
-
-							//posX = m_mapRBRTMPictureRect.left;
-							//posY = m_mapRBRTMPictureRect.top - (4 * iFontHeight);
-							RBRAPI_MapRBRPointToScreenPoint(295.0f, 53.0f, &posX, &posY);
-
-							//int iMapInfoPrintRow = 0;
-							//g_pFontCarSpecCustom->DrawText(posX, posY + ((++iMapInfoPrintRow) * iFontHeight), C_CARMODELTITLETEXT_COLOR, (m_latestMapRBRTM.name + L"  (#" + std::to_wstring(g_pRBRPlugin->m_latestMapRBRTM.mapID) + L")").c_str(), 0);
-							sStrStream << m_latestMapRBRTM.name << L"  (#" << g_pRBRPlugin->m_latestMapRBRTM.mapID << L")   ";
-
-							if (m_latestMapRBRTM.length > 0)
-								// TODO: KM to Miles miles=km*0.621371192 config option support
-								sStrStream << m_latestMapRBRTM.length << L" km ";
-
-							if (m_latestMapRBRTM.surface >= 0 && m_latestMapRBRTM.surface <= 2)
-								sStrStream << GetLangStr(NPlugin::GetSurfaceName(m_latestMapRBRTM.surface));
-
-							//g_pFontCarSpecCustom->DrawText(posX, posY + ((++iMapInfoPrintRow) * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), 0);
-							g_pFontCarSpecCustom->DrawText(posX, posY, C_CARMODELTITLETEXT_COLOR, sStrStream.str().c_str(), 0);
-
-							if (m_latestMapRBRTM.imageTexture.pTexture != nullptr)
-							{
-								m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
-								D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, m_latestMapRBRTM.imageTexture.pTexture, m_latestMapRBRTM.imageTexture.vertexes2D);
-								m_pD3D9RenderStateCache->RestoreState();
-							}
-						}
-						else
-						{
-							// "Back" menu line selected in Shakedown stage list. Clear the "latest mapID" cache value
-							m_latestMapRBRTM.mapID = -1;
-						}
-					}
-				}
-			}
-
-
-			else if (m_bRBRRXPluginActive && g_pRBRPluginMenuSystem->customPluginMenuObj == g_pRBRMenuSystem->currentMenuObj)
-			{
-				//
-				// RBR_RX stages menu  (menuID==1)
-				//
-
-				// Hide the annoying "moving background box" on RBR_RX menu screen
-				g_pRBRMenuSystem->menuImageHeight = g_pRBRMenuSystem->menuImageWidth = 0;
-
-				if (m_pRBRRXPlugin->menuID == 0)
-				{
-					// RBR_RX main menu
-
-					// RBR_RX has a bug where the focus line in the RBRRX main menu is sometimes beyond the first two Race and Replay menu lines. Fix the bug.
-					if (m_pRBRRXPlugin->pMenuData->selectedItemIdx >= 2)
-						m_pRBRRXPlugin->pMenuData->selectedItemIdx = 0;
-
-					// Cleanup and restore the original RBRRX menu at RBRX main menu (when RBR exists then the menu needs to be original one because RBRRX tries to release that memory pointer)
-					if (m_pRBRRXPlugin->pMenuItems != m_pOrigMapMenuItemsRBRRX)
-					{
-						m_pRBRRXPlugin->numOfItems = m_origNumOfItemsMenuItemsRBRRX;
-						m_pRBRRXPlugin->pMenuItems = m_pOrigMapMenuItemsRBRRX;
-						if (m_pCustomMapMenuRBRRX != nullptr)
-						{
-							delete[] m_pCustomMapMenuRBRRX;
-							m_pCustomMapMenuRBRRX = nullptr;
-						}
-					}
-
-					if (m_pRBRRXPluginFirstTimeInitialization)
-					{
-						if (m_dwAutoLogonEventStartTick == 0)
-							m_dwAutoLogonEventStartTick = GetTickCount();
-						else if( (GetTickCount() - m_dwAutoLogonEventStartTick) > 150)
-						{
-							// Navigate automatically to Race menu when RBRRX was opened for the first time and autologon was activated
-							m_pRBRRXPluginFirstTimeInitialization = FALSE;
-							//m_pRBRRXPlugin->menuID = 1;
-							SendMessage(g_hRBRWnd, WM_KEYDOWN, VK_RETURN, 0);
-							SendMessage(g_hRBRWnd, WM_KEYUP, VK_RETURN, 0);
-						}
-					}
-				}
-				else if (m_pRBRRXPlugin->menuID == 1 && m_pRBRRXPlugin->pMenuData->selectedItemIdx >= 0 && m_pRBRRXPlugin->pMenuData->selectedItemIdx < m_pRBRRXPlugin->numOfItems)
-				{
-					// RBRRX tracks menu 
-					m_pRBRRXPluginFirstTimeInitialization = FALSE;
-
-					if (m_pCustomMapMenuRBRRX == nullptr)
-					{
-						int numOfRecentMaps = CalculateNumOfValidMapsInRecentList(m_pOrigMapMenuItemsRBRRX, m_origNumOfItemsMenuItemsRBRRX);
-
-						// Initialization of custom RBRTM stages menu list in Shakedown menu (Nth recent stages on top of the menu and then the original RBRTM stage list).
-						// Use the custom list if there are recent mapIDs in the list and the feature is enabled (recent items max count > 0)
-						m_numOfItemsCustomMapMenuRBRRX = m_origNumOfItemsMenuItemsRBRRX + numOfRecentMaps;
-						m_pCustomMapMenuRBRRX = new RBRRXMenuItem[m_numOfItemsCustomMapMenuRBRRX];
-
-						if (m_pCustomMapMenuRBRRX != nullptr /*&& numOfRecentMaps > 0 && m_recentMapsMaxCountRBRRX > 0*/)
-						{
-							// Clear shortcut stage items and copy the original RBRTM stages list at the end of custom menu list
-							ZeroMemory(m_pCustomMapMenuRBRRX, sizeof(RBRRXMenuItem) * numOfRecentMaps);
-							memcpy(&m_pCustomMapMenuRBRRX[numOfRecentMaps], m_pOrigMapMenuItemsRBRRX, m_origNumOfItemsMenuItemsRBRRX * sizeof(RBRRXMenuItem));
-
-							m_pRBRRXPlugin->pMenuItems = m_pCustomMapMenuRBRRX;
-						}
-
-						// If there are more than 17 stages then cap the num of shown stages and scroll menu lines to show other stages
-						if (m_numOfItemsCustomMapMenuRBRRX > 8+1+8)
-							m_pRBRRXPlugin->numOfItems = 8+1+8;
-
-						numOfRecentMaps = 0;
-						for (auto& item : m_recentMapsRBRRX)
-						{
-							// At this point there are only max number of valid maps in the recent list (CalculateNumOfValidMapsInRecentList removed invalid and extra items)
-							strncpy_s(m_pCustomMapMenuRBRRX[numOfRecentMaps].szTrackName,   item->name.c_str(), COUNT_OF_ITEMS(m_pCustomMapMenuRBRRX[numOfRecentMaps].szTrackName));
-							strncpy_s(m_pCustomMapMenuRBRRX[numOfRecentMaps].szTrackFolder, item->folderName.c_str(), COUNT_OF_ITEMS(m_pCustomMapMenuRBRRX[numOfRecentMaps].szTrackFolder));
-							m_pCustomMapMenuRBRRX[numOfRecentMaps].physicsID = item->physicsID;
-							numOfRecentMaps++;
-						}
-
-						// Activate the latest map menu row automatically
-						if (!m_latestMapRBRRX.folderName.empty() && m_pCustomMapMenuRBRRX != nullptr)
-						{
-							menuIdx = -1;
-
-							// If the latest menuIdx is set then check the array by index access before trying to search through all menu items
-							if (m_latestMapRBRRX.mapIDMenuIdx >= 0 && m_latestMapRBRRX.mapIDMenuIdx < m_numOfItemsCustomMapMenuRBRRX
-								&& _iEqual(m_pCustomMapMenuRBRRX[m_latestMapRBRRX.mapIDMenuIdx].szTrackFolder, m_latestMapRBRRX.folderName, true) 
-							)
-								menuIdx = m_latestMapRBRRX.mapIDMenuIdx;
-							else
-								menuIdx = FindRBRRXMenuItemIdxByFolderName(m_pCustomMapMenuRBRRX, m_numOfItemsCustomMapMenuRBRRX, m_latestMapRBRRX.folderName);
-
-							FocusRBRRXNthMenuIdxRow(menuIdx);
-						}
-
-						// Stages menu is open, save recentMaps INI options when a stage is chosen for racing and the recent list is modified
-						m_bRecentMapsRBRRXModified = TRUE;
-					}
-
-					if (m_pCustomMapMenuRBRRX != nullptr)
-					{
-						// Check normal RBR menu navigation (key up or down) and scroll the menu list if necessary
-						if (m_prevCustomMapSelectedItemIdxRBRRX != m_pRBRRXPlugin->pMenuData->selectedItemIdx)
-						{
-							if (m_prevCustomMapSelectedItemIdxRBRRX == 0 && m_pRBRRXPlugin->pMenuData->selectedItemIdx + 1 == min(m_numOfItemsCustomMapMenuRBRRX, 8+1+8))
-								// Wrap to the last menu item
-								FocusRBRRXNthMenuIdxRow(m_numOfItemsCustomMapMenuRBRRX - 1);
-							else if (m_prevCustomMapSelectedItemIdxRBRRX + 1 == min(m_numOfItemsCustomMapMenuRBRRX, 8+1+8) && m_pRBRRXPlugin->pMenuData->selectedItemIdx == 0)
-								// Wrap to the first menu item 
-								FocusRBRRXNthMenuIdxRow(0);
-							else if (m_prevCustomMapSelectedItemIdxRBRRX < m_pRBRRXPlugin->pMenuData->selectedItemIdx)
-								FocusRBRRXNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX + 1); // Next row (scroll if necessary)
-							else if (m_prevCustomMapSelectedItemIdxRBRRX > m_pRBRRXPlugin->pMenuData->selectedItemIdx)
-								FocusRBRRXNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX - 1); // Prev row (scroll if necessary)
-						}
-						else
-						{
-							// Check custom pgup/pgdown/home/end navigation keys
-							if (m_pRBRRXPlugin->keyCode != -1)
-							{
-								switch (m_pRBRRXPlugin->keyCode)
-								{
-									case VK_PRIOR: FocusRBRRXNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX - (8+1+8)); break;	// PageUp key (move 8+1+8 rows up)
-									case VK_NEXT:  FocusRBRRXNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX + (8+1+8)); break;	// PageDown key (move 8+1+8 rows down)
-									case VK_END:   FocusRBRRXNthMenuIdxRow(m_numOfItemsCustomMapMenuRBRRX - 1); break;	// End key
-									case VK_HOME:  FocusRBRRXNthMenuIdxRow(0); break;									// Home key
-									case VK_LEFT:  FocusRBRRXNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX - 8); break;	// Left arrow key (move 8 rows up)
-									case VK_RIGHT: FocusRBRRXNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX + 8); break;	// Right arrow key (move 8 rows down)
-								}
-
-								// Don't repeat the same key until the key is released and re-pressed
-								m_pRBRRXPlugin->keyCode = -1;
-							}
-						}
-
-						// If the current menu row is different than the latest menu row then load new details (stage name, length, surface, previewImage)
-						if (m_latestMapRBRRX.mapIDMenuIdx != m_currentCustomMapSelectedItemIdxRBRRX)
-						{
-							UpdateRBRRXMapInfo(m_currentCustomMapSelectedItemIdxRBRRX, &m_latestMapRBRRX);
-
-							// Release previous map preview texture and read a new image file (if preview path is set and the image file exists and map preview img drawing is not disabled)
-							SAFE_RELEASE(m_latestMapRBRRX.imageTexture.pTexture);
-							if (!m_latestMapRBRRX.previewImageFile.empty() && fs::exists(m_latestMapRBRRX.previewImageFile) && m_mapRBRRXPictureRect.bottom != -1)
-							{
-								hResult = D3D9CreateRectangleVertexTexBufferFromFile(g_pRBRIDirect3DDevice9,
-									m_latestMapRBRRX.previewImageFile,
-									(float)m_mapRBRRXPictureRect.left, (float)m_mapRBRRXPictureRect.top, (float)(m_mapRBRRXPictureRect.right - m_mapRBRRXPictureRect.left), (float)(m_mapRBRRXPictureRect.bottom - m_mapRBRRXPictureRect.top),
-									&m_latestMapRBRRX.imageTexture,
-									0  /*IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_BOTTOM | IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER*/);
-
-								// Image not available or loading failed
-								if (!SUCCEEDED(hResult))
-									SAFE_RELEASE(m_latestMapRBRRX.imageTexture.pTexture);
-							}
-						}	
-					}
-
-					// Show details of the current stage (name, length, surface, previewImage, author, version, date)
-					// TODO: Personal track records per track per car
-					iFontHeight = g_pFontCarSpecCustom->GetTextHeight();
-
-					int iMapInfoPrintRow = 0;
-					//posX = m_mapRBRRXPictureRect.left;
-					//posY = m_mapRBRRXPictureRect.top - (4 * iFontHeight);
-					RBRAPI_MapRBRPointToScreenPoint(390.0f, 40.0f, &posX, &posY);
-
-					g_pFontCarSpecCustom->DrawText(posX, posY + (iMapInfoPrintRow++ * iFontHeight), C_CARMODELTITLETEXT_COLOR, _ToWString(m_latestMapRBRRX.name).c_str(), 0);
-
-					std::wstringstream sStrStream;
-					sStrStream << std::fixed << std::setprecision(1);
-
-					if (m_latestMapRBRRX.length > 0)
-						// TODO: KM to Miles miles=km*0.621371192 config option support
-						sStrStream << m_latestMapRBRRX.length << L" km";
-
-					if (!m_latestMapRBRRX.surface.empty())
-						sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << GetLangStr(m_latestMapRBRRX.surface.c_str());
-
-					if (m_latestMapRBRRX.numOfPacenotes >= 15)
-						sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << GetLangStr(L"pacenotes");
-
-					if (!m_latestMapRBRRX.comment.empty())
-						sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << m_latestMapRBRRX.comment.c_str();
-
-					g_pFontCarSpecCustom->DrawText(posX, posY + (iMapInfoPrintRow++ * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), 0);
-
-					if (m_latestMapRBRRX.imageTexture.pTexture != nullptr)
-					{
-						m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
-						D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, m_latestMapRBRRX.imageTexture.pTexture, m_latestMapRBRRX.imageTexture.vertexes2D);
-						m_pD3D9RenderStateCache->RestoreState();
-					}
-
-					iMapInfoPrintRow = 0;
-					posY = m_mapRBRRXPictureRect.bottom - (1 * iFontHeight);
-
-					sStrStream.clear();
-					sStrStream.str(std::wstring());
-					if (!m_latestMapRBRRX.author.empty())
-						sStrStream << GetLangWString(L"author", true) << _ToWString(m_latestMapRBRRX.author);
-
-					if (!m_latestMapRBRRX.version.empty())
-						sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << GetLangWString(L"version", true) << _ToWString(m_latestMapRBRRX.version);
-
-					if (!m_latestMapRBRRX.date.empty())
-						sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << _ToWString(m_latestMapRBRRX.date);
-
-					g_pFontCarSpecCustom->DrawText(posX, posY + (iMapInfoPrintRow-- * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), (m_latestMapRBRRX.imageTexture.pTexture != nullptr ? D3DFONT_CLEARTARGET : 0));
-				}
-			}
-
-			if (!m_bRBRTMPluginActive && m_pRBRTMPlugin != nullptr && m_pOrigMapMenuDataRBRTM != nullptr && m_pCustomMapMenuRBRTM != nullptr 
-				&& m_pOrigMapMenuDataRBRTM->pMenuItems == m_pCustomMapMenuRBRTM 
-				&& g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN])
-			{
-				// RBRTM is no longer active, but the custom menu is created. Delete it and restore the original RBRTM menu objects (if RBR app is closed then these objects need to be the original pointers, because RBRTM releases the ptr memory block)
-				m_pOrigMapMenuDataRBRTM->pMenuItems = m_pOrigMapMenuItemsRBRTM;
-				m_pOrigMapMenuDataRBRTM->numOfItems = m_origNumOfItemsMenuItemsRBRTM;
-
-				if (m_pCustomMapMenuRBRTM != nullptr)
-				{
-					delete[] m_pCustomMapMenuRBRTM;
-					m_pCustomMapMenuRBRTM = nullptr;
-				}
-			}
-
-			if (!m_bRBRRXPluginActive && m_pRBRRXPlugin != nullptr
-				&& m_pRBRRXPlugin->pMenuItems != m_pOrigMapMenuItemsRBRRX && g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN])
-			{
-				// RBRRX is no longer active, but the custom menu is created. Clean it up and restore the original RBRRX menu obj
-				m_pRBRRXPlugin->pMenuData->selectedItemIdx = 0;
-				m_pRBRRXPlugin->numOfItems = m_origNumOfItemsMenuItemsRBRRX;
-				m_pRBRRXPlugin->pMenuItems = m_pOrigMapMenuItemsRBRRX;
-
-				if (m_pCustomMapMenuRBRRX != nullptr)
-				{
-					delete[] m_pCustomMapMenuRBRRX;
-					m_pCustomMapMenuRBRRX = nullptr;
-				}
-			}
+			// 
+			// Show a car and map selection screen in RBRTM and RBR_RX custom plugins
+			//
+
+			RBRTM_EndScene();
+			RBRRX_EndScene();
 		}
 
 
-		// Draw images set by custom plugins (if the custom plugin is activated)
+		//
+		// Draw images and text objects set by custom plugin integrations (if the custom plugin is activated)
+		//
 		if (g_pRBRPluginIntegratorLinkList != nullptr)
 		{
 			for (auto& item : *g_pRBRPluginIntegratorLinkList)
@@ -3911,61 +3684,45 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 								m_pD3D9RenderStateCache->RestoreState();
 						}
 					}
+					
+					for (auto& textItem : item->m_textList)
+					{
+						CD3DFont* pFont = nullptr;
+						if (!textItem->m_sText.empty() || !textItem->m_wsText.empty())
+						{
+							for (auto& fontItem : *g_pRBRPluginIntegratorFontList)
+							{
+								if ((DWORD)fontItem.get() == textItem->m_fontID)
+								{
+									pFont = fontItem.get();
+									break;
+								}
+							}
+
+							if (pFont != nullptr)
+							{
+								// Draw char or wchar str version (only one of these strings set at any time per textItem
+								if(!textItem->m_sText.empty())
+									pFont->DrawText(textItem->m_posX, textItem->m_posY, textItem->m_dwColor, textItem->m_sText.c_str(), textItem->m_dwDrawOptions);
+								else
+									pFont->DrawText(textItem->m_posX, textItem->m_posY, textItem->m_dwColor, textItem->m_wsText.c_str(), textItem->m_dwDrawOptions);
+							}
+						}
+					}
 				}
 			}
 		}
+
+		// Just-in-case stop the watcher for new replays files if for some reason it was still running when RBR is in the main menu
+		g_watcherNewReplayFiles.Stop();
 	}
 
-	else if (g_pRBRGameMode->gameMode == 10)
-	{
-		if (m_bRBRTMPluginActive && m_iRBRTMCarSelectionType == 2 && m_bRecentMapsRBRTMModified)
-		{
-			// Stage loading while RBRTM plugin is active in Shakedown mode. Add the latest mapID (=stage) to the top of the recent list
-			if (m_recentMapsMaxCountRBRTM > 0)
-			{
-				m_bRecentMapsRBRTMModified = FALSE;
-				AddMapToRecentList(m_latestMapRBRTM.mapID);
-				if (m_bRecentMapsRBRTMModified) SaveSettingsToRBRTMRecentMaps();
-			}
 
-			m_bRecentMapsRBRTMModified = FALSE;
-		}
-		else if (m_bRBRRXPluginActive && m_bRecentMapsRBRRXModified)
-		{
-			if (!m_latestMapRBRRX.name.empty())
-			{
-				// RBR_RX has a bug where shorter track name is not null-terminated, so if the previous track name was longer then it is shown in "Loading: xxx" screen (restart of BTB track)
-				//wcsncpy(m_pRBRRXPlugin->wszTrackName, _ToWString(m_latestMapRBRRX.name).c_str(), min(m_latestMapRBRRX.name.length()+1, COUNT_OF_ITEMS(m_pRBRRXPlugin->wszTrackName)));
-				memcpy(m_pRBRRXPlugin->wszTrackName, _ToWString(m_latestMapRBRRX.name).c_str(), min(m_latestMapRBRRX.name.length() + 1, COUNT_OF_ITEMS(m_pRBRRXPlugin->wszTrackName)) * sizeof(WCHAR) );
-
-				if (m_latestMapRBRRX.length < 0)
-				{
-					// BTB track track.ini file doesn't have the Length attribute yet. Store it now when the BTB track was loaded for the first time. Round meters down to one decimal km value
-					m_latestMapRBRRX.length = floor((g_pRBRCarInfo != nullptr ? g_pRBRCarInfo->distanceToFinish : 0) / 100.0f) / 10.0f;
-					if (m_latestMapRBRRX.length < 1.0f)
-						// For some reason the BTB track data doesn't have a valid length (some very short tracks have this issue). Use dummy value and let UpdateRBRRXINILengthOption method to decide if it can use pacenotes.ini to estimate the length
-						m_latestMapRBRRX.length = -1;
-
-					UpdateRBRRXINILengthOption(m_latestMapRBRRX.folderName, m_latestMapRBRRX.length);
-				}
-
-				// Stage loading while RBRRX plugin is active. Add the latest map (=stage) to the top of the recent list and update RX_CONTENt\Tracks\myMap\track.ini Length parameter if it is missing
-				if (m_recentMapsMaxCountRBRRX > 0)
-				{
-					m_bRecentMapsRBRRXModified = FALSE;
-					AddMapToRecentList(m_latestMapRBRRX.folderName);
-					if (m_bRecentMapsRBRRXModified) SaveSettingsToRBRRXRecentMaps();
-				}
-			}
-
-			m_bRecentMapsRBRRXModified = FALSE;
-		}
-	}
-	else if (m_bCustomReplayShowCroppingRect && m_iCustomReplayState >= 2 && m_iCustomReplayState != 4)
-	{
+//	if (m_bCustomReplayShowCroppingRect && m_iCustomReplayState >= 2 && m_iCustomReplayState != 4)
+//	{
 		// Draw rectangle to highlight the screenshot capture area (except when state == 4 because then this plugin takes the car preview screenshot and we don't want to see the gray box in a preview image)
-		D3D9DrawVertex2D(g_pRBRIDirect3DDevice9, m_screenshotCroppingRectVertexBuffer);
-	}
+//		D3D9DrawVertex2D(g_pRBRIDirect3DDevice9, m_screenshotCroppingRectVertexBuffer);
+//	}
 	
 #if USE_DEBUG == 1
 /*
@@ -4090,6 +3847,167 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 }
 
 
+//----------------------------------------------------------------------------------------------------
+// Custom RBR replay method. This custom replay method supports replay files for both traditional RBR tracks and RBRX/BTB tracks.
+// Return: 0=Failed to load replay file, 1=OK
+//
+BOOL CNGPCarMenu::CustomRBRReplay(const char* szReplayFileName)
+{
+	BOOL bResult = TRUE;
+
+	if (szReplayFileName == nullptr)
+		return FALSE;
+
+	// If RBRRX integrations is disabled then no need to do RBRRX replay customization
+	if (m_iMenuRBRRXOption == 0)
+		return TRUE;
+
+	try
+	{
+		std::string sReplayINIFile = g_pRBRPlugin->m_sRBRRootDir + "\\Replays\\" + fs::path(szReplayFileName).replace_extension().generic_string() + ".ini";
+		if (fs::exists(sReplayINIFile))
+		{
+			std::string sTextValue;
+
+			LogPrint("Replay INI file %s exists. Checking if the replay file uses a BTB track", sReplayINIFile.c_str());
+
+			CSimpleIni replayINIFile;
+			replayINIFile.LoadFile(sReplayINIFile.c_str());
+
+			sTextValue = replayINIFile.GetValue("Replay", "Type", "");
+			_Trim(sTextValue);
+			if (_iEqual(sTextValue, "btb", true))
+			{
+				sTextValue = replayINIFile.GetValue("Replay", "Name", "");
+				_Trim(sTextValue);
+				bResult = RBRRX_PrepareReplayTrack(sTextValue);
+			}
+			else
+			{
+				LogPrint("Replay is a standard RBR replay file, not the type of BTB. TYPE option in the INI file was %s", sTextValue.c_str());
+			}
+		}
+	}
+	catch (const fs::filesystem_error& ex)
+	{
+		LogPrint("ERROR. CustomRBRReplay. File access error in %s %s", szReplayFileName, ex.what());
+		bResult = FALSE;
+	}
+	catch (...)
+	{
+		LogPrint("ERROR. Exception in CustomRBRReplay");
+		bResult = FALSE;
+	}
+
+	return bResult;
+}
+
+
+//----------------------------------------------------------------------------------------------------
+// Complete RBRRX/BTB replay saving. Create replay INI definition files
+//
+void CNGPCarMenu::CompleteSaveReplayProcess(const std::list<std::wstring>& replayFileQueue)
+{
+	std::wstring fileNameWithoutExt;
+	std::wstring fileNameMapIDPart;
+	bool bWriteMapName = true;
+
+	std::string sReplayINIFileName;
+	CSimpleIni replayINIFile;
+
+	if (!m_bGenerateReplayMetadataFile)
+		return;
+
+	// If this is RallysimFans version of RBR installation then RSF plugin modifies Cars\Cars.ini file on the fly. Re-read car model names before trying to write replay metadata.
+	// Also, the actual mapID is part of the replay save filename (xxxx_rsf_xxxx_157.rpl)
+	if (m_bRallySimFansPluginInstalled)
+		InitCarSpecData_RBRCIT();
+
+	for (auto& fileNameItem : replayFileQueue)
+	{
+		try
+		{
+			fileNameWithoutExt = fs::path(fileNameItem).replace_extension().generic_wstring();
+			sReplayINIFileName = m_sRBRRootDir + "\\Replays\\" + _ToString(fileNameWithoutExt) + ".ini";
+
+			// Re-create the replay metadata INI file in case the old file has some garbage left overs from an old version
+			std::ofstream recreatedFile(sReplayINIFileName, std::ios::out | std::ios::trunc);
+
+			if(m_bRBRRXPluginActive)
+				recreatedFile << "; RBR replay metadata file generated by NGPCarMenu plugin. TYPE and NAME options are required in BTB replays. Other options are just for informative purposes" << std::endl;
+			else
+				recreatedFile << "; RBR replay metadata file generated by NGPCarMenu plugin. All options are just for informative purposes" << (m_bRBRTMPluginActive ? " in RBRTM replays" : "") << std::endl;
+			recreatedFile.close();
+
+			replayINIFile.LoadFile(sReplayINIFileName.c_str());
+			replayINIFile.SetValue("Replay", "Type", (m_bRBRRXPluginActive ? "BTB" : (m_bRBRTMPluginActive ? "TM" : (m_bRallySimFansPluginInstalled ? "RSF" : "RBR"))));
+			
+			if (m_bRBRRXPluginActive)
+			{
+				replayINIFile.SetValue("Replay", "Name",        m_latestMapRBRRX.name.c_str());
+				replayINIFile.SetValue("Replay", "TrackFolder", m_latestMapRBRRX.folderName.c_str());
+			}
+			else
+			{
+				if (m_bRallySimFansPluginInstalled)
+				{
+					// Hotlap and Online rallies in RSF replay file has the map name in the filename already (and the RBR runtime mapID is often just a stub placeholer)
+					bWriteMapName = false;
+
+					if (fileNameWithoutExt.find(L"_rsf_practice_") != std::wstring::npos)
+					{
+						// Take the actual RSF mapID from the end of the practice replay filename because sometimes RSF re-uses existing RBR mapIDs (uses existing map slots to load RFS specific custom map)
+						size_t iLastDashPos = fileNameWithoutExt.find_last_of(L'_');
+						if (iLastDashPos != std::wstring::npos && iLastDashPos + 1 < fileNameWithoutExt.length())
+						{
+							fileNameMapIDPart = fileNameWithoutExt.substr(iLastDashPos + 1);
+							if (_IsAllDigit(fileNameMapIDPart))
+							{
+								m_latestMapID = std::stoi(fileNameMapIDPart);
+								bWriteMapName = true;
+							}
+						}
+					}
+				}
+
+				if (bWriteMapName)
+				{
+					WCHAR wszMapINISection[16];
+					swprintf_s(wszMapINISection, COUNT_OF_ITEMS(wszMapINISection), L"Map%02d", m_latestMapID);
+					std::wstring wsStageName = _RemoveEnclosingChar(m_pTracksIniFile->GetValue(wszMapINISection, L"StageName", L""), L'"', false);
+					if (!wsStageName.empty()) replayINIFile.SetValue("Replay", "Name", _ToString(wsStageName).c_str());
+				}
+
+				replayINIFile.SetValue("Replay", "MapID", std::to_string(m_latestMapID).c_str());
+			}
+
+			if (m_latestCarID >= 0 && m_latestCarID <= 7)
+			{
+				DWORD ptrValue;
+				ptrValue = *((DWORD*)g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(m_latestCarID)].ptrCarDescription);
+				if(!m_bRallySimFansPluginInstalled && ptrValue != 0 && ((const char*)ptrValue)[0] == '\0')
+					//ptrValue = *((DWORD*)g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(m_latestCarID)].ptrCarMenuName);
+					replayINIFile.SetValue("Replay", "CarModel", (const char*)ptrValue);
+				else
+					replayINIFile.SetValue("Replay", "CarModel", _ToString(g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(m_latestCarID)].wszCarModel).c_str());
+
+				//replayINIFile.SetValue("Replay", "CarModel", _ToString(g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(m_latestCarID)].wszCarModel).c_str());
+				//if(ptrValue != 0) replayINIFile.SetValue("Replay", "CarModel", (const char*)ptrValue);
+				
+				replayINIFile.SetLongValue("Replay", "CarSlot", m_latestCarID);
+			}
+
+			replayINIFile.SaveFile(sReplayINIFileName.c_str());
+			replayINIFile.Reset();
+		}
+		catch (...)
+		{
+			replayINIFile.Reset();
+		}
+	}
+}
+
+
 //--------------------------------------------------------------------------------------------
 // D3D9 BeginScene callback handler. 
 // If current menu is "SelectCar" then show custom car details or if custom replay video is playing then generate preview images.
@@ -4103,7 +4021,8 @@ HRESULT __fastcall CustomRBRDirectXBeginScene(void* objPointer)
 	HRESULT hResult = ::Func_OrigRBRDirectXBeginScene(objPointer);
 
 	// Do custom dx scene only if RBR is not in racing state
-	if (g_pRBRGameMode->gameMode != 01 /*|| g_pRBRPlugin->m_iCustomReplayState > 0*/)
+	//if (g_pRBRGameMode->gameMode != 01 && !(g_pRBRPlugin->m_bRBRTMPluginActive && g_pRBRGameMode->gameMode == 0x0A)) //|| g_pRBRPlugin->m_iCustomReplayState > 0)
+	if (g_pRBRGameMode->gameMode == 0x03 || g_pRBRPlugin->m_iCustomReplayState > 0)
 		g_pRBRPlugin->CustomRBRDirectXBeginScene();
 
 	return hResult;
@@ -4118,8 +4037,24 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 	if (!g_bRBRHooksInitialized)
 		return S_OK;
 
-	if (g_pRBRGameMode->gameMode != 01)
+	// Do RBRTM/RBRRX/RBR/RallySimFans menu and replay things only when racing is not active
+	if (g_pRBRPlugin->m_iCustomReplayState > 0 
+	|| (g_pRBRGameMode->gameMode != 01 && !((g_pRBRGameMode->gameMode == 0x0A || (g_pRBRGameMode->gameMode == 0x02 && g_watcherNewReplayFiles.Running()))) 
+	))
 		return g_pRBRPlugin->CustomRBRDirectXEndScene(objPointer);
 	else
-		return ::Func_OrigRBRDirectXEndScene(objPointer);
+		return ::Func_OrigRBRDirectXEndScene(objPointer); // Racing is active. No need to do any NGPCarMenu special things
 }
+
+
+//----------------------------------------------------------------------------------------------------------------------------
+// RBR replay callback handler.
+//
+int __fastcall CustomRBRReplay(void* objPointer, DWORD /*ignoreEDX*/, const char* szReplayFileName, __int32* pUnknown1, __int32* pUnknown2, size_t iReplayFileSize)
+{
+	if (!g_bRBRHooksInitialized || !g_pRBRPlugin->CustomRBRReplay(szReplayFileName))
+		return 0; // ERROR 
+
+	return Func_OrigRBRReplay(objPointer, szReplayFileName, pUnknown1, pUnknown2, iReplayFileSize);
+}
+

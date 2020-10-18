@@ -97,6 +97,9 @@ extern inline void _ToLowerCase(std::wstring& s);      // Convert wstring to low
 extern int _SplitString(const std::string& s, std::vector<std::string>& splittedTokens, std::string sep, bool caseInsensitiveSep = true, bool sepAlreadyLowercase = false, int maxTokens = 64); // Split string to several tokens by using sep string as separator
 extern int _SplitInHalf(const std::string& s, std::vector<std::string>& splittedTokens, std::string sep, bool caseInsensitiveSep = true, bool sepAlreadyLowercase = false); // Split string to two tokens by using sep string as separator
 
+extern bool _IsAllDigit(const std::string& s);  // Check if all string chars are digit numbers
+extern bool _IsAllDigit(const std::wstring& s); // Check if all wstring chars are digit numbers
+
 extern std::string _ToBinaryBitString(BYTE byteValue); // Convert BYTE value to binary "bit field" string (usually some log messages want to show an integer as binary bit field)
 
 extern std::string GetFileVersionInformationAsString(const std::wstring & fileName); // Return file version info as "major.minor.patch.build" string value
@@ -106,6 +109,22 @@ extern bool _StringToRect (const std::wstring & s, RECT * outRect, const wchar_t
 extern bool _StringToRect (const std::string & s, RECT * outRect, const char separatorChar = ' ');
 extern bool _StringToPoint(const std::wstring & s, POINT * outPoint, const wchar_t separatorChar = L' '); // String in "0 50" format is converted as POINT struct value 
 extern bool _StringToPoint(const std::string & s, POINT * outPoint, const char separatorChar);
+
+// Define sub function to call 32bit GetTickCount WinAPI method and to eliminate the VC++ warning about wrapping timer if the PC runs 49 days without a reboot.
+// Another way to avoid the warning would be to us GetTickCount64 but it is not available in older WinOS versions.
+inline DWORD GetTickCount32()
+{
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable:28159)
+#endif
+	return ::GetTickCount();
+#if defined(_MSC_VER) 
+#pragma warning(pop)
+#endif
+}
+
+
 
 //-----------------------------------------------------------------------------------------------------------------------
 // Simple DX9 render state change cache and restoration class
@@ -234,7 +253,7 @@ typedef struct
 typedef IMAGE_TEXTURE* PIMAGE_TEXTURE;
 
 extern HRESULT D3D9CreateRectangleVertexTexBufferFromFile(const LPDIRECT3DDEVICE9 pD3Device, const std::wstring& fileName, float x, float y, float cx, float cy, IMAGE_TEXTURE* pOutImageTexture, DWORD dwFlags = 0); // Create D3D9 textured rect vertex by loading the texture (image) from a file
-extern HRESULT D3D9CreateRectangleVertexBuffer(const LPDIRECT3DDEVICE9 pD3Device, float x, float y, float cx, float cy, LPDIRECT3DVERTEXBUFFER9* pOutVertexBuffer);	// Create D3D9 rect vertex (no texture fill)
+extern HRESULT D3D9CreateRectangleVertexBuffer(const LPDIRECT3DDEVICE9 pD3Device, float x, float y, float cx, float cy, LPDIRECT3DVERTEXBUFFER9* pOutVertexBuffer, DWORD color = D3DCOLOR_ARGB(60, 255, 255, 255));	  // Create D3D9 rect vertex (no texture fill)
 
 extern void    D3D9DrawVertexTex2D(const LPDIRECT3DDEVICE9 pD3Device, IDirect3DTexture9* pTexture, const CUSTOM_VERTEX_TEX_2D* vertexes2D); // Draw rectangle vertex using the specified texture
 extern void    D3D9DrawVertex2D(const LPDIRECT3DDEVICE9 pD3Device, const LPDIRECT3DVERTEXBUFFER9 pVertexBuffer); // Draw 2D graphical rectangle vertex

@@ -45,6 +45,8 @@
 
 #define C_PROCESS_READ_WRITE_QUERY (PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_QUERY_INFORMATION)
 
+#define C_RANGE_REMAP(value, low1, high1, low2, high2) low2 + (value - low1) * (high2 - low2) / (high1 - low1) 
+
 //------------------------------------------------------------------------------------------------
 union BYTEBUFFER_FLOAT {
 #pragma pack(push,1)
@@ -91,6 +93,7 @@ inline float DWordBufferToFloat(DWORD dwValue) { BYTEBUFFER_FLOAT byteFloat; byt
 extern BOOL WriteOpCodeHexString(const LPVOID writeAddr, LPCSTR sHexText);
 extern BOOL WriteOpCodeBuffer(const LPVOID writeAddr, const BYTE* buffer, const int iBufLen);
 extern BOOL WriteOpCodePtr(const LPVOID writeAddr, const LPVOID ptrValue);
+extern BOOL WriteOpCodeInt32(const LPVOID writeAddr, const __int32 iValue);
 
 extern BOOL ReadOpCodePtr(const LPVOID readAddr, LPVOID* ptrValue);
 
@@ -106,11 +109,14 @@ extern void RBRAPI_MapRBRPointToScreenPoint(const float srcX, const float srcY, 
 extern void RBRAPI_MapRBRPointToScreenPoint(const float srcX, const float srcY, float* trgX, float* trgY);
 
 extern void RBRAPI_RefreshWndRect();
+extern BOOL RBRAPI_MapRBRColorToRGBA(IRBRGame::EMenuColors colorType, int* outRed, int* outGreen, int* outBlue, int* outAlpha); // TRUE=Changed values, could not use cached values, FALSE=The same value, used cached values
 
-// Overloaded RBR specific DX9 functions. These re-routed functions are used to draw custom graphics on top of RBR graphics. The custom DX9 function should call these "parent functions" to let RBR do it's own things also.
+// Overloaded RBR specific DX9 function types. These re-routed functions are used to draw custom graphics on top of RBR graphics. The custom DX9 function should call these "parent functions" to let RBR do it's own things also.
 typedef HRESULT(__fastcall* tRBRDirectXBeginScene)(void* objPointer);
 typedef HRESULT(__fastcall* tRBRDirectXEndScene)(void* objPointer);
-typedef void(__thiscall* tRBRReplay)(void* objPointer, const char* szReplayFileName, __int32* pUnknown1, __int32* pUnknown2, size_t iReplayFileSize);
+
+// Overloaded RBR replay method
+typedef int(__thiscall* tRBRReplay)(void* objPointer, const char* szReplayFileName, __int32* pUnknown1, __int32* pUnknown2, size_t iReplayFileSize);
 
 
 //----------------------------------------------------------------------------------
@@ -209,7 +215,7 @@ typedef struct {
 typedef RRBRCarMovement* PRBRCarMovement;
 
 
-// Offset 0x007EAC48. Game configurations
+// Offset 0x007EAC48. Game configurations (0x007EAC48 -> +0x5C= IRBRGame instance obj)
 typedef struct {
 #pragma pack(push,1)
 	BYTE pad1[0x54];
@@ -219,6 +225,18 @@ typedef struct {
 #pragma pack(pop)
 } RBRGameConfig;
 typedef RBRGameConfig* PRBRGameConfig;
+
+
+// Offset 0x007C3668
+typedef struct {
+#pragma pack(push,1)
+	float menuBackground_r;	// 0x00		0.0 - 1.0 percent of 0..255 absolute values
+	float menuBackground_g; // 0x04
+	float menuBackground_b; // 0x08
+	float menuBackground_a; // 0x0C
+#pragma pack(pop)
+} RBRColorTable;
+typedef RBRColorTable* PRBRColorTable;
 
 
 // Offset 0x007EAC48 + 0x728 The current game mode (state machine of RBR)
@@ -262,7 +280,8 @@ typedef struct {
 								//       0x02 = Replay mode (update car movements).
 								//       0x03 = Plugin menu open (if replaying then stop the car updates)
 								//       0x04 = Pause replay (Pacenote plugin uses this value to pause replay)
-	BYTE pad2[0x18 - 0x10 - sizeof(__int32)];
+	//BYTE pad2[0x14 - 0x10 - sizeof(__int32)];
+	__int32 trackID;			// 0x14 RBR trackID (or if BTB/RBRRX then always value 41). trackID and carID is updated when gameMode goes to 01 (racing) or 08 (replaying)
 	__int32 carID;				// 0x18 00..07 = The current racing or replay car model slot#
 #pragma pack(pop)
 } RBRGameModeExt;
@@ -347,6 +366,8 @@ typedef RBRGhostCarMovement* PRBRGhostCarMovement;
 #define PTR_TYREVALUE_WCHAR_MICHELIN	0x743BDC
 
 
+//----------------------------------------------------------------------------------------------------------
+
 // RBRMenuItemPosition. Part of RBRMenuObj struct. Struct holding menu item X/Y position data.
 // The position data is not exactly in pixels, but in some sort of char position + pixel fine tuning unit (it is not a float either. Maybe half-float?)
 typedef struct {
@@ -363,14 +384,15 @@ typedef RBRMenuItemPosition* PRBRMenuItemPosition;
 typedef struct {
 #pragma pack(push,1)
 	BYTE    pad1[0x2C];
-	char*   szMenuTitleID;		// 0x2c  (LoadProfile logon screen has "SEL_PROF" string identifier)
+	char*   szMenuTitleID;		// 0x2c  (LoadProfile logon screen has "SEL_PROF" string identifier and LoadReplay has "REPLAYS")
 	WCHAR*  wszMenuTitleName;	// 0x30
 	void*   unknown1;			// 0x34
-	__int32 unknown2;			// 0x38	 (always 0x00?)
-	__int32 unknown3;			// 0x3C  (always 0x01?)
-	__int32 unknown4;			// 0x40  (always 0x0A?)
+	__int32 unknown2;			// 0x38	 
+	__int32 unknown3;			// 0x3C  
+	__int32 unknown4;			// 0x40  
 	__int32 selectedItemIdx;	// 0x44  The current selected menu row (at least in LoadProfile logon menu)
 	__int32 numOfItems;			// 0x48  The num of available profiles (0 if no profiles)
+	__int32 selectedItemIdx2;	// 0x4C  Some menu screen may have column selection also (fex LoadReplay has Load/Delete/Back buttons). This is the idx to the focused column or button.
 #pragma pack(pop)
 } RBRMenuItemExt;
 typedef RBRMenuItemExt* PRBRMenuItemExt;
@@ -500,7 +522,7 @@ struct RBRMenuObj {
 //       And what and where is developer menu? RBR has some references to this hidden menu. There could be some interesting things.
 
 #define RBRMENUIDX_STARTUP			     82  // LoadProfile on startup screen
-#define RBRMENUIDX_STARTUP_CREATEPROFILE 23
+#define RBRMENUIDX_STARTUP_CREATEPROFILE 23  // Register a driver name (editbox to type in the driver name = profile name)
 
 #define RBRMENUIDX_MAIN					 00
 
@@ -578,6 +600,17 @@ typedef struct {
 typedef RBRMenuSystem* PRBRMenuSystem;
 
 
+// Offset 0x007D2554. The name of the current driver profile (valid after a profile is loaded in RBR startup screen, ie RBR is at the main menu for the first time)
+typedef struct {
+#pragma pack(push,1)
+	LPVOID unknown1;			// 0x00
+	LPVOID unknown2;			// 0x04
+	char   szProfileName[16];	// 0x08 The current profile name str (15 chars + null terminator. If the profile is forced to have more than 15 chars then RBR behaves a bit strange when the profile is saved, works but the profile filename has some garbage chars)
+#pragma pack(pop)
+} RBRProfile;
+typedef RBRProfile* PRBRProfile; 
+
+
 // Offset 0x007EABA8.  Pacenotes. (Contributed by TheIronWolf)
 typedef struct
 {
@@ -598,6 +631,7 @@ typedef struct
 #pragma pack(pop)
 } RBRPacenotes;
 typedef RBRPacenotes* PRBRPacenotes;
+
 
 
 // Custom helper struct for plugins menu structure
@@ -634,6 +668,10 @@ extern PRBRMenuSystem		g_pRBRMenuSystem;
 extern PRBRPacenotes		g_pRBRPacenotes;	// Array of pacenotes. Valid only at racetime.
 
 extern wchar_t*				g_pRBRMapLocationName; // Offset 0x007D1D64. The name of the current stage (map, WCHAR string). Valid only at racetime.
+
+extern PRBRProfile			g_pRBRProfile;		// Offset 0x007D2554. The name of the current driver profile
+
+extern PRBRColorTable		g_pRBRColorTable;	// Offset 0x007C3668
 
 //
 // TODO:

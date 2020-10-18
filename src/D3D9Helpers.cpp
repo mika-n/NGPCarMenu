@@ -458,6 +458,27 @@ int _SplitInHalf(const std::string& s, std::vector<std::string>& splittedTokens,
 }
 
 
+bool _IsAllDigit(const std::string& s)
+{
+	if (s.length() <= 0) return false;
+
+	for (size_t i = 0; i < s.length(); i++)
+		if (!isdigit(s[i])) return false;
+
+	return true;
+}
+
+bool _IsAllDigit(const std::wstring& s)
+{
+	if (s.length() <= 0) return false;
+
+	for (size_t i = 0; i < s.length(); i++)
+		if (!iswdigit(s[i])) return false;
+
+	return true;
+}
+
+
 // Convert BYTE integer to bit field string (fex. byte value 0x05 is printed as "00000101"
 std::string _ToBinaryBitString(BYTE byteValue)
 {
@@ -641,7 +662,7 @@ BOOL GetFileVersionInformationAsNumber(const std::wstring& fileName, UINT* pMajo
 	if (dwSize > 0)
 	{
 		LPBYTE pVerData = new BYTE[dwSize];
-		if (GetFileVersionInfoW(fileName.c_str(), dwHandle, dwSize, pVerData))
+		if (GetFileVersionInfoW(fileName.c_str(), 0 /*dwHandle*/, dwSize, pVerData))
 		{
 			LPBYTE pQryBuffer = nullptr;
 			UINT iLen = 0;
@@ -695,7 +716,15 @@ void DebugOpenFile(bool bOverwriteFile = false)
 				g_sLogFileName = szModulePath;
 				g_sLogFileName = g_sLogFileName + L"\\Plugins\\" L"" VS_PROJECT_NAME L"\\" L"" VS_PROJECT_NAME L".log";
 
+				// Disable VC+ warning about "return value ignored". We know it and this code really don't need the return value, so we ignore it on purpose
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable:6031)
+#endif
 				InitializeCriticalSectionAndSpinCount(&g_hLogCriticalSection, 0x00000400);
+#if defined(_MSC_VER) 
+#pragma warning(pop)
+#endif
 
 #ifndef USE_DEBUG
 				// Release build creates always a new empty logfile when the logfile is opened for the first time during a process run
@@ -874,12 +903,20 @@ int GdiPlusGetEncoderClsid(const WCHAR* format, CLSID* pClsid)
 	Gdiplus::GetImageEncoders(num, size, pImageCodecInfo);
 	for (UINT j = 0; j < num; ++j)
 	{
+		// wcscmp warns about potentially dangerous function. Ignore the VC++ warning here because we know the following works and never does buffer overrun.
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable:6385)
+#endif
 		if (wcscmp(pImageCodecInfo[j].MimeType, format) == 0)
 		{
 			*pClsid = pImageCodecInfo[j].Clsid;
 			free(pImageCodecInfo);
 			return j;  // Success
 		}
+#if defined(_MSC_VER) 
+#pragma warning(pop)
+#endif
 	}
 
 	free(pImageCodecInfo);
@@ -896,7 +933,7 @@ HRESULT D3D9SavePixelsToFileGDI(const HWND hAppWnd, RECT wndCaptureRect, const s
 	HDC hdcAppWnd = nullptr;
 	HDC hdcMemory = nullptr;
 	HBITMAP hbmAppWnd = nullptr;
-	HANDLE hDIB = INVALID_HANDLE_VALUE;
+	HGLOBAL hDIB = nullptr; //  INVALID_HANDLE_VALUE;
 
 	BITMAP hAppWndBitmap;
 	BITMAPINFOHEADER bmpInfoHeader;
@@ -926,12 +963,16 @@ HRESULT D3D9SavePixelsToFileGDI(const HWND hAppWnd, RECT wndCaptureRect, const s
 		if (SUCCEEDED(hResult)) hbmAppWnd = CreateCompatibleBitmap(hdcAppWnd, wndCaptureRect.right - wndCaptureRect.left, wndCaptureRect.bottom - wndCaptureRect.top);
 		if (!hbmAppWnd) hResult = E_INVALIDARG;
 
-		HGDIOBJ hgdiResult = SelectObject(hdcMemory, hbmAppWnd);
-		if(hgdiResult == nullptr || hgdiResult == HGDI_ERROR)
-			hResult = E_INVALIDARG;
+		if (SUCCEEDED(hResult))
+		{
+			HGDIOBJ hgdiResult = SelectObject(hdcMemory, hbmAppWnd);
+			if (hgdiResult == nullptr || hgdiResult == HGDI_ERROR)
+				hResult = E_INVALIDARG;
+		}
 
-		if (!BitBlt(hdcMemory, 0, 0, wndCaptureRect.right - wndCaptureRect.left, wndCaptureRect.bottom - wndCaptureRect.top, hdcAppWnd, wndCaptureRect.left, wndCaptureRect.top, SRCCOPY | CAPTUREBLT))
-			hResult = E_INVALIDARG;
+		if (SUCCEEDED(hResult))
+			if (!BitBlt(hdcMemory, 0, 0, wndCaptureRect.right - wndCaptureRect.left, wndCaptureRect.bottom - wndCaptureRect.top, hdcAppWnd, wndCaptureRect.left, wndCaptureRect.top, SRCCOPY | CAPTUREBLT))
+				hResult = E_INVALIDARG;
 
 		ZeroMemory(&hAppWndBitmap, sizeof(BITMAP));
 		if (SUCCEEDED(hResult) && GetObject(hbmAppWnd, sizeof(BITMAP), &hAppWndBitmap) == 0)
@@ -1017,7 +1058,7 @@ HRESULT D3D9SavePixelsToFileGDI(const HWND hAppWnd, RECT wndCaptureRect, const s
 		LogPrint("ERROR D3D9SavePixelsToFileGDI. %s failed to create the file", outputFileName.c_str());
 	}
 
-	if (hDIB != INVALID_HANDLE_VALUE)
+	if (/*hDIB != INVALID_HANDLE_VALUE &&*/ hDIB != nullptr)
 	{
 		GlobalUnlock(hDIB);
 		GlobalFree(hDIB);
@@ -1104,7 +1145,7 @@ HRESULT D3D9SaveScreenToFile(const LPDIRECT3DDEVICE9 pD3Device, const HWND hAppW
 	LPBYTE screenshotBuffer = nullptr;
 	D3DDISPLAYMODE mode;
 	D3DLOCKED_RECT rc;
-	UINT pitch;
+	int pitch;
 
 	GUID cf; // GUID_ContainerFormatPng or GUID_ContainerFormatBmp
 
@@ -1145,6 +1186,7 @@ HRESULT D3D9SaveScreenToFile(const LPDIRECT3DDEVICE9 pD3Device, const HWND hAppW
 		// Compute the required bitmap buffer size and allocate it
 		rc.Pitch = 4;
 		if (SUCCEEDED(hResult)) hResult = surface->LockRect(&rc, &wndCaptureRect, /*0*/ D3DLOCK_NO_DIRTY_UPDATE | D3DLOCK_NOSYSLOCK | D3DLOCK_READONLY);
+		
 		pitch = rc.Pitch;
 		if (SUCCEEDED(hResult)) hResult = surface->UnlockRect();
 
@@ -1228,7 +1270,7 @@ HRESULT D3D9LoadTextureFromFile(const LPDIRECT3DDEVICE9 pD3Device, const std::ws
 		{
 			D3DLOCKED_RECT rect;
 			hResult = texture->LockRect(0, &rect, 0, D3DLOCK_DISCARD);
-			unsigned char* dest = static_cast<unsigned char*>(rect.pBits);
+			unsigned char* dest = static_cast<unsigned char*>(rect.pBits);			
 			memcpy(dest, imgBuffer, sizeof(unsigned char) * pOutImageSize->cx * pOutImageSize->cy * 4);
 			hResult = texture->UnlockRect(0);
 		}
@@ -1295,16 +1337,16 @@ CUSTOM_VERTEX_2D D3D9CreateCustomVertex2D(float x, float y, DWORD color)
 //
 // Create D3D9 texture rectangle to be drawn at specified x/y location with cx/cy size
 //
-HRESULT D3D9CreateRectangleVertexTex2D(float x, float y, float cx, float cy, CUSTOM_VERTEX_TEX_2D* pOutVertexes2D, int iVertexesSize)
+HRESULT D3D9CreateRectangleVertexTex2D(float x, float y, float cx, float cy, CUSTOM_VERTEX_TEX_2D* pOutVertexes2D, int iVertexesSize, DWORD color = D3DCOLOR_ARGB(255, 255, 255, 255))
 {
 	if (pOutVertexes2D == nullptr || iVertexesSize < sizeof(CUSTOM_VERTEX_TEX_2D) * 4)
 		return E_INVALIDARG;
 
 	// Create rectangle vertex of specified size at x/y position
-	pOutVertexes2D[0] = D3D9CreateCustomVertexTex2D(x, y,       D3DCOLOR_ARGB(255, 255, 255, 255), 0.0f, 0.0f);
-	pOutVertexes2D[1] = D3D9CreateCustomVertexTex2D(x+cx, y,    D3DCOLOR_ARGB(255, 255, 255, 255), 1.0f, 0.0f);
-	pOutVertexes2D[2] = D3D9CreateCustomVertexTex2D(x, y+cy,    D3DCOLOR_ARGB(255, 255, 255, 255), 0.0f, 1.0f);
-	pOutVertexes2D[3] = D3D9CreateCustomVertexTex2D(cx+x, cy+y, D3DCOLOR_ARGB(255, 255, 255, 255), 1.0f, 1.0f);
+	pOutVertexes2D[0] = D3D9CreateCustomVertexTex2D(x, y,       color /*D3DCOLOR_ARGB(255, 255, 255, 255)*/, 0.0f, 0.0f);
+	pOutVertexes2D[1] = D3D9CreateCustomVertexTex2D(x+cx, y,    color /*D3DCOLOR_ARGB(255, 255, 255, 255)*/, 1.0f, 0.0f);
+	pOutVertexes2D[2] = D3D9CreateCustomVertexTex2D(x, y+cy,    color /*D3DCOLOR_ARGB(255, 255, 255, 255)*/, 0.0f, 1.0f);
+	pOutVertexes2D[3] = D3D9CreateCustomVertexTex2D(cx+x, cy+y, color /*D3DCOLOR_ARGB(255, 255, 255, 255)*/, 1.0f, 1.0f);
 	
 	return S_OK;
 }
@@ -1329,16 +1371,16 @@ CUSTOM_VERTEX_3D Create_Custom_Vertex_3D(float x, float y, float z, DWORD color,
 //
 // Create D3D9 texture rectangle to be drawn at specified x/y location with cx/cy size.
 //
-HRESULT D3D9CreateRectangleVertex2D(float x, float y, float cx, float cy, CUSTOM_VERTEX_2D* pOutVertexes2D, int iVertexesSize)
+HRESULT D3D9CreateRectangleVertex2D(float x, float y, float cx, float cy, CUSTOM_VERTEX_2D* pOutVertexes2D, int iVertexesSize, DWORD color /*= D3DCOLOR_ARGB(60, 255, 255, 255)*/)
 {
 	if (pOutVertexes2D == nullptr || iVertexesSize < sizeof(CUSTOM_VERTEX_2D) * 4)
 		return E_INVALIDARG;
 
-	// Create rectangle vertex of specified size at x/y position (used to highlight screenshot cropping area, so use semi-transparent color)
-	pOutVertexes2D[0] = D3D9CreateCustomVertex2D(x, y,			 D3DCOLOR_ARGB(60, 255, 255, 255));
-	pOutVertexes2D[1] = D3D9CreateCustomVertex2D(x + cx, y,		 D3DCOLOR_ARGB(60, 255, 255, 255));
-	pOutVertexes2D[2] = D3D9CreateCustomVertex2D(x, y + cy,		 D3DCOLOR_ARGB(60, 255, 255, 255));
-	pOutVertexes2D[3] = D3D9CreateCustomVertex2D(cx + x, cy + y, D3DCOLOR_ARGB(60, 255, 255, 255));
+	// Create rectangle vertex of specified size at x/y position (used to highlight screenshot cropping area, so by default use semi-transparent color)
+	pOutVertexes2D[0] = D3D9CreateCustomVertex2D(x, y,			 color /*D3DCOLOR_ARGB(60, 255, 255, 255)*/);
+	pOutVertexes2D[1] = D3D9CreateCustomVertex2D(x + cx, y,		 color /*D3DCOLOR_ARGB(60, 255, 255, 255)*/);
+	pOutVertexes2D[2] = D3D9CreateCustomVertex2D(x, y + cy,		 color /*D3DCOLOR_ARGB(60, 255, 255, 255)*/);
+	pOutVertexes2D[3] = D3D9CreateCustomVertex2D(cx + x, cy + y, color /*D3DCOLOR_ARGB(60, 255, 255, 255)*/);
 
 	return S_OK;
 }
@@ -1418,8 +1460,8 @@ HRESULT D3D9CreateRectangleVertexTexBufferFromFile(const LPDIRECT3DDEVICE9 pD3De
 
 //
 // Create D3D9 2D graphical rectangle vertex buffer (no texture, fill color alpha-transparent or opaque)
-// TODO. Add color parameter
-HRESULT D3D9CreateRectangleVertexBuffer(const LPDIRECT3DDEVICE9 pD3Device, float x, float y, float cx, float cy, LPDIRECT3DVERTEXBUFFER9* pOutVertexBuffer)
+// 
+HRESULT D3D9CreateRectangleVertexBuffer(const LPDIRECT3DDEVICE9 pD3Device, float x, float y, float cx, float cy, LPDIRECT3DVERTEXBUFFER9* pOutVertexBuffer, DWORD color)
 {
 	HRESULT hResult;
 	LPDIRECT3DVERTEXBUFFER9 pTempVertexBuffer = nullptr;
@@ -1435,7 +1477,7 @@ HRESULT D3D9CreateRectangleVertexBuffer(const LPDIRECT3DDEVICE9 pD3Device, float
 	{		
 		void* pData;
 
-		hResult = D3D9CreateRectangleVertex2D(x, y, cx, cy, custRectVertex, sizeof(custRectVertex));
+		hResult = D3D9CreateRectangleVertex2D(x, y, cx, cy, custRectVertex, sizeof(custRectVertex), color);
 
 		if (SUCCEEDED(hResult)) hResult = pTempVertexBuffer->Lock(0, 0, (void**)&pData, 0);
 		if (SUCCEEDED(hResult)) memcpy(pData, custRectVertex, sizeof(custRectVertex));

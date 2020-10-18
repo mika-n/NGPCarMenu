@@ -73,6 +73,10 @@ PRBRPacenotes		 g_pRBRPacenotes = nullptr;
 
 WCHAR*				 g_pRBRMapLocationName = nullptr; // Pointer to RBR stage (map) name string, wchar_t unicode str pointer
 
+PRBRProfile			 g_pRBRProfile = nullptr;		// Offset 0x007D2554. The name of the current driver profile
+
+PRBRColorTable		 g_pRBRColorTable = nullptr;	// Offset 0x007C3668
+
 //----------------------------------------------------------------------------------------------------------------------------
 // Helper functions to modify RBR memory locations on the fly
 //
@@ -234,6 +238,13 @@ BOOL RBRAPI_InitializeObjReferences()
 	g_pRBRMapSettings = (PRBRMapSettings)(0x1660800);
 	g_pRBRMapLocationName = (wchar_t*)(0x007D1D64);
 
+	// Fixed location to RBR profile pointer
+	g_pRBRProfile = (PRBRProfile) * (DWORD*)(0x007D2554);
+
+	// Fixed location to RBR color table (menu background rgb-a)
+	g_pRBRColorTable = (PRBRColorTable) (0x007C3668);
+
+
 	// Get a pointer to DX9 device handler before re-routing the RBR function
 	if(g_pRBRIDirect3DDevice9 == nullptr) g_pRBRIDirect3DDevice9 = (LPDIRECT3DDEVICE9) * (DWORD*)(*(DWORD*)(*(DWORD*)0x007EA990 + 0x28) + 0xF4);
 
@@ -334,6 +345,58 @@ void RBRAPI_RefreshWndRect()
 }
 
 
+struct RBRColorTableCache {
+	float rbr_r;  // Original RBR color 0.0 - 2.0 float range
+	float rbr_g;
+	float rbr_b;
+	float rbr_a;
+	int   rgb_r;  // Remapped DX9 RBG color in 0 - 255 int range
+	int   rgb_g;
+	int   rgb_b;
+	int   rgb_a;
+
+	RBRColorTableCache()
+	{
+		rbr_r = rbr_g = rbr_b = rbr_a = -1.0f;
+		rgb_r = rgb_g = rgb_b = rgb_a = -1;
+	}
+};
+
+// Remap misc\color.ini values (r g b a) to actual DX9 RBG value (0.0 - 2.0 range renampped to 0 - 255 (except green is in 0 - 251 range. Strange)
+BOOL RBRAPI_MapRBRColorToRGBA(IRBRGame::EMenuColors colorType, int* outRed, int* outGreen, int* outBlue, int* outAlpha)
+{
+	static struct RBRColorTableCache menuBackgroundCache;
+	BOOL bRetValue = FALSE;
+
+	// TODO. Find where other color types are set (selectionColor, textColor, headingColor. Probably somewhere near the menuBackground color RGBA struct (ngpCarMenu doesn't need anything else but menuBackground color yet)
+	if (colorType == IRBRGame::EMenuColors::MENU_BKGROUND)
+	{
+		// Re-calculate DX9 RGB-A values only if rbr color values have been changed since the last call to this function
+		if (menuBackgroundCache.rbr_r != g_pRBRColorTable->menuBackground_r || menuBackgroundCache.rbr_g != g_pRBRColorTable->menuBackground_g || menuBackgroundCache.rbr_b != g_pRBRColorTable->menuBackground_b || menuBackgroundCache.rbr_a != g_pRBRColorTable->menuBackground_a)
+		{
+			menuBackgroundCache.rbr_r = g_pRBRColorTable->menuBackground_r;
+			menuBackgroundCache.rbr_g = g_pRBRColorTable->menuBackground_g;
+			menuBackgroundCache.rbr_b = g_pRBRColorTable->menuBackground_b;
+			menuBackgroundCache.rbr_a = g_pRBRColorTable->menuBackground_a;
+
+			menuBackgroundCache.rgb_r = static_cast<int>(C_RANGE_REMAP(menuBackgroundCache.rbr_r, 0.0f, 2.0f, 0.0f, 255.0f));
+			menuBackgroundCache.rgb_g = static_cast<int>(C_RANGE_REMAP(menuBackgroundCache.rbr_g, 0.0f, 2.0f, 0.0f, 251.0f));
+			menuBackgroundCache.rgb_b = static_cast<int>(C_RANGE_REMAP(menuBackgroundCache.rbr_b, 0.0f, 2.0f, 0.0f, 255.0f));
+			menuBackgroundCache.rgb_a = static_cast<int>(C_RANGE_REMAP(menuBackgroundCache.rbr_a, 0.0f, 1.0f, 0.0f, 255.0f));
+
+			bRetValue = TRUE;
+		}
+
+		*outRed   = menuBackgroundCache.rgb_r;
+		*outGreen = menuBackgroundCache.rgb_g;
+		*outBlue  = menuBackgroundCache.rgb_b;
+		*outAlpha = menuBackgroundCache.rgb_a;
+	}
+
+	return bRetValue;
+}
+
+
 // Replay RBR replay file
 BOOL RBRAPI_Replay(const std::string rbrAppFolder, LPCSTR szReplayFileName)
 {
@@ -351,13 +414,10 @@ BOOL RBRAPI_Replay(const std::string rbrAppFolder, LPCSTR szReplayFileName)
 		if (fs::exists(fullReplayFilePath))
 		{
 			size_t iReplayFileSizeInBytes = (size_t) std::filesystem::file_size(fullReplayFilePath);
-			func_RBRReplay(*objRBRThis, szReplayFileName, &iNotUsed, &iNotUsed, iReplayFileSizeInBytes);
-
-			// TODO. Check error status if replay loading failed
-			return TRUE;
+			return func_RBRReplay(*objRBRThis, szReplayFileName, &iNotUsed, &iNotUsed, iReplayFileSizeInBytes) != 0;
 		}
 		else
-			// The replay file doesn't exist.
+			// The replay file doesn't exist. Failed to play the replay.
 			return FALSE;
 	}
 	catch (...)

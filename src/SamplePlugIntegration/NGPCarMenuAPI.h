@@ -7,9 +7,13 @@
 //  - Include this NGPCarMenuAPI.h file in your own plugin code
 //  - Instantiate CNGPCarMenuAPI class object within your plugin code
 //  - Register a link between your plugin and NGPCarMenu backend plugin by calling InitializePluginIntegration method (ie. you need to have NGPCarMenu.dll installed in RBR\Plugins\ folder)
-//  - Load images (PNG/BMP) and specify size and location by calling LoadCustomImage method (each image should have an unique imageID identifier. It is up to you to generate this ID number)
+//  - Load images (PNG/BMP/JPG) and specify size and location by calling LoadCustomImage method (each image should have an unique imageID identifier. It is up to you to generate this ID number)
 //  - Show or hide a specified image (imageID) based on events in your own plugin by calling ShowHideImage method
-//  - See the sample plugin code for more details.
+//
+//  - The same with custom text (plugin integration needs to be registered first then initialize a font and finally call drawTextA/drawTextW methods).
+//  - To clear/hide a text call DrawTextA/W method (specify textID) with nullptr string pointer or with an empty string.
+//
+//  - See the sample plugin code for more details (TestPlugin.h file).
 //
 // Copyright 2020, MIKA-N. https://github.com/mika-n
 //
@@ -31,6 +35,12 @@ typedef void  (APIENTRY *tAPI_ShowHideImage)(DWORD pluginID, int imageID, bool s
 typedef void  (APIENTRY *tAPI_RemovePluginIntegration)(DWORD pluginID);
 typedef void  (APIENTRY *tAPI_MapRBRPointToScreenPoint)(const float srcX, const float srcY, float* trgX, float* trgY);
 
+typedef BOOL  (APIENTRY *tAPI_GetVersionInfo)(char* pOutTextBuffer, size_t textBufferSize, int* pOutMajor, int* pOutMinor, int* pOutPatch, int* pOutBuild);
+
+typedef DWORD (APIENTRY *tAPI_InitializeFont)(const char* fontName, DWORD fontSize, DWORD fontStyle);
+typedef BOOL  (APIENTRY *tAPI_DrawTextA)(DWORD pluginID, int textID, int posX, int posY, const char* szText, DWORD fontID, DWORD color, DWORD drawOptions);
+typedef BOOL  (APIENTRY* tAPI_DrawTextW)(DWORD pluginID, int textID, int posX, int posY, const wchar_t* wszText, DWORD fontID, DWORD color, DWORD drawOptions);
+
 #define C_NGPCARMENU_DLL_FILENAME "\\Plugins\\NGPCarMenu.dll"
 
 // Image flags to finetune how the image is scaled and positioned
@@ -50,6 +60,22 @@ typedef void  (APIENTRY *tAPI_MapRBRPointToScreenPoint)(const float srcX, const 
 #define IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_BOTTOM (IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO | IMAGE_TEXTURE_POSITION_BOTTOM)
 #define IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_CENTER (IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO | IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER | IMAGE_TEXTURE_POSITION_VERTICAL_CENTER)
 
+
+// Font initialization style flags
+#define D3DFONT_BOLD        0x0001
+#define D3DFONT_ITALIC      0x0002
+#define D3DFONT_ZENABLE     0x0004
+
+// Text drawing options flags
+#define D3DFONT_CENTERED_X  0x0001
+#define D3DFONT_CENTERED_Y  0x0002
+#define D3DFONT_TWOSIDED    0x0004
+#define D3DFONT_FILTERED    0x0008
+#define D3DFONT_BORDER		0x0010
+#define D3DFONT_COLORTABLE	0x0020
+#define D3DFONT_CLEARTARGET 0x0080	// Clear the target area where font will be drawn (ie. font background is not transparent)
+
+
 class CNGPCarMenuAPI
 {
 protected:
@@ -61,6 +87,12 @@ protected:
 	tAPI_RemovePluginIntegration fp_API_RemovePluginIntegration;
 	tAPI_MapRBRPointToScreenPoint fp_API_MapRBRPointToScreenPoint;
 
+	tAPI_GetVersionInfo fp_API_GetVersionInfo;
+
+	tAPI_InitializeFont fp_API_InitializeFont;
+	tAPI_DrawTextA fp_API_DrawTextA;
+	tAPI_DrawTextW fp_API_DrawTextW;
+
 	void Cleanup()
 	{
 		fp_API_InitializePluginIntegration = nullptr;
@@ -68,6 +100,10 @@ protected:
 		fp_API_ShowHideImage = nullptr;
 		fp_API_RemovePluginIntegration = nullptr;
 		fp_API_MapRBRPointToScreenPoint = nullptr;
+		fp_API_GetVersionInfo = nullptr;
+		fp_API_InitializeFont = nullptr;
+		fp_API_DrawTextA = nullptr;
+		fp_API_DrawTextW = nullptr;
 
 		if (hDLLModule) ::FreeLibrary(hDLLModule);
 		hDLLModule = nullptr;
@@ -111,10 +147,14 @@ public:
 				fp_API_ShowHideImage = (tAPI_ShowHideImage)GetProcAddress(hDLLModule, "API_ShowHideImage");
 				fp_API_RemovePluginIntegration = (tAPI_RemovePluginIntegration)GetProcAddress(hDLLModule, "API_RemovePluginIntegration");
 				fp_API_MapRBRPointToScreenPoint = (tAPI_MapRBRPointToScreenPoint)GetProcAddress(hDLLModule, "API_MapRBRPointToScreenPoint");
+				fp_API_GetVersionInfo = (tAPI_GetVersionInfo)GetProcAddress(hDLLModule, "API_GetVersionInfo");
+				fp_API_InitializeFont = (tAPI_InitializeFont)GetProcAddress(hDLLModule, "API_InitializeFont");
+				fp_API_DrawTextA = (tAPI_DrawTextA)GetProcAddress(hDLLModule, "API_DrawTextA");
+				fp_API_DrawTextW = (tAPI_DrawTextW)GetProcAddress(hDLLModule, "API_DrawTextW");
 			}
 		}
 
-		if (fp_API_InitializePluginIntegration != nullptr)
+		if (fp_API_InitializePluginIntegration != nullptr && szPluginName != nullptr)
 			return fp_API_InitializePluginIntegration(szPluginName);
 		else
 			return 0;
@@ -153,6 +193,67 @@ public:
 	{
 		if (fp_API_MapRBRPointToScreenPoint != nullptr)
 			fp_API_MapRBRPointToScreenPoint(srcX, srcY, trgX, trgY);
+	}
+
+	void MapRBRPointToScreenPoint(const int srcX, const int srcY, int* trgX, int* trgY)
+	{
+		float fTrgX = 0, fTrgY = 0;
+		this->MapRBRPointToScreenPoint(static_cast<float>(srcX), static_cast<float>(srcY), (trgX != nullptr ? &fTrgX : nullptr), (trgY != nullptr ? &fTrgY : nullptr));
+		if (trgX != nullptr) *trgX = static_cast<int>(fTrgX); 
+		if (trgY != nullptr) *trgY = static_cast<int>(fTrgY);
+	}
+
+	void MapRBRPointToScreenPoint(const int srcX, const int srcY, long* trgX, long* trgY)
+	{
+		float fTrgX = 0, fTrgY = 0;
+		this->MapRBRPointToScreenPoint(static_cast<float>(srcX), static_cast<float>(srcY), (trgX != nullptr ? &fTrgX : nullptr), (trgY != nullptr ? &fTrgY : nullptr));
+		if (trgX != nullptr) *trgX = static_cast<long>(fTrgX);
+		if (trgY != nullptr) *trgY = static_cast<long>(fTrgY);
+	}
+
+	// Version tag of NGPCarMenu plugin. Returns numerical and/or text string version tags (parameters can be optionally nullptr to ignore the version info). 
+	// If pOutTextBuffer is set then the buffer must have at least the size of 32 bytes.
+	// For example: GetVersionInfo(nullptr, 0, &verMajor, &verMinor, &verPatch, &verBuild)
+	// For example: GetVersionInfo(myBuffer, sizeof(myBuffer), &verMajor, &verMinor, nullptr, nullptr)
+	BOOL GetVersionInfo(char* pOutTextBuffer, size_t textBufferSize, int* pOutMajor, int* pOutMinor, int* pOutPatch, int* pOutBuild, LPCSTR szPathToNGPCarMenuDLL = nullptr)
+	{
+		// Initialize just API function pointers, but don't link this custom plugin with NGPCarMenu plugin just because of version check
+		InitializePluginIntegration(nullptr, szPathToNGPCarMenuDLL);
+
+		if (fp_API_GetVersionInfo != nullptr)
+			return fp_API_GetVersionInfo(pOutTextBuffer, textBufferSize, pOutMajor, pOutMinor, pOutPatch, pOutBuild);
+		else
+			return FALSE;
+	}
+
+	// Initialize a custom font (font typeface name, size and style). Style can be 0 (default style) or combination of D3DFONT_BOLD | D3DFONT_ITALIC | D3DFONT_ZENABLE.
+	// The return value is fontID and it is used in DrawTextA/DrawTextW methods to specify a specific font for a text.
+	// For example: InitializeFont("Trebuchet MS", 16, D3DFONT_ITALIC | D3DFONT_BOLD)
+	DWORD InitializeFont(const char* fontName, DWORD fontSize, DWORD fontStyle)
+	{
+		if (fp_API_InitializeFont != nullptr)
+			return fp_API_InitializeFont(fontName, fontSize, fontStyle);
+		else
+			return 0;
+	}
+
+	// Draw text (char) at specified x,y screen location using fontID font style, color and draw options.
+	// DrawOptions can be combination of D3DFONT_CENTERED_X | D3DFONT_CENTERED_Y | D3DFONT_TWOSIDED | D3DFONT_FILTERED | D3DFONT_BORDER | D3DFONT_COLORTABLE | D3DFONT_CLEARTARGET
+	BOOL DrawTextA(DWORD pluginID, int textID, int posX, int posY, const char* szText, DWORD fontID, DWORD color, DWORD drawOptions)
+	{
+		if (fp_API_DrawTextA != nullptr)
+			return fp_API_DrawTextA(pluginID, textID, posX, posY, szText, fontID, color, drawOptions);
+		else
+			return FALSE;
+	}
+
+	// Draw text (wchar). See DrawTextA comment
+	BOOL DrawTextW(DWORD pluginID, int textID, int posX, int posY, const wchar_t* wszText, DWORD fontID, DWORD color, DWORD drawOptions)
+	{
+		if (fp_API_DrawTextW != nullptr)
+			return fp_API_DrawTextW(pluginID, textID, posX, posY, wszText, fontID, color, drawOptions);
+		else
+			return FALSE;
 	}
 };
 

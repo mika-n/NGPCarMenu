@@ -37,6 +37,7 @@
 #include <memory>					// unique_ptr and smart_ptr
 //#include <forward_list>				// std::forward_list
 #include <list>
+#include <deque>
 
 #include "PluginHelpers.h"
 
@@ -171,8 +172,10 @@ struct RBRTM_MapInfo {
 	std::wstring  name;
 	double		  length;
 	int			  surface;
+
 	std::wstring  previewImageFile;
 	IMAGE_TEXTURE imageTexture;
+	BOOL          shakedownOptionsFirstTimeSetup;  // Shakedown map selection shows a map preview. The shakedown options screen after the map selection shows also a map preview image. When this is TRUE then the option image is re-initialized.
 
 	RBRTM_MapInfo() 
 	{
@@ -181,6 +184,7 @@ struct RBRTM_MapInfo {
 		mapIDMenuIdx = -1;
 		length = -1;
 		surface = -1;
+		shakedownOptionsFirstTimeSetup = TRUE;
 		ZeroMemory(&imageTexture, sizeof(IMAGE_TEXTURE));
 	}
 
@@ -217,14 +221,30 @@ typedef struct {
 	__int32 menuFocusWidth;		// 0x52588  (width of the red focus line in RBRRX menus)
 	BYTE pad2[0x52590 - 0x52588  - sizeof(__int32)];
 	__int32 menuPosX;			// 0x52590	(X pos of RBRRX menus)
-	BYTE pad3[0x608E4 - 0x52590 - sizeof(__int32)];
+
+	BYTE pad21[0x608D0 - 0x52590 - sizeof(__int32)];
+
+	BYTE loadTrackStatusD0;		// 0x608D0  (Set to 0x01 when loading a track, otherwise 0x00)
+	BYTE pad3[0x608D4 - 0x608D0 - sizeof(BYTE)];
+	__int32 unknown1;			// 0x608D4
+	__int32 loadTrackStatusD8;	// 0x608D8  (Set to 0x01 when loading a track, otherwise 0x00)
+	__int32 loadTrackID;		// 0x608DC (menuIdx to the currently loaded BTB track)
+
+	BYTE pad31[0x608E4 - 0x608DC - sizeof(__int32)];
 	PRBRRXMenuItem pMenuItems;	// 0x608E4
 	__int32 numOfItems;			// 0x608E8
-	BYTE pad4[0x60914- 0x608E8 - sizeof(__int32)];
+
+	BYTE pad4[0x60914 - 0x608E8 - sizeof(__int32)];
+
 	__int32 keyCode;			// 0x60914  The keycode of the last pressed key (key down) (37=Left arrowkey, 39=Right arrowkey, 36=Home, 35=End)
 	__int32 menuID;				// 0x60918  0=main, 1=stages, 2=replay
-	BYTE pad5[0x66528 - 0x60918- sizeof(__int32)];
-	WCHAR wszTrackName[60];	// 0x66528  The name of the last selected track
+	BYTE pad41[0x609A0 - 0x60918 - sizeof(__int32)];
+
+	__int32 currentPhysicsID;	// 0x609A0  The current physicsID while loading a BTB track (0..2)
+	__int32 loadTrackStatusA4;  // 0x609A4  LoadTrack status (0x01 = Loading track, 0x00 = Not loading)
+	BYTE pad5[0x66528 - 0x609A4 - sizeof(__int32)];
+
+	WCHAR wszTrackName[60];		// 0x66528  The name of the last selected track (multibyteToWideChar converted)
 	BYTE pad6[0x665F4 - 0x66528 - sizeof(WCHAR)*60];
 	PRBRRXMenuData pMenuData;	// 0x665F4  Ptr to selectedItemIdx struct
 #pragma pack(pop)
@@ -248,6 +268,7 @@ struct RBRRX_MapInfo {
 
 	std::wstring  previewImageFile;
 	IMAGE_TEXTURE imageTexture;
+	BOOL          trackOptionsFirstTimeSetup;  // Map selection shows a map preview. The track options screen after the map selection shows also a map preview image. When this is TRUE then the option image is re-initialized.
 
 	RBRRX_MapInfo()
 	{
@@ -260,6 +281,7 @@ struct RBRRX_MapInfo {
 		folderName.reserve(256);
 		surface.reserve(16);
 		previewImageFile.reserve(260);
+		trackOptionsFirstTimeSetup = TRUE;
 
 		ZeroMemory(&imageTexture, sizeof(IMAGE_TEXTURE));
 	}
@@ -293,6 +315,19 @@ extern CNGPCarMenu* g_pRBRPlugin;
 
 extern HRESULT __fastcall CustomRBRDirectXBeginScene(void* objPointer);
 extern HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer);
+extern int     __fastcall CustomRBRReplay(void* objPointer, DWORD dummyEDX, const char* szReplayFileName, __int32* pUnknown1, __int32* pUnknown2, size_t iReplayFileSize);
+
+extern RBRCarSelectionMenuEntry g_RBRCarSelectionMenuEntry[];
+
+#if USE_DEBUG == 1
+extern CD3DFont* g_pFontDebug;
+#endif
+extern CD3DFont* g_pFontCarSpecCustom;	// Custom car spec text font style
+extern CD3DFont* g_pFontCarSpecModel;	// Custom model spec font style (author of car and map model, a bit smaller than SpecCustom font style)
+
+extern PRBRPluginMenuSystem g_pRBRPluginMenuSystem;
+
+extern std::vector<std::string>* g_pRBRRXTrackNameListAlreadyInitialized;
 
 
 //------------------------------------------------------------------------------------------------//
@@ -330,13 +365,42 @@ public:
 	}
 };
 
+class CRBRPluginIntegratorLinkText
+{
+public:
+	int   m_textID;
+	DWORD m_fontID;
+	
+	int          m_posX, m_posY;
+	std::wstring m_wsText;
+	std::string  m_sText;	
+	DWORD        m_dwColor;
+	DWORD        m_dwDrawOptions;
+
+	CRBRPluginIntegratorLinkText()
+	{
+		m_textID = -1;
+		m_fontID = 0;
+		m_dwColor = C_CARSPECTEXT_COLOR;
+		m_dwDrawOptions = 0;
+		m_posX = m_posY = 0;
+	}
+
+	~CRBRPluginIntegratorLinkText()
+	{
+		// Do nothing
+	}
+};
+
 class CRBRPluginIntegratorLink
 {
 public:
 	int m_iCustomPluginMenuIdx;			// Index to custom plugin
 	bool m_bCustomPluginActive;			// Is the custom plugin active in RBR menu system?
 	std::string m_sCustomPluginName;	// Name of the custom plugin (as shown in RBR Plugins menu)
+
 	std::vector<std::unique_ptr<CRBRPluginIntegratorLinkImage>> m_imageList; // Image cache (DX9 textures)
+	std::vector<std::unique_ptr<CRBRPluginIntegratorLinkText>> m_textList;   // Text cache
 
 	CRBRPluginIntegratorLink() 
 	{ 
@@ -349,6 +413,7 @@ public:
 		m_iCustomPluginMenuIdx = -1;
 		m_bCustomPluginActive = FALSE;
 		m_imageList.clear();
+		m_textList.clear();
 	}
 };
 
@@ -364,8 +429,26 @@ protected:
 
 	int	m_iCarMenuNameLen;			// Max char space reserved for the current car menu name menu items (calculated in CalculateMaxLenCarMenuName method)
 
-	int   m_iAutoLogonMenuState;        // State step of the autologon procedure (0=completed or not used, 1=DoMulligallawyLoadProfile, 2=DoOptionsMenu, 3=DoPluginsMenu, 4=DoCustomPluginMenu)
-	DWORD m_dwAutoLogonEventStartTick;  // The start tick of the previous auto-logon event. If autologon takes too logn then it is aborted
+	std::wstringstream m_autoLogonSequenceLabel;		// Text label of the latest autoLogon sequene. For example "main/options/plugins/rbr_rx"
+	std::deque<std::string> m_autoLogonSequenceSteps;	// Sequence steps of the autologon
+	int   m_iAutoLogonMenuState;        // State step of the autologon procedure (0=completed or not used, 1-2=LoadProfile steps, 3=MainMenu navigation steps)
+	DWORD m_dwAutoLogonEventStartTick;  // The start tick of the previous auto-logon event. If autologon takes too long then it is aborted (timeout)
+
+	bool m_bMenuSelectCarCustomized;	// TRUE - The SelectCar is in customized state, FALSE - Various original values restored (ie. tyre brand names)
+
+	int m_iMenuCurrentScreen;	// The current menu screen (0=Main, C_CMD_RENAMEDRIVER)
+
+	int m_iMenuSelection;		// Currently selected menu line idx
+	int	m_iMenuCreateOption;	// 0 = Generate all car images, 1 = Generate only missing car images
+	int	m_iMenuImageOption;		// 0 = Use PNG preview file format to read and create image files, 1 = BMP file format
+	int m_iMenuRBRTMOption;		// 0 = RBRTM integration disabled, 1 = Enabled
+	int m_iMenuRBRRXOption;		// 0 = RBRRX integration disabled, 1 = Enabled
+	int m_iMenuAutoLogonOption; // 0 = Disabled, 1=Main, 2=Plugins, 3+ custom plugin
+
+	bool m_bRenameDriverNameActive;		// TRUE=Renaming of driver profile process is active (NGPCarMenu checks if the creation succeeded and takes a backup of the prev profile before completing the renaming)
+	int  m_iProfileMenuPrevSelectedIdx; //
+	std::string m_sMenuPrevDriverName;	// Previous driver name
+	std::string m_sMenuNewDriverName;	// New driver name
 
 	std::string m_sMenuStatusText1;	// Status text message 
 	std::string m_sMenuStatusText2;
@@ -373,8 +456,22 @@ protected:
 
 	DetourXS* gtcDirect3DBeginScene;
 	DetourXS* gtcDirect3DEndScene;
+	DetourXS* gtcRBRReplay;
+
+	void StartNewAutoLogonSequence()
+	{	
+		m_autoLogonSequenceLabel.clear();
+		m_autoLogonSequenceLabel.str(std::wstring());
+		for (auto& item : m_autoLogonSequenceSteps)
+			m_autoLogonSequenceLabel << (m_autoLogonSequenceLabel.tellp() != std::streampos(0) ? L"/" : L"") << _ToWString(item);
+
+		m_dwAutoLogonEventStartTick = GetTickCount32();
+		m_iAutoLogonMenuState = (m_bAutoLogonWaitProfile || m_iAutoLogonMenuState != -1 ? 3 : 1); // 3=Wait main menu (do not autoLoad a profile on bootup) 1=AutoLoad profile on RBR bootup
+	}
 
 	void DoAutoLogonSequence();
+
+	void CompleteProfileRenaming();
 
 	void InitCarSpecData_RBRCIT();
 	void InitCarSpecData_EASYRBR();
@@ -387,25 +484,23 @@ protected:
 	int  CalculateMaxLenCarMenuName();
 	void ClearCachedCarPreviewImages();
 
-	void FocusRBRRXNthMenuIdxRow(int menuIdx);
-	void UpdateRBRRXMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo);
+	void RBRRX_EndScene();
+	void RBRTM_EndScene();
+
+	void   FocusRBRRXNthMenuIdxRow(int menuIdx);
+	void   UpdateRBRRXMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo);
 	double UpdateRBRRXINILengthOption(const std::string& sFolderName, double newLength);
+
+	BOOL RBRRX_PrepareReplayTrack(const std::string mapName);
+	void RBRRX_LoadTrack(int mapMenuIdx);
 
 public:
 	IRBRGame*     m_pGame;
 	T_PLUGINSTATE m_PluginState;
 
-	bool m_bMenuSelectCarCustomized;	// TRUE - The SelectCar is in customized state, FALSE - Various original values restored (ie. tyre brand names)
-
-	int m_iMenuSelection;		// Currently selected plugin menu item idx
-	int	m_iMenuCreateOption;	// 0 = Generate all car images, 1 = Generate only missing car images
-	int	m_iMenuImageOption;		// 0 = Use PNG preview file format to read and create image files, 1 = BMP file format
-	int m_iMenuRBRTMOption;		// 0 = RBRTM integration disabled, 1 = Enabled
-	int m_iMenuRBRRXOption;		// 0 = RBRRX integration disabled, 1 = Enabled
-	int m_iMenuAutoLogonOption; // 0 = Disabled, 1=Main, 2=Plugins, 3+ custom plugin
-
 	bool m_bRBRFullscreenDX9;			// Is RBR running in fullscreen or windows DX9 mode? TRUE-fullscreen, FALSE=windowed
 	bool m_bPacenotePluginInstalled;	// Is Pacenote plugin used? RBR exit logic handles font cleanup a bit differently in fullscreen mode IF pacenote plugin is missing
+	bool m_bRallySimFansPluginInstalled;// Is this RallySimFans plugin version of RBR? It modifies Cars\Cars.ini and physics file on the fly to change the list of installed cars, so NGPCarMenu needs to refresh car specs when RSF modifies those
 
 	std::string  m_sRBRRootDir;  // RBR app path, multibyte (or normal ASCII) string
 	std::wstring m_sRBRRootDirW; // RBR app path, widechar string
@@ -421,6 +516,8 @@ public:
 	std::wstring m_easyRBRFilePath;				// Path to EesyRBR installation folder (if RBRCIT car manager is not used)
 
 	RECT  m_screenshotCroppingRect;				// Cropping rect of a screenshot (in RBR window coordinates)
+	int   m_screenshotCarPosition;				// 0=The default screenshot location for a car (on the road), 1=The car is moved "out-of-scope" in the middle of nowhere (night mode of RBR can be used to create screenshots with black background)
+
 	RECT  m_carSelectLeftBlackBarRect;			// Black bar on the left and right side of the "Select Car" menu (used to hide the default background image)
 	RECT  m_carSelectRightBlackBarRect;			// (see above)
 	POINT m_car3DModelInfoPosition;				// X Y position of the car 3D info textbox. If Y is 0 then the plugin uses the default Y location (few lines above the car preview image).
@@ -462,7 +559,7 @@ public:
 	PRBRTMMenuItem m_pCustomMapMenuRBRTM;		// Custom "list of stages" menu in RBRTM Shakedown menu (contains X recent shortcuts and the original list of stages)
 	int m_numOfItemsCustomMapMenuRBRTM;			// Num of items in m_pCustomMapMenuRBRTM (dynamic) array
 
-
+	LPDIRECT3DVERTEXBUFFER9 g_mapRBRRXRightBlackBarVertexBuffer;
 	RECT         m_mapRBRRXPictureRect;			// Output rect of RBRRX map preview image (re-scaled pic area)
 	std::wstring m_screenshotPathMapRBRRX;		// Custom map preview image path
 	RBRRX_MapInfo m_latestMapRBRRX;				// The latest selected stage in RBRRX menu (if the current mapID is still the same then no need to re-load the same stage preview image)
@@ -485,10 +582,17 @@ public:
 
 	int    m_iRBRRXPluginMenuIdx;				// Index of the RBR_RX plugin in the RBR Plugins menu list (this way we know when RBRRX custom plugin in Nth index position is activated)
 	bool   m_bRBRRXPluginActive;				// TRUE/FALSE if the current active custom plugin is RBR_RX (active = The RBRTM plugin handler is running in foreground)
-	bool   m_pRBRRXPluginFirstTimeInitialization; // First time to open RBRRX plugin after RBR launch. Go automatically to Race screen and skip the race/replay menu
+	//bool   m_pRBRRXPluginFirstTimeInitialization; // First time to open RBRRX plugin after RBR launch. Go automatically to Race screen and skip the race/replay menu
+	bool   m_bRBRRXReplayActive;				// TRUE=Replay is playing RBRRX BTB track, FALSE = standard RBR replay file and track
+	bool   m_bRBRRXReplayEnding;
+
+	int    m_latestCarID;						// The latest carID in racing mode
+	int    m_latestMapID;						// The latest mapID in racing mode
+
+	bool   m_bGenerateReplayMetadataFile;		// Generate replayFileName.ini metadata files
 
 	PRBRMenuObj  m_pRBRPrevCurrentMenu;			// If RBRTM or RBRRX integration is enabled then NGPCarMenu must try to identify Plugins menuobj and RBRTM/RBRRX plugin. This is just a "previous currentMenu" in order to optimize the check routine (ie. don't re-check if the plugin is RBRTM until new menu/plugin is activated)
-	
+
 	PRBRTMPlugin m_pRBRTMPlugin;				// Pointer to RBRTM plugin or nullptr if not found or RBRTM integration is disabled	
 	PRBRRXPlugin m_pRBRRXPlugin;				// Pointer to RBRRX plugin or nullptr
 
@@ -513,16 +617,28 @@ public:
 	void SaveSettingsToRBRTMRecentMaps();
 	void SaveSettingsToRBRRXRecentMaps();
 
+	int FindRBRTMMenuItemIdxByMapID(PRBRTMMenuItem pMenuItems, int numOfItems, int mapID)
+	{
+		// Find the RBRTM menu item by mapID (search menuItem array directly). Return index to the menuItem struct or -1
+		if (pMenuItems != nullptr)
+		{
+			for (int idx = 0; idx < numOfItems; idx++)
+				if (pMenuItems[idx].mapID == mapID)
+					return idx;
+		}
+		return -1;
+	}
+
 	int FindRBRTMMenuItemIdxByMapID(PRBRTMMenuData pMenuData, int mapID)
 	{
 		// Find the RBRTM menu item by mapID. Return index to the menuItem struct or -1
-		if (pMenuData != nullptr && mapID > 0)
+		if (pMenuData != nullptr)
 		{
-			for (int idx = 0; idx < pMenuData->numOfItems; idx++)
-				if (pMenuData->pMenuItems[idx].mapID == mapID)
-					return idx;
+			//for (int idx = 0; idx < pMenuData->numOfItems; idx++)
+			//	if (pMenuData->pMenuItems[idx].mapID == mapID)
+			//		return idx;
+			return FindRBRTMMenuItemIdxByMapID(pMenuData->pMenuItems, pMenuData->numOfItems, mapID);
 		}
-
 		return -1;
 	}
 
@@ -540,6 +656,26 @@ public:
 				trackFolder.assign(pMapMenuItemsRBRRX[idx].szTrackFolder);
 				//DebugPrint("DEBUG: FindRBRRXMenuItemIdxByFolderName %d %s=%s", idx, trackFolder.c_str(), folderName.c_str());
 				if (_iEqual(trackFolder, folderName, true))
+					return idx;
+			}
+		}
+
+		return -1;
+	}
+
+	int FindRBRRXMenuItemIdxByMapName(PRBRRXMenuItem pMapMenuItemsRBRRX, int numOfItemsMenuItemsRBRRX, std::string mapName)
+	{
+		// Find the RBRRX menu item by trackName. Return index to the menuItem struct or -1
+		if (pMapMenuItemsRBRRX != nullptr && !mapName.empty())
+		{
+			std::string trackName;
+			trackName.reserve(256); // Max length of folder name in RBR_RX plugin
+
+			_ToLowerCase(mapName);
+			for (int idx = 0; idx < numOfItemsMenuItemsRBRRX; idx++)
+			{
+				trackName.assign(pMapMenuItemsRBRRX[idx].szTrackName);
+				if (_iEqual(trackName, mapName, true))
 					return idx;
 			}
 		}
@@ -694,8 +830,7 @@ public:
 		m_recentMapsRBRRX.push_front(std::move(newItem));
 		m_bRecentMapsRBRRXModified = TRUE;
 	}
-
-
+	
 	inline const WCHAR* GetLangStr(const WCHAR* szStrKey) 
 	{ 
 		// Return localized version of the strKey string value (or the original value if no localization available)
@@ -732,6 +867,9 @@ public:
 
 	void /*HRESULT*/ CustomRBRDirectXBeginScene( /*void* objPointer*/ );
 	HRESULT CustomRBRDirectXEndScene(void* objPointer);
+
+	BOOL CustomRBRReplay(const char* szReplayFileName);
+	void CompleteSaveReplayProcess(const std::list<std::wstring>& replayFileQueue);
 
 	//------------------------------------------------------------------------------------------------
 	virtual const char* GetName(void);

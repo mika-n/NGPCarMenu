@@ -10,7 +10,7 @@
 // Windows Header Files:
 #include <windows.h>
 
-// TODO: reference additional headers your program requires here
+// reference additional headers your program requires here
 #include <stdio.h>
 #include <assert.h>
 #include <string>

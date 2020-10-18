@@ -14,16 +14,20 @@
 
 #include "NGPCarMenuAPI.h"
 
+#define RAND_MAX_MIN(max, min) (rand() % (max - min + 1) + min)
+
 #define C_CMD_STAGESTART	0
 #define C_CMD_MAP			1
 #define C_CMD_DECORATION	2
+#define C_CMD_TEXTNOTICE	3
 
 #define NUM_SELECTIONS	(sizeof(g_szMenuSelections) / sizeof(g_szMenuSelections[0]))
 const char* g_szMenuSelections[] =
 {
 	"Start Stage",
 	"> Map",
-	"> Decoration"
+	"> Click here for image decoration",
+	"> Click here for custom text"
 };
 
 #define NUM_DECORATIONIMAGES (sizeof(g_szDecorationImages) / sizeof(g_szDecorationImages[0]))
@@ -37,10 +41,43 @@ const char* g_szDecorationImages[] =
 #define C_SAMPLEIMAGE_ID  100	// Anything above zero value. Each cached image is uniquely identified by ID
 #define C_DECORIMAGE_ID   101
 
+
+#ifndef D3DCOLOR_DEFINED
+typedef DWORD D3DCOLOR;
+#define D3DCOLOR_DEFINED
+#endif
+
+#ifndef D3DCOLOR_ARGB
+#define D3DCOLOR_ARGB(a,r,g,b) ((D3DCOLOR)((((a)&0xff)<<24)|(((r)&0xff)<<16)|(((g)&0xff)<<8)|((b)&0xff)))
+#endif
+
+
 //------------------------------------------------------------------------------------------------//
 
 class CTestPlugin : public IPlugin
 {
+private:
+	IRBRGame*       m_pGame;
+
+	int				m_iSelection;
+	int				m_iMap;
+
+	float			m_fResults[3];
+	char			m_szPlayerName[32];
+
+	int				m_iDecorationImage;
+	bool			m_bShowImage;
+	bool			m_bShowText;
+
+	int             m_iVersionMajor, m_iVersionMinor, m_iVersionBatch, m_iVersionBuild;
+	char		    m_szVersionText[32];
+
+	CNGPCarMenuAPI* m_pNGPCarMenuAPI;
+	DWORD			m_dwPluginID;
+
+	DWORD			m_dwFont1ID;
+	DWORD			m_dwFont2ID;
+
 public:
 	CTestPlugin	( IRBRGame* pGame )	
 		:	m_pGame	( pGame )
@@ -51,6 +88,10 @@ public:
 		m_iDecorationImage = 0;
 		m_dwPluginID = 0;
 		m_bShowImage = true;
+		m_bShowText = false;
+
+		m_iVersionMajor = m_iVersionMinor = m_iVersionBatch = m_iVersionBuild = 0;
+		m_szVersionText[0] = '\0';
 	}
 
 	virtual ~CTestPlugin( void )	
@@ -67,11 +108,20 @@ public:
 		{
 			// Initialize NGPCarMenu API functions to draw custom directX images in this sample plugin
 			m_pNGPCarMenuAPI = new CNGPCarMenuAPI();
+
+			// Get the version of NGPCarMenu plugin. Custom plugin can check that the plugin is at minimum version level (newer NGPCarMenu API is always backward compatible).
+			// If the version is not the expected version then custom plugin can skip calling of InitializePluginIntegration and not to use NGPCarMenu API services.
+			m_pNGPCarMenuAPI->GetVersionInfo(m_szVersionText, sizeof(m_szVersionText), &m_iVersionMajor, &m_iVersionMinor, &m_iVersionBatch, &m_iVersionBuild);
+
 			m_dwPluginID = m_pNGPCarMenuAPI->InitializePluginIntegration("SamplePlug1");
 
 			// Show a sample image at 450,200 SCREEN coordinate position. If position should follow the DrawFrontEndPage RBR coordinates then see MapRBRPointToScreenPoint API function
 			m_pNGPCarMenuAPI->LoadCustomImage(m_dwPluginID, C_SAMPLEIMAGE_ID, g_szDecorationImages[0], 450, 200, 40, 40, IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_TOP);
 			m_pNGPCarMenuAPI->ShowHideImage(m_dwPluginID, C_SAMPLEIMAGE_ID, true);
+
+			// Initialize two different kind of custom fonts (fontID used in DrawTextA/DrawTextW methods)
+			m_dwFont1ID = m_pNGPCarMenuAPI->InitializeFont("Comic Sans MS", 20, D3DFONT_ITALIC | D3DFONT_BOLD);
+			m_dwFont2ID = m_pNGPCarMenuAPI->InitializeFont("Verdana", 12, 0);
 		}
 
 		return "SamplePlug1";
@@ -156,6 +206,7 @@ public:
 		//m_pGame->DrawBox(GEN_BOX_LOGOS_CITROEN, 400.0f, 300.0f );
 	}
 
+
 	//------------------------------------------------------------------------------------------------//
 	virtual void HandleFrontEndEvents( char txtKeyboard, bool bUp, bool bDown, bool bLeft, bool bRight, bool bSelect )
 	{
@@ -167,9 +218,50 @@ public:
 			}
 			else if (m_iSelection == C_CMD_DECORATION)
 			{
+				//
 				// Toggle show/hide image
+				//
 				m_bShowImage = !m_bShowImage;
 				m_pNGPCarMenuAPI->ShowHideImage(m_dwPluginID, C_DECORIMAGE_ID, m_bShowImage);
+			}
+			else if (m_iSelection == C_CMD_TEXTNOTICE)
+			{
+				//
+				// Example of drawing custom text on RBR screen. DrawTextA/DrawTextW methods identify certain text with a textID value (the second parameter). TextID identifier can be used to change the text string of existing label.
+				//
+
+				m_bShowText = !m_bShowText;
+
+				if (m_bShowText)
+				{
+					POINT   textPos;
+					char    szTextBuf[255];
+					wchar_t wszTextBuf[255];
+
+					sprintf_s (szTextBuf,  sizeof(szTextBuf) / sizeof(char),     "Ipsolum %s absolum %s", NPlugin::GetStageName(m_iMap), m_szVersionText);
+					swprintf_s(wszTextBuf, sizeof(szTextBuf) / sizeof(wchar_t), L"This unicode widechar %d should be front of the image", rand());
+
+					// Draw a custom text with custom font style (text background is transparent), char string
+					m_pNGPCarMenuAPI->DrawTextA(m_dwPluginID, 1, 50, 100, szTextBuf, m_dwFont1ID, D3DCOLOR_ARGB(255, 0x7F, 0x7F, 0x0), 0);
+					
+
+					// Draw a custom text on top of the custom image (tip! You may want to use MapRBRPointToScreenPoint method to map RBR menu coordinates to physical screen coordinates. DrawText methods take physical screen coordinates, not RBR in-game menu coordinates)
+					// Uses random opaque (alpha color), random "blue" color tint and a random sliding X-position, widechar string
+					int randomNum = RAND_MAX_MIN(255, 50);
+					m_pNGPCarMenuAPI->MapRBRPointToScreenPoint(30 + (randomNum / 2), 275, &textPos.x, &textPos.y);
+					m_pNGPCarMenuAPI->DrawTextW(m_dwPluginID, 2, textPos.x, textPos.y, wszTextBuf, m_dwFont2ID, D3DCOLOR_ARGB(randomNum, 0xF0, 0x00, randomNum), 0);
+
+
+					// Draw a custom text where the text background is not transparent (clearTarget, overwrites everything behind the text area)
+					m_pNGPCarMenuAPI->DrawTextA(m_dwPluginID, 3, textPos.x-10, textPos.y + 30, szTextBuf, m_dwFont1ID, D3DCOLOR_ARGB(255, 0x10, 0xCC, 0x10), D3DFONT_CLEARTARGET);
+				}
+				else
+				{
+					// Remove all custom text labels (nullptr string value in a specific textID label)
+					m_pNGPCarMenuAPI->DrawTextA(m_dwPluginID, 1, 0, 0, nullptr, 0, 0, 0);
+					m_pNGPCarMenuAPI->DrawTextA(m_dwPluginID, 2, 0, 0, nullptr, 0, 0, 0);
+					m_pNGPCarMenuAPI->DrawTextW(m_dwPluginID, 3, 0, 0, nullptr, 0, 0, 0);
+				}
 			}
 		}
 
@@ -257,41 +349,22 @@ public:
 	/// Is called when the player timer starts (after GO! or in case of a false start)
 	virtual void StageStarted ( int iMap, const char* ptxtPlayerName, bool bWasFalseStart )
 	{
-		m_pGame->SetColor( 1.0f, 1.0f, 1.0f, 1.0f );
-		m_pGame->WriteGameMessage( "Stage Started", 10.0f, 50.0f, 150.0f );
+		// Do nothing
 	}
 
 	//------------------------------------------------------------------------------------------------//
 	/// Is called when player finishes stage ( fFinishTime is 0.0f if player failed the stage )
 	virtual void HandleResults ( float fCheckPoint1, float fCheckPoint2, float fFinishTime, const char* ptxtPlayerName )
 	{
-		//fprintf( fp, "Stage Result for \"%s\": \n[CP1] = %s\n[CP2] = %s\n[Finish] = %s\n\n", ptxtPlayerName, 
-		//			NPlugin::FormatTimeString( txtCP1, fCheckPoint1 ),
-		//			NPlugin::FormatTimeString( txtCP2, fCheckPoint2 ),
-		//			NPlugin::FormatTimeString( txtTimeString, fFinishTime ) );
+		// Do nothing
 	}
 
 	//------------------------------------------------------------------------------------------------//
 	// Is called when a player passed a checkpoint 
 	virtual void CheckPoint ( float fCheckPointTime, int iCheckPointID, const char* ptxtPlayerName )
 	{
-		m_pGame->SetColor( 1.0f, 1.0f, 1.0f, 1.0f );
-		m_pGame->WriteGameMessage( "CHECKPOINT!!!!!!!!!!", 5.0f, 50.0f, 250.0f );
+		// Do nothing
 	}
-
-private:
-	IRBRGame*		m_pGame;
-	int				m_iSelection;
-	int				m_iMap;
-
-	float			m_fResults[ 3 ];
-	char			m_szPlayerName[ 32 ];
-
-	int				m_iDecorationImage;	
-	bool			m_bShowImage;
-
-	CNGPCarMenuAPI* m_pNGPCarMenuAPI;
-	DWORD			m_dwPluginID;
 };
 
 #endif

@@ -39,6 +39,15 @@
     <ClCompile Include="D3D9Helpers.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="RBRRX_Integration.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="RBRTM_Integration.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="FileWatcher.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="NGPCarMenu.def">
@@ -89,6 +98,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="resource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="FileWatcher.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

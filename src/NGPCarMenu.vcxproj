@@ -102,6 +102,7 @@
     <ClCompile Include="D3D9Font\SharedFont.cpp" />
     <ClCompile Include="D3D9Helpers.cpp" />
     <ClCompile Include="Detourxs\detourxs.cpp" />
+    <ClCompile Include="FileWatcher.cpp" />
     <ClCompile Include="PluginHelpers.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
       </PrecompiledHeader>
@@ -110,6 +111,8 @@
     </ClCompile>
     <ClCompile Include="NGPCarMenu.cpp" />
     <ClCompile Include="RBRAPI.cpp" />
+    <ClCompile Include="RBRRX_Integration.cpp" />
+    <ClCompile Include="RBRTM_Integration.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\ReadMe.md" />
@@ -128,6 +131,7 @@
     <ClInclude Include="D3D9Font\SharedFont.h" />
     <ClInclude Include="D3D9Helpers.h" />
     <ClInclude Include="Detourxs\detourxs.h" />
+    <ClInclude Include="FileWatcher.h" />
     <ClInclude Include="IPlugin.h" />
     <ClInclude Include="IRBRGame.h" />
     <ClInclude Include="PluginHelpers.h" />
