@@ -68,6 +68,7 @@ copy "..\ReadMe.md"          "%RELEASE_FOLDER%\Plugins\%APPNAME%\"
 copy "..\ReadMe.md"          "%RELEASE_FOLDER%\Plugins\%APPNAME%\ReadMe.txt"
 
 copy "..\misc\maps\*.png"    "%RELEASE_FOLDER%\Plugins\%APPNAME%\preview\maps\"
+copy "..\misc\maps\*.txt"    "%RELEASE_FOLDER%\Plugins\%APPNAME%\preview\maps\"
 
 PUSHD "%RELEASE_FOLDER%\"
 del "..\%RELEASE_PKG%"
