@@ -47,6 +47,11 @@
 
 #include "D3D9Helpers.h"
 
+#ifndef D3DX_PI
+//#define D3DX_PI 3.1415926535897932384626
+#define D3DX_PI 3.14159265f
+#endif
+
 //#if USE_DEBUG == 1
 //#include "NGPCarMenu.h"
 //#endif
@@ -1434,12 +1439,13 @@ HRESULT D3D9CreateRectangleVertexTexBufferFromFile(const LPDIRECT3DDEVICE9 pD3De
 
 			if (dwFlags & IMAGE_TEXTURE_POSITION_BOTTOM)
 				scaled_y = (y + cy) - scaled_cy;
+			else if (dwFlags & IMAGE_TEXTURE_POSITION_VERTICAL_CENTER)
+				scaled_y = y + ((cy - scaled_cy) / 2.0f);
 
 			if (dwFlags & IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER)
 				scaled_x = x + ((cx - scaled_cx) / 2.0f);
-
-			if (dwFlags & IMAGE_TEXTURE_POSITION_VERTICAL_CENTER)
-				scaled_y = y + ((cy - scaled_cy) / 2.0f);
+			else if (dwFlags & IMAGE_TEXTURE_POSITION_HORIZONTAL_RIGHT)
+				scaled_x = (x + cx) - scaled_cx;
 
 			hResult = D3D9CreateRectangleVertexTex2D(scaled_x, scaled_y, scaled_cx, scaled_cy, pOutImageTexture->vertexes2D, sizeof(pOutImageTexture->vertexes2D));
 		}
@@ -1493,24 +1499,110 @@ HRESULT D3D9CreateRectangleVertexBuffer(const LPDIRECT3DDEVICE9 pD3Device, float
 }
 
 
+// 
+// Create a DX9 vertex buffer to for a colored circle
+//
+// The base of the code derived from https://stackoverflow.com/questions/21330429/draw-point-or-filled-in-circle (posted by Typ1232)
+// Modified here for NGPCarMenu plugin purposes by mika-n.
+//
+/*
+#define CIRCLE_RESOLUTION 64
+HRESULT D3D9CreateCircleVertexBuffer(const LPDIRECT3DDEVICE9 pD3Device, float mx, float my, float r, LPDIRECT3DVERTEXBUFFER9* pOutVertexBuffer, DWORD color)
+{
+	HRESULT hResult;
+	LPDIRECT3DVERTEXBUFFER9 pTempVertexBuffer = nullptr;
+	CUSTOM_VERTEX_2D circleVertexes[CIRCLE_RESOLUTION + 1];
+
+	if (pD3Device == nullptr || pOutVertexBuffer == nullptr)
+		return E_INVALIDARG;
+
+	SAFE_RELEASE((*pOutVertexBuffer));
+
+	hResult = pD3Device->CreateVertexBuffer(sizeof(circleVertexes), 0, CUSTOM_VERTEX_FORMAT_2D, D3DPOOL_DEFAULT, &pTempVertexBuffer, nullptr);
+	if (SUCCEEDED(hResult))
+	{
+		void* pData;
+
+		for (int i = 0; i < CIRCLE_RESOLUTION + 1; i++)
+		{
+			circleVertexes[i].x = mx + r * cos(D3DX_PI * (i / (CIRCLE_RESOLUTION / 2.0f)));
+			circleVertexes[i].y = my + r * sin(D3DX_PI * (i / (CIRCLE_RESOLUTION / 2.0f)));
+			circleVertexes[i].z = 0;
+			circleVertexes[i].rhw = 1;
+			circleVertexes[i].color = color;
+		}
+
+		if (SUCCEEDED(hResult)) hResult = pTempVertexBuffer->Lock(0, 0, (void**)&pData, 0);
+		if (SUCCEEDED(hResult)) memcpy(pData, circleVertexes, sizeof(circleVertexes));
+		if (SUCCEEDED(hResult)) hResult = pTempVertexBuffer->Unlock();
+
+		if (SUCCEEDED(hResult))
+			*pOutVertexBuffer = pTempVertexBuffer; // Caller's responsibility to release the returned vertex buffer object
+		else
+			SAFE_RELEASE(pTempVertexBuffer);
+	}
+
+	return hResult;
+}
+*/
+
+
+#define CIRCLE_RESOLUTION 8
+void D3D9DrawPrimitiveCircle(const LPDIRECT3DDEVICE9 pD3Device, float mx, float my, float r, DWORD color)
+{
+	CUSTOM_VERTEX_2D circleVertexes[CIRCLE_RESOLUTION];
+
+	for (int i = 0; i < CIRCLE_RESOLUTION; i++)
+	{
+		circleVertexes[i].x = mx + r * cosf(D3DX_PI * (i / (CIRCLE_RESOLUTION / 2.0f)));
+		circleVertexes[i].y = my + r * sinf(D3DX_PI * (i / (CIRCLE_RESOLUTION / 2.0f)));
+		circleVertexes[i].z = 0;
+		circleVertexes[i].rhw = 1;
+		circleVertexes[i].color = color;
+	}
+
+	pD3Device->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
+	pD3Device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+	//pD3Device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_MAX);			// D3DBLENDOP_MIN OR MAX
+	pD3Device->DrawPrimitiveUP(D3DPT_TRIANGLEFAN, CIRCLE_RESOLUTION-1, &circleVertexes, sizeof(CUSTOM_VERTEX_2D));
+}
+
+
 //
 // Draw D3D9 texture vertex (usually shape of rectangle) and use a supplied custom texture
 //
-void D3D9DrawVertexTex2D(const LPDIRECT3DDEVICE9 pD3Device, IDirect3DTexture9* pTexture, const CUSTOM_VERTEX_TEX_2D* vertexes2D)
+void D3D9DrawVertexTex2D(const LPDIRECT3DDEVICE9 pD3Device, IDirect3DTexture9* pTexture, const CUSTOM_VERTEX_TEX_2D* vertexes2D, CD3D9RenderStateCache* pRenderStateCache)
 {
 	// Caller's responsibility to make sure the pD3Device and texture and vertexes2D parameters are not NULL (this method 
 	// may be called several times per frame, so no need to do extra paranoid checks each time).
-
-	pD3Device->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_MODULATE);
-	pD3Device->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
-	pD3Device->SetTextureStageState(0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-	pD3Device->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_MODULATE);
-	pD3Device->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
-	pD3Device->SetTextureStageState(0, D3DTSS_CONSTANT, D3DCOLOR_ARGB(255, 255, 255, 255));
-	pD3Device->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_CONSTANT);
-	//pD3Device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
-	//pD3Device->SetRenderState(D3DRS_AMBIENT, D3DCOLOR_ARGB(255, 255, 255, 255));
-	pD3Device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+	if (pRenderStateCache == nullptr)
+	{
+		pD3Device->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_MODULATE);
+		pD3Device->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
+		pD3Device->SetTextureStageState(0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+		pD3Device->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_MODULATE);
+		pD3Device->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
+		pD3Device->SetTextureStageState(0, D3DTSS_CONSTANT, D3DCOLOR_ARGB(255, 255, 255, 255));
+		pD3Device->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_CONSTANT);
+		//pD3Device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+		//pD3Device->SetRenderState(D3DRS_AMBIENT, D3DCOLOR_ARGB(255, 255, 255, 255));
+		pD3Device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+	}
+	else
+	{
+		// Render state cache defined. Set stage and state changes via a cache,so caller can restore all DX9 stage changes
+		pRenderStateCache->SetTextureStageState(D3DTSS_COLOROP, D3DTOP_MODULATE);
+		pRenderStateCache->SetTextureStageState(D3DTSS_COLORARG1, D3DTA_TEXTURE);
+		pRenderStateCache->SetTextureStageState(D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+		pRenderStateCache->SetTextureStageState(D3DTSS_ALPHAOP, D3DTOP_MODULATE);
+		pRenderStateCache->SetTextureStageState(D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
+		pRenderStateCache->SetTextureStageState(D3DTSS_CONSTANT, D3DCOLOR_ARGB(255, 255, 255, 255));
+		pRenderStateCache->SetTextureStageState(D3DTSS_ALPHAARG2, D3DTA_CONSTANT);
+		//pRenderStateCache->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+		//pRenderStateCache->SetRenderState(D3DRS_AMBIENT, D3DCOLOR_ARGB(255, 255, 255, 255));
+		pRenderStateCache->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+	}
+	
 	pD3Device->SetFVF(CUSTOM_VERTEX_FORMAT_TEX_2D);
 	pD3Device->SetTexture(0, pTexture);
 	pD3Device->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, vertexes2D, sizeof(CUSTOM_VERTEX_TEX_2D));

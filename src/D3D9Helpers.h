@@ -135,12 +135,21 @@ typedef struct {
 }D3D9RENDERSTATECACHEITEM;
 typedef D3D9RENDERSTATECACHEITEM* PD3D9RENDERSTATECACHEITEM;
 
+typedef struct {
+	D3DTEXTURESTAGESTATETYPE stageStateType;
+	DWORD value;
+}D3D9STAGESTATECACHEITEM;
+typedef D3D9STAGESTATECACHEITEM* PD3D9STAGESTATECACHEITEM;
+
+
 class CD3D9RenderStateCache
 {
 protected:
 	LPDIRECT3DDEVICE9 m_pD3Device;
 	BOOL m_bAutoRestore;
-	std::vector<D3D9RENDERSTATECACHEITEM> m_stateCacheList;
+	std::vector<D3D9RENDERSTATECACHEITEM> m_renderStateCacheList;
+	std::vector<D3D9STAGESTATECACHEITEM>  m_stageStateCacheList;
+	std::vector<DWORD> m_FVFStateCacheList;
 
 public:
 	CD3D9RenderStateCache(LPDIRECT3DDEVICE9 pD3Device, BOOL autoRestore = true)
@@ -153,22 +162,51 @@ public:
 	{
 		DWORD oldValue;
 		if (SUCCEEDED(m_pD3Device->GetRenderState(stateType, &oldValue)))
-			m_stateCacheList.push_back({ stateType, oldValue });
+			m_renderStateCacheList.push_back({ stateType, oldValue });
 
 		return m_pD3Device->SetRenderState(stateType, value);
 	}
 
+	HRESULT SetTextureStageState(D3DTEXTURESTAGESTATETYPE stageStateType, DWORD value)
+	{
+		DWORD oldValue;
+		if (SUCCEEDED(m_pD3Device->GetTextureStageState(0, stageStateType, &oldValue)))
+			m_stageStateCacheList.push_back({ stageStateType, oldValue });
+
+		return m_pD3Device->SetTextureStageState(0, stageStateType, value);
+	}
+
+	HRESULT SetFVF(DWORD value)
+	{
+		DWORD oldValue;
+		if (SUCCEEDED(m_pD3Device->GetFVF(&oldValue)))
+			m_FVFStateCacheList.push_back(oldValue);
+
+		return m_pD3Device->SetFVF(value);
+	}
+
+
 	void Clear()
 	{
-		m_stateCacheList.clear();
+		m_renderStateCacheList.clear();
+		m_stageStateCacheList.clear();
+		m_FVFStateCacheList.clear();
 	}
 
 	void RestoreState()
 	{
-		for (auto& cacheItem: m_stateCacheList)
+		// TODO: Restore from the end of the list to beginning to make sure that if the same property is set multiple times the status is restored in correct order
+		// Change the vector to stack type of list?
+		for (auto& cacheItem: m_renderStateCacheList)
 			m_pD3Device->SetRenderState(cacheItem.stateType, cacheItem.value);
 
-		m_stateCacheList.clear();
+		for (auto& cacheItem : m_stageStateCacheList)
+			m_pD3Device->SetTextureStageState(0, cacheItem.stageStateType, cacheItem.value);
+
+		for (auto& cacheItem : m_FVFStateCacheList)
+			m_pD3Device->SetFVF(cacheItem);
+
+		Clear();
 	}
 
 	void EnableTransparentAlphaBlending()
@@ -197,14 +235,54 @@ public:
 #define IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO 0x01		// Bit1: 1=KeepAspectRatio, 0=Stretch the img to fill the rendering rectangle area
 #define IMAGE_TEXTURE_POSITION_BOTTOM			 0x02		// Bit2: 1=Image positioned on the bottom of the area, 0=Top of the area
 #define IMAGE_TEXTURE_ALPHA_BLEND				 0x04		// Bit3: 1=Use alpha blending if PNG has alpha channel (usually transparent background color), 0=No alpha blending
-#define IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER 0x08		// Bit4: 1=Align the picture horizontally in center position in the drawing rectangle area. 0=Left align
-#define IMAGE_TEXTURE_POSITION_VERTICAL_CENTER   0x10		// Bit5: 1=Align the picture vertically in center position in the drawing rectangle area. 0=Top align (unless POSITION_BOTTOM is set)
-#define IMAGE_TEXTURE_SCALE_PRESERVE_ORIGSIZE    0x20		// Bit6: 1=Keep the original picture size but optionally center it in drawing rectangle. 0=If drawing rect is defined then scale the picture (keeping aspect ratio or ignoring aspect ratio)
+#define IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER 0x08		// Bit4: 1=Align the picture horizontally to center position in the drawing rectangle area. 0=Left align
+#define IMAGE_TEXTURE_POSITION_VERTICAL_CENTER   0x10		// Bit5: 1=Align the picture vertically to center position in the drawing rectangle area. 0=Top align (unless POSITION_BOTTOM is set)
+#define IMAGE_TEXTURE_SCALE_PRESERVE_ORIGSIZE    0x20		// Bit6: 1=Keep the original picture size but optionally center it within the drawing rectangle. 0=If drawing rect is defined then scale the picture (keeping aspect ratio or ignoring aspect ratio)
+#define IMAGE_TEXTURE_POSITION_HORIZONTAL_RIGHT  0x40		// Bit7: 1=Align the picture horizontally to right (0=left align if neither horizontal_center is set)
 
 #define IMAGE_TEXTURE_STRETCH_TO_FILL			 0x00  // Default behaviour is to stretch the image to fill the specified draw area
 #define IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_TOP	  (IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO)
 #define IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_BOTTOM (IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO | IMAGE_TEXTURE_POSITION_BOTTOM)
 #define IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_CENTER (IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO | IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER | IMAGE_TEXTURE_POSITION_VERTICAL_CENTER)
+
+
+//-----------------------------------------------------------------------------------------------------------------------
+// INT and FLOAT point structs with overloaded operators (to make them compatible with vector/list comparison methods
+//
+typedef struct _POINT_int
+{
+	int x;
+	int y;
+
+	bool operator<(const struct _POINT_int& b) const
+	{
+		return (x < b.x && y < b.y);
+	}
+
+	bool operator==(const struct _POINT_int& b) const
+	{
+		return (x == b.x && y == b.y);
+	}
+} POINT_int;
+typedef POINT_int* PPOINT_int;
+
+typedef struct _POINT_float
+{
+	float x;
+	float y;
+
+	bool operator<(const struct _POINT_float& b) const
+	{
+		return (x < b.x&& y < b.y);
+	}
+
+	bool operator==(const struct _POINT_float& b) const
+	{
+		return (x == b.x && y == b.y);
+	}
+} POINT_float;
+typedef POINT_float* PPOINT_float;
+
 
 //-----------------------------------------------------------------------------------------------------------------------
 //
@@ -255,9 +333,10 @@ typedef IMAGE_TEXTURE* PIMAGE_TEXTURE;
 extern HRESULT D3D9CreateRectangleVertexTexBufferFromFile(const LPDIRECT3DDEVICE9 pD3Device, const std::wstring& fileName, float x, float y, float cx, float cy, IMAGE_TEXTURE* pOutImageTexture, DWORD dwFlags = 0); // Create D3D9 textured rect vertex by loading the texture (image) from a file
 extern HRESULT D3D9CreateRectangleVertexBuffer(const LPDIRECT3DDEVICE9 pD3Device, float x, float y, float cx, float cy, LPDIRECT3DVERTEXBUFFER9* pOutVertexBuffer, DWORD color = D3DCOLOR_ARGB(60, 255, 255, 255));	  // Create D3D9 rect vertex (no texture fill)
 
-extern void    D3D9DrawVertexTex2D(const LPDIRECT3DDEVICE9 pD3Device, IDirect3DTexture9* pTexture, const CUSTOM_VERTEX_TEX_2D* vertexes2D); // Draw rectangle vertex using the specified texture
-extern void    D3D9DrawVertex2D(const LPDIRECT3DDEVICE9 pD3Device, const LPDIRECT3DVERTEXBUFFER9 pVertexBuffer); // Draw 2D graphical rectangle vertex
+extern void D3D9DrawVertexTex2D(const LPDIRECT3DDEVICE9 pD3Device, IDirect3DTexture9* pTexture, const CUSTOM_VERTEX_TEX_2D* vertexes2D, CD3D9RenderStateCache* pRenderStateCache = nullptr); // Draw rectangle vertex using the specified texture
+extern void D3D9DrawVertex2D(const LPDIRECT3DDEVICE9 pD3Device, const LPDIRECT3DVERTEXBUFFER9 pVertexBuffer); // Draw 2D graphical rectangle vertex
 
+extern void D3D9DrawPrimitiveCircle(const LPDIRECT3DDEVICE9 pD3Device, float mx, float my, float r, DWORD color); // Draw 2D graphical circle (filled with color)
 
 //--------------------------------------------------------------------------------------------------------------------------------
 //

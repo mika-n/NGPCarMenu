@@ -54,6 +54,7 @@ typedef BOOL  (APIENTRY* tAPI_DrawTextW)(DWORD pluginID, int textID, int posX, i
 #define IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER 0x08  // Bit4: 1=Align the picture horizontally in center position in the drawing rectangle area. 0=Left align
 #define IMAGE_TEXTURE_POSITION_VERTICAL_CENTER   0x10  // Bit5: 1=Align the picture vertically in center position in the drawing rectangle area. 0=Top align (unless POSITION_BOTTOM is set)
 #define IMAGE_TEXTURE_SCALE_PRESERVE_ORIGSIZE    0x20  // Bit6: 1=Keep the original picture size but optionally center it in drawing rectangle. 0=If drawing rect is defined then scale the picture (keeping aspect ratio or ignoring aspect ratio)
+#define IMAGE_TEXTURE_POSITION_HORIZONTAL_RIGHT  0x40  // Bit7: 1=Align the picture horizontally to right (0=left align if neither horizontal_center is set)
 
 #define IMAGE_TEXTURE_STRETCH_TO_FILL			 0x00  // Default behaviour is to stretch the image to fill the specified draw area, no alpha blending
 #define IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_TOP	  (IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO)

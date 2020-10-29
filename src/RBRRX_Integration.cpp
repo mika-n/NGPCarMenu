@@ -39,6 +39,125 @@ namespace fs = std::filesystem;
 
 //WCHAR g_wszCurrentBTBTrackName[256]; // The current BTB wchar track name (loadTrack or replay track name)
 
+
+//------------------------------------------------------------------------------------------------
+//
+int CNGPCarMenu::RBRRX_FindMenuItemIdxByFolderName(PRBRRXMenuItem pMapMenuItemsRBRRX, int numOfItemsMenuItemsRBRRX, const std::string& folderName)
+{
+	// Find the RBRRX menu item by folderName (map identifier because BTB tracks don't have unique ID numbers). Return index to the menuItem struct or -1
+	if (pMapMenuItemsRBRRX != nullptr && !folderName.empty())
+	{
+		std::string trackFolder;
+		trackFolder.reserve(256); // Max length of folder name in RBR_RX plugin
+		//_ToLowerCase(folderName);
+
+		for (int idx = 0; idx < numOfItemsMenuItemsRBRRX; idx++)
+		{
+			trackFolder.assign(pMapMenuItemsRBRRX[idx].szTrackFolder);
+			//DebugPrint("DEBUG: FindRBRRXMenuItemIdxByFolderName %d %s=%s", idx, trackFolder.c_str(), folderName.c_str());
+			if (_iEqual(trackFolder, folderName, true))
+				return idx;
+		}
+	}
+
+	return -1;
+}
+
+int CNGPCarMenu::RBRRX_FindMenuItemIdxByMapName(PRBRRXMenuItem pMapMenuItemsRBRRX, int numOfItemsMenuItemsRBRRX, std::string mapName)
+{
+	// Find the RBRRX menu item by trackName. Return index to the menuItem struct or -1
+	if (pMapMenuItemsRBRRX != nullptr && !mapName.empty())
+	{
+		std::string trackName;
+		trackName.reserve(256); // Max length of folder name in RBR_RX plugin
+
+		_ToLowerCase(mapName);
+		for (int idx = 0; idx < numOfItemsMenuItemsRBRRX; idx++)
+		{
+			trackName.assign(pMapMenuItemsRBRRX[idx].szTrackName);
+			if (_iEqual(trackName, mapName, true))
+				return idx;
+		}
+	}
+
+	return -1;
+}
+
+int CNGPCarMenu::RBRRX_CalculateNumOfValidMapsInRecentList(PRBRRXMenuItem pMapMenuItemsRBRRX, int numOfItemsMenuItemsRBRRX)
+{
+	int numOfRecentMaps = 0;
+	int menuIdx;
+
+	auto it = m_recentMapsRBRRX.begin();
+	while (it != m_recentMapsRBRRX.end())
+	{
+		if (!(*it)->folderName.empty() && numOfRecentMaps < m_recentMapsMaxCountRBRRX)
+		{
+			menuIdx = RBRRX_FindMenuItemIdxByFolderName(pMapMenuItemsRBRRX, numOfItemsMenuItemsRBRRX, (*it)->folderName);
+			if (menuIdx >= 0 || pMapMenuItemsRBRRX == nullptr)
+			{
+				// The mapID in recent list is valid. Refresh the menu entry name as "[recent idx] Stage name"
+				numOfRecentMaps++;
+				if (pMapMenuItemsRBRRX != nullptr)
+				{
+					(*it)->name = "[" + std::to_string(numOfRecentMaps) + "] ";
+					(*it)->name.append(pMapMenuItemsRBRRX[menuIdx].szTrackName);
+					(*it)->physicsID = pMapMenuItemsRBRRX[menuIdx].physicsID;
+				}
+
+				// Go to the next item in list iterator
+				++it;
+			}
+			else
+			{
+				// The map in recent list is no longer in stages menu list. Invalidate the recent item (ie. it is not added as a shortcut to RBRTM Shakedown stages menu)
+				it = m_recentMapsRBRRX.erase(it);
+			}
+		}
+		else
+		{
+			// Invalid map or "too many items". Remove the item if the menu data was defined
+			if (pMapMenuItemsRBRRX != nullptr)
+				it = m_recentMapsRBRRX.erase(it);
+			else
+				++it;
+		}
+	}
+
+	return numOfRecentMaps;
+}
+
+void CNGPCarMenu::RBRRX_AddMapToRecentList(std::string folderName)
+{
+	if (folderName.empty()) return;
+	_ToLowerCase(folderName); // RecentRBRRX vector list should have lowercase folder names
+
+	// Add map folderName to top of the recentMaps list (if already in the list then move it to top, otherwise add as a new item and remove the last item if the list is full)
+	for (auto& iter = m_recentMapsRBRRX.begin(); iter != m_recentMapsRBRRX.end(); ++iter)
+	{
+		if (folderName.compare((*iter)->folderName) == 0)
+		{
+			// MapID already in the recent list. Move it to the top of the list (no need to re-add it to the list)
+			if (iter != m_recentMapsRBRRX.begin())
+			{
+				m_recentMapsRBRRX.splice(m_recentMapsRBRRX.begin(), m_recentMapsRBRRX, iter, std::next(iter));
+				m_bRecentMapsRBRRXModified = TRUE;
+			}
+
+			// Must return after moving the item to top of list because for-iterator is now invalid because the list was modified
+			return;
+		}
+	}
+
+	// BTB folderName is not yet in the recent list. Add it to the top of the list
+	auto newItem = std::make_unique<RBRRX_MapInfo>();
+	newItem->folderName = folderName;
+	//DebugPrint("DEBUG: RBRRX_RecentMapX=%s", newItem->folderName.c_str());
+	m_recentMapsRBRRX.push_front(std::move(newItem));
+	m_bRecentMapsRBRRXModified = TRUE;
+}
+
+
 //------------------------------------------------------------------------------------------------
 // Focus Nth RBRRX menu row (scroll the menu if necessary, ie. change the first visible stage entry in the menu list)
 //
@@ -290,7 +409,7 @@ typedef void(__cdecl* tRBRRXLoadTrackSetup3)(__int32 value1, __int32 value2);
 //----------------------------------------------------------------------------------------------------
 // Prepare a replay loader to load BTB track instead of tranditional RBR track in a map slot #41 (Corte D'Arbroz)
 //
-BOOL CNGPCarMenu::RBRRX_PrepareReplayTrack(std::string mapName)
+BOOL CNGPCarMenu::RBRRX_PrepareReplayTrack(const std::string& mapName)
 {
 	PRBRRXPlugin pTmpRBRRXPlugin;
 
@@ -311,7 +430,7 @@ BOOL CNGPCarMenu::RBRRX_PrepareReplayTrack(std::string mapName)
 	if (pTmpRBRRXPlugin == nullptr)
 		return FALSE;
 
-	int mapMenuIdx = FindRBRRXMenuItemIdxByMapName(pTmpRBRRXPlugin->pMenuItems, pTmpRBRRXPlugin->numOfItems, mapName);
+	int mapMenuIdx = RBRRX_FindMenuItemIdxByMapName(pTmpRBRRXPlugin->pMenuItems, pTmpRBRRXPlugin->numOfItems, mapName);
 	if (mapMenuIdx < 0)
 	{
 		LogPrint("WARNING. The replay file is linked to '%s' BTB track, but it is missing. Replay failed", mapName.c_str());
@@ -382,6 +501,289 @@ void CNGPCarMenu::RBRRX_LoadTrack(int mapMenuIdx)
 	WriteOpCodeInt32((LPVOID)0x1660804, 41);
 
 	//m_pGame->StartGame(41, 0, IRBRGame::ERBRWeatherType::GOOD_WEATHER, IRBRGame::ERBRTyreTypes::TYRE_GRAVEL_DRY, nullptr);
+}
+
+
+BOOL CNGPCarMenu::RBRRX_ReadStartSplitsFinishPacenoteDistances(const std::string& folderName, float* startDistance, float* split1Distance, float* split2Distance, float* finishDistance)
+{
+	std::string sIniFileName;
+	char szKeyName[12];
+	int iPacenotesIdx;
+	int iPacenoteType;
+	
+	*startDistance  = -1;
+	*split1Distance = -1;
+	*split2Distance = -1;
+	*finishDistance = -1;
+
+	try
+	{
+		CSimpleIni btbPaceotesINIFile;
+		sIniFileName = m_sRBRRootDir + "\\RX_CONTENT\\" + folderName + "\\pacenotes.ini";
+		btbPaceotesINIFile.LoadFile(sIniFileName.c_str());
+		iPacenotesIdx = min(btbPaceotesINIFile.GetLongValue("PACENOTES", "count", 0) - 1, 1000000);
+
+		//for (; iPacenotesIdx >= 0; iPacenotesIdx--)
+		for (int idx = 0; idx < iPacenotesIdx; idx++)
+		{
+			snprintf(szKeyName, sizeof(szKeyName), "P%d", idx /*iPacenotesIdx*/);
+			iPacenoteType = btbPaceotesINIFile.GetLongValue(szKeyName, "type", -1);
+
+			if (iPacenoteType == 21 && *startDistance < 0)
+			{
+				*startDistance = static_cast<float>(btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0));
+			}
+			else if (iPacenoteType == 23)
+			{
+				if (*split1Distance < 0) *split1Distance = static_cast<float>(btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0));
+				else *split2Distance = static_cast<float>(btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0));
+			}
+			else if (iPacenoteType == 22 && *finishDistance < 0)
+			{
+				*finishDistance = static_cast<float>(btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0));
+				break;
+			}
+		}
+	}
+	catch (...)
+	{
+		return FALSE;
+	}
+
+	// Some original RBR maps don't have type21 start pointer, weird. If the startDistance is missing then set it as zero.
+	if (*startDistance < 0) *startDistance = 0.0f;
+
+	return TRUE;
+}
+
+
+//----------------------------------------------------------------------------------------------------
+// Read driveline data and translate float coordinates to int coordinates to speed up calculations (minimap doesn't need super precision)
+// Helpful driveline.ini file structure explanation by JHarro/black.f. https://www.racedepartment.com/threads/just-a-test-track.6827/#post-418388
+// - 3 floats: x, y, z coordinates
+// - 3 floats: x, y, z tangent to the next point (general direction to the next point)
+// - 1 float:  Distance from the start point along the road (driveline curve)
+// - 1 float:  Always zero
+//
+int CNGPCarMenu::RBRRX_ReadDriveline(const std::string& folderName, CDrivelineSource& drivelineSource)
+{
+	std::string sINIFileName;
+	std::ifstream drivelineFile;
+
+	std::string sTextLine;
+	size_t delimCharPos;
+	bool coordValuesDataAlreadyReserved = false;
+	std::vector<std::string> coordValues;
+	float x, y, distance;
+
+	sINIFileName = m_sRBRRootDir + "\\RX_Content\\" + folderName + "\\driveline.ini";
+
+	DebugPrint("RBRRX_ReadDriveline. Reading driveline from %s", sINIFileName.c_str());
+
+	drivelineSource.vectDrivelinePoint.clear();
+
+	if (folderName.empty() || !fs::exists(sINIFileName))
+		return 0;
+
+	drivelineSource.pointMin.x = drivelineSource.pointMin.y = 9999999.0f;
+	drivelineSource.pointMax.x = drivelineSource.pointMax.y = -9999999.0f;
+
+	try
+	{
+		// Read start/split1/split2/finish distance (from the beginning of driveline data)
+		RBRRX_ReadStartSplitsFinishPacenoteDistances(folderName, &drivelineSource.startDistance, &drivelineSource.split1Distance, &drivelineSource.split2Distance, &drivelineSource.finishDistance);
+
+		// Read driveline data (this routine expects the driveline data to be already sorted by distance in ascending order)
+		drivelineFile.open(sINIFileName);
+		while (std::getline(drivelineFile, sTextLine))
+		{
+			// Skip all other but "Kx=coordX, coordY" lines 
+			if (sTextLine.empty())
+				continue;
+
+			if (sTextLine[0] != 'K')
+				continue;
+
+			// Take the first two coordinates from the driveline data line (x,y)
+			delimCharPos = sTextLine.find_first_of('=');
+			if (delimCharPos == std::string::npos || sTextLine.length() <= delimCharPos + 1)
+				continue;
+
+			if (_SplitString(sTextLine.substr(delimCharPos + 1), coordValues, ",", false, true, 7) < 7)
+				continue;
+
+			// Read distance from drivelineData, but skip the coordinate if it's distance is before the startline
+			distance = std::stof(coordValues[6]);
+			if (distance < drivelineSource.startDistance)
+				continue;
+
+			if (drivelineSource.finishDistance > 0 && distance > drivelineSource.finishDistance)
+				break;
+
+			x = std::stof(coordValues[0]);			
+			y = std::stof(coordValues[1]);			
+
+			if (x < drivelineSource.pointMin.x) drivelineSource.pointMin.x = x;
+			if (x > drivelineSource.pointMax.x) drivelineSource.pointMax.x = x;
+			if (y < drivelineSource.pointMin.y) drivelineSource.pointMin.y = y;
+			if (y > drivelineSource.pointMax.y) drivelineSource.pointMax.y = y;
+
+			drivelineSource.vectDrivelinePoint.push_back({ {x, y}, distance });
+		}
+	}
+	catch (...)
+	{
+		drivelineSource.vectDrivelinePoint.clear();
+		LogPrint("ERROR. RBRRX_ReadDriveline failed to read or invalid values in %s", sINIFileName.c_str());
+	}
+
+	return drivelineSource.vectDrivelinePoint.size();
+}
+
+
+//----------------------------------------------------------------------------------------------------
+// Draw a minimap of BTB track using the driveline data
+//
+void CNGPCarMenu::RBRRX_DrawMinimap(const std::string& folderName, int screenID)
+{
+	static CMinimapData* prevMinimapData = nullptr;
+	RECT minimapRect;
+
+	if (m_minimapRBRRXPictureRect.bottom == -1)
+		return; // Minimap drawing disabled
+
+	// ScreenID 0 = Stages menu list
+	// ScreenID 1 = The weather settings of the chosen stage menu screen (draw the minimap in pre-defined location in top right corner)
+	if (screenID == 0)
+	{
+		if (m_minimapRBRRXPictureRect.top == 0 && m_minimapRBRRXPictureRect.right == 0 && m_minimapRBRRXPictureRect.left == 0 && m_minimapRBRRXPictureRect.bottom == 0)
+		{
+/*			if (m_mapRBRRXPictureRect.bottom == -1 || m_latestMapRBRRX.imageTexture.pTexture == nullptr)
+			{
+				// Stage map preview image is missing. Show the minimap in bigger size (the default map image size)
+				RBRAPI_MapRBRPointToScreenPoint(390.0f, 320.0f, (int*)&minimapRect.left, (int*)&minimapRect.top);
+				RBRAPI_MapRBRPointToScreenPoint(630.0f, 470.0f - 21.0f, (int*)&minimapRect.right, (int*)&minimapRect.bottom);
+			}
+			else if (g_rectRBRWndClient.right - m_mapRBRRXPictureRect.right >= 100)
+			{
+				// Map image set and the screen resolution is wide enough to leave empty space on the right side of the map preview image. Place the minimap on the right side of the map preview img
+				minimapRect.left = m_mapRBRRXPictureRect.right;
+				minimapRect.top = m_mapRBRRXPictureRect.top;
+				minimapRect.right = min(minimapRect.left + 300, g_rectRBRWndClient.right - 5);
+				minimapRect.bottom = m_mapRBRRXPictureRect.bottom - g_pFontCarSpecModel->GetTextHeight();
+			}
+			else
+			{
+				// Map image set, but the resolution is not wide enough to show both the map and minimap side by side. Draw smaller minimap on top of the map image
+				minimapRect.left = m_mapRBRRXPictureRect.right - ((m_mapRBRRXPictureRect.right - m_mapRBRRXPictureRect.left) / 3);
+				minimapRect.top = m_mapRBRRXPictureRect.bottom - ((m_mapRBRRXPictureRect.bottom - m_mapRBRRXPictureRect.top) / 2);
+				minimapRect.right = m_mapRBRRXPictureRect.right;
+				minimapRect.bottom = m_mapRBRRXPictureRect.bottom - g_pFontCarSpecModel->GetTextHeight();
+			}
+*/
+			// Draw minimap on top of the stage preview img
+			//RBRAPI_MapRBRPointToScreenPoint(390.0f, 320.0f, (int*)&minimapRect.left, (int*)&minimapRect.top);
+			//RBRAPI_MapRBRPointToScreenPoint(630.0f, 470.0f - (g_pFontCarSpecModel->GetTextHeight() * 1.5f), (int*)&minimapRect.right, (int*)&minimapRect.bottom);
+			minimapRect = m_mapRBRRXPictureRect;
+			minimapRect.bottom -= (g_pFontCarSpecModel->GetTextHeight() + (g_pFontCarSpecModel->GetTextHeight() / 2));
+		}
+		else
+		{
+			// INI file defines an exact size and position for the minimap
+			minimapRect = m_minimapRBRRXPictureRect;
+		}
+	}
+	else if (screenID == 1)
+	{
+		// Show the minimap on top of the map preview image in "Weather" screen in RBRRX
+		RBRAPI_MapRBRPointToScreenPoint(5.0f, 145.0f, (int*)&minimapRect.left, (int*)&minimapRect.top);
+		RBRAPI_MapRBRPointToScreenPoint(635.0f, 480.0f, (int*)&minimapRect.right, (int*)&minimapRect.bottom);
+		minimapRect.bottom -= static_cast<long>(g_pFontCarSpecModel->GetTextHeight() * 1.5f);
+	}
+	else
+	{
+		//LogPrint("WARNING. Invalid screenID %d in minimap drawing", screenID);
+		return;
+	}
+
+	// If the requested minimap and size is still the same then no need to re-calculate the minimap (just draw the existing minimap)
+	if (prevMinimapData == nullptr || (folderName != prevMinimapData->trackFolder || !EqualRect(&minimapRect, &prevMinimapData->minimapRect) /*minimapRect.left != prevMinimapData->minimapRect.left || minimapRect.top != prevMinimapData->minimapRect.top || minimapRect.right != prevMinimapData->minimapRect.right || minimapRect.bottom != prevMinimapData->minimapRect.bottom*/))
+	{ 
+		CDrivelineSource drivelineSource;
+
+		// Try to find existing cached minimap data
+		prevMinimapData = nullptr;
+		for (auto& item : m_cacheRBRRXMinimapData)
+		{
+			if (item->trackFolder == folderName && EqualRect(&item->minimapRect, &minimapRect))
+			{
+				prevMinimapData = item.get();
+				break;
+			}
+		}
+
+		if (prevMinimapData == nullptr)
+		{
+			DebugPrint("RBRRX_DrawMinimap. No minimap screen %d cache for %s track. Calculating the new minimap vector graph", screenID, folderName.c_str());
+
+			// No existing minimap cache data. Calculate a new minimap data from the driveline data and add the final minimap data struct to cache (speeds up the next time the same minimap is needed)
+			auto newMinimap = std::make_unique<CMinimapData>();
+			newMinimap->trackFolder = folderName;
+			newMinimap->minimapRect = minimapRect;
+			prevMinimapData = newMinimap.get();
+			m_cacheRBRRXMinimapData.push_front(std::move(newMinimap));
+
+			// Calculate new minimap data and add it to RBRRX minimap cache
+			//prevMinimapData->trackFolder = folderName;
+			//prevMinimapData->minimapRect = minimapRect;
+		
+			// Note. Disabled the gray background because minimap is drawn on top of the map (code commented out)
+			//if (screenID == 0)
+			//	D3D9CreateRectangleVertexBuffer(g_pRBRIDirect3DDevice9, (float)minimapRect.left, (float)minimapRect.top, (float)(minimapRect.right - minimapRect.left), (float)(minimapRect.bottom - minimapRect.top), &m_minimapVertexBuffer, D3DCOLOR_ARGB(100, 40, 40, 40));
+			//else
+			//	SAFE_RELEASE(m_minimapVertexBuffer);
+
+			// TODO: Cache the final minimap binary data in a disk file per track to speed up new loadings of minimap (rx_content\track\mytrack\minimap_cache1.dat and minimap_cache2.dat)
+			// Read driveline data from BTB track data and take X,Y coordinates (minimap doesn't need the Z coordinate).
+			// Scale down drive line coordinates to fit in minimap rect size and drop duplicate coordinate (because of down scaling some coordinates are likely to overlap)
+			RBRRX_ReadDriveline(folderName, drivelineSource);
+			RescaleDrivelineToFitOutputRect(drivelineSource, *prevMinimapData);
+		}
+	}
+
+	if (prevMinimapData != nullptr && prevMinimapData->vectMinimapPoint.size() >= 2)
+	{
+		int centerPosX = max(((prevMinimapData->minimapRect.right - prevMinimapData->minimapRect.left) / 2) - (prevMinimapData->minimapSize.x / 2), 0);
+
+		// Note. Disabled the gray background because minimap is drawn on top of the map (code commented out)
+		//if(m_minimapVertexBuffer != nullptr)
+		//	D3D9DrawVertex2D(g_pRBRIDirect3DDevice9, m_minimapVertexBuffer);
+
+		// Draw the minimap driveline
+		for (auto& item : prevMinimapData->vectMinimapPoint)
+		{
+			DWORD dwColor;
+			switch (item.splitType)
+			{
+				case 1:  dwColor = D3DCOLOR_ARGB(180, 0xF0, 0xCD, 0x30); break;	// Color for split1->split2 part of the track (yellow)
+				default: dwColor = D3DCOLOR_ARGB(180, 0xF0, 0xF0, 0xF0); break; // Color for start->split1 and split2->finish (white)
+				//default: dwColor = D3DCOLOR_ARGB(180, 0xC0, 0xC0, 0xC0); break; // Color for start->split1 and split2->finish (gray)
+			}
+
+			D3D9DrawPrimitiveCircle(g_pRBRIDirect3DDevice9, 
+				(float)(centerPosX + prevMinimapData->minimapRect.left + item.drivelineCoord.x), 
+				(float)(prevMinimapData->minimapRect.top + item.drivelineCoord.y), 
+				2.0f, dwColor
+			);
+		}
+		
+		// Draw the start line as bigger green circle
+		D3D9DrawPrimitiveCircle(g_pRBRIDirect3DDevice9, 
+				(float)(centerPosX + prevMinimapData->minimapRect.left + prevMinimapData->vectMinimapPoint.begin()->drivelineCoord.x), 
+				(float)(prevMinimapData->minimapRect.top + prevMinimapData->vectMinimapPoint.begin()->drivelineCoord.y), 
+				5.0f, D3DCOLOR_ARGB(255, 0x20, 0xF0, 0x20)
+		);
+	}
 }
 
 
@@ -458,7 +860,7 @@ void CNGPCarMenu::RBRRX_EndScene()
 
 					if (m_pCustomMapMenuRBRRX == nullptr)
 					{
-						int numOfRecentMaps = CalculateNumOfValidMapsInRecentList(m_pOrigMapMenuItemsRBRRX, m_origNumOfItemsMenuItemsRBRRX);
+						int numOfRecentMaps = RBRRX_CalculateNumOfValidMapsInRecentList(m_pOrigMapMenuItemsRBRRX, m_origNumOfItemsMenuItemsRBRRX);
 
 						// Initialization of custom RBRTM stages menu list in Shakedown menu (Nth recent stages on top of the menu and then the original RBRTM stage list).
 						// Use the custom list if there are recent mapIDs in the list and the feature is enabled (recent items max count > 0)
@@ -499,7 +901,7 @@ void CNGPCarMenu::RBRRX_EndScene()
 								)
 								menuIdx = m_latestMapRBRRX.mapIDMenuIdx;
 							else
-								menuIdx = FindRBRRXMenuItemIdxByFolderName(m_pCustomMapMenuRBRRX, m_numOfItemsCustomMapMenuRBRRX, m_latestMapRBRRX.folderName);
+								menuIdx = RBRRX_FindMenuItemIdxByFolderName(m_pCustomMapMenuRBRRX, m_numOfItemsCustomMapMenuRBRRX, m_latestMapRBRRX.folderName);
 
 							FocusRBRRXNthMenuIdxRow(menuIdx);
 						}
@@ -598,9 +1000,6 @@ void CNGPCarMenu::RBRRX_EndScene()
 					if (m_latestMapRBRRX.numOfPacenotes >= 15)
 						sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << GetLangStr(L"pacenotes");
 
-					//if (!m_latestMapRBRRX.comment.empty())
-					//	sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << m_latestMapRBRRX.comment.c_str();
-
 					g_pFontCarSpecCustom->DrawText(posX, posY + (iMapInfoPrintRow++ * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), 0);
 
 					if (!m_latestMapRBRRX.comment.empty())
@@ -609,9 +1008,12 @@ void CNGPCarMenu::RBRRX_EndScene()
 					if (m_latestMapRBRRX.imageTexture.pTexture != nullptr)
 					{
 						m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
-						D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, m_latestMapRBRRX.imageTexture.pTexture, m_latestMapRBRRX.imageTexture.vertexes2D);
+						D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, m_latestMapRBRRX.imageTexture.pTexture, m_latestMapRBRRX.imageTexture.vertexes2D, m_pD3D9RenderStateCache);
 						m_pD3D9RenderStateCache->RestoreState();
 					}
+
+					// Draw a minimap (0=stage menu list)
+					RBRRX_DrawMinimap(m_latestMapRBRRX.folderName, 0);
 
 					// Author, version, date printed on bottom of the screen and map preview image
 					iMapInfoPrintRow = 0;
@@ -634,8 +1036,14 @@ void CNGPCarMenu::RBRRX_EndScene()
 			}
 			else if (g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_QUICKRALLY_WEATHER])
 			{
+				//
 				// RBRRX track selected (showing weather options screen, it is the same as under normal QuickRally)
+				//
 				g_pRBRMenuSystem->menuImageHeight = g_pRBRMenuSystem->menuImageWidth = 0;
+
+				// Fix the RBRRX bug where backspace (prevMenu key) takes back to RBR main menu. Set custom plugin (RBRRX) as the previous menu
+				if(g_pRBRMenuSystem->currentMenuObj->prevMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN] && g_pRBRPluginMenuSystem->customPluginMenuObj != nullptr)
+					g_pRBRMenuSystem->currentMenuObj->prevMenuObj = g_pRBRPluginMenuSystem->customPluginMenuObj;
 
 				if (m_latestMapRBRRX.trackOptionsFirstTimeSetup)
 				{
@@ -643,15 +1051,10 @@ void CNGPCarMenu::RBRRX_EndScene()
 
 					m_latestMapRBRRX.trackOptionsFirstTimeSetup = FALSE;
 
-					//size_t iLen = wcslen(g_pRBRMapLocationName);
-					//wcsncpy_s(g_pRBRMapLocationName, iLen + 1, _ToWString(m_latestMapRBRRX.name).c_str(), COUNT_OF_ITEMS(g_wszCurrentBTBTrackName));
-					//memcpy(m_pRBRRXPlugin->wszTrackName, _ToWString(m_latestMapRBRRX.name).c_str(), min(m_latestMapRBRRX.name.length() + 1, COUNT_OF_ITEMS(m_pRBRRXPlugin->wszTrackName)) * sizeof(WCHAR));
-
 					// RBR_RX has a bug where shorter track name is not null-terminated, so the remaining of the previous track name may be shown as a left over if the new track name is shorter.
-					// Fix the wszTrackName null-termination bug in RBRRX.
 					wcsncpy_s(m_pRBRRXPlugin->wszTrackName, min(m_latestMapRBRRX.name.length()+1, COUNT_OF_ITEMS(m_pRBRRXPlugin->wszTrackName)), _ToWString(m_latestMapRBRRX.name).c_str(), COUNT_OF_ITEMS(m_pRBRRXPlugin->wszTrackName));
-					//wcsncpy_s(g_pRBRMapLocationName, min(m_latestMapRBRRX.name.length()+1, COUNT_OF_ITEMS(m_pRBRRXPlugin->wszTrackName)), m_pRBRRXPlugin->wszTrackName, COUNT_OF_ITEMS(m_pRBRRXPlugin->wszTrackName));
 
+					// Map preview img and minimap on top of the img
 					RBRAPI_MapRBRPointToScreenPoint(5.0f, 145.0f, &posLeft, &posTop);
 					RBRAPI_MapRBRPointToScreenPoint(635.0f, 480.0f, &posRight, &posBottom);
 
@@ -671,13 +1074,45 @@ void CNGPCarMenu::RBRRX_EndScene()
 					}
 				}
 
+				iFontHeight = g_pFontCarSpecCustom->GetTextHeight();
+
+				int iMapInfoPrintRow = 0;
+				RBRAPI_MapRBRPointToScreenPoint(320.0f, 44.0f, &posX, &posY);
+
+				g_pFontCarSpecCustom->DrawText(posX, posY + (iMapInfoPrintRow++ * iFontHeight), C_CARMODELTITLETEXT_COLOR, _ToWString(m_latestMapRBRRX.name).c_str(), 0);
+
+				if (m_latestMapRBRRX.length > 0)
+					// TODO: KM to Miles miles=km*0.621371192 config option support
+					sStrStream << m_latestMapRBRRX.length << L" km";
+
+				if (!m_latestMapRBRRX.surface.empty())
+					sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << GetLangStr(m_latestMapRBRRX.surface.c_str());
+
+				if (m_latestMapRBRRX.numOfPacenotes >= 15)
+					sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << GetLangStr(L"pacenotes");
+
+				g_pFontCarSpecCustom->DrawText(posX, posY + (iMapInfoPrintRow++ * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), 0);
+
+				if (!m_latestMapRBRRX.comment.empty())
+					g_pFontCarSpecCustom->DrawText(posX, posY + (iMapInfoPrintRow++ * iFontHeight), C_CARSPECTEXT_COLOR, m_latestMapRBRRX.comment.c_str(), 0);
+
+				if (!m_latestMapRBRRX.author.empty())
+					g_pFontCarSpecCustom->DrawText(posX, posY + (iMapInfoPrintRow++ * iFontHeight), C_CARSPECTEXT_COLOR, (GetLangWString(L"author", true) + _ToWString(m_latestMapRBRRX.author)).c_str(), 0);
+
+				if (!m_latestMapRBRRX.version.empty())
+					g_pFontCarSpecCustom->DrawText(posX, posY + (iMapInfoPrintRow++ * iFontHeight), C_CARSPECTEXT_COLOR, (GetLangWString(L"version", true) + _ToWString(m_latestMapRBRRX.version) + L" " + _ToWString(m_latestMapRBRRX.date)).c_str(), 0);
+
 				if (m_latestMapRBRRX.imageTexture.pTexture != nullptr)
 				{
 					m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
-					D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, m_latestMapRBRRX.imageTexture.pTexture, m_latestMapRBRRX.imageTexture.vertexes2D);
+					D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, m_latestMapRBRRX.imageTexture.pTexture, m_latestMapRBRRX.imageTexture.vertexes2D, m_pD3D9RenderStateCache);
 					m_pD3D9RenderStateCache->RestoreState();
 				}
 
+				// Draw a minimap (1=weather menu list)
+				RBRRX_DrawMinimap(m_latestMapRBRRX.folderName, 1);
+
+/*
 				sStrStream.clear();
 				sStrStream.str(std::wstring());
 				if (!m_latestMapRBRRX.author.empty())
@@ -691,6 +1126,7 @@ void CNGPCarMenu::RBRRX_EndScene()
 
 				RBRAPI_MapRBRPointToScreenPoint(5.0f, 480.0f, &posX, &posY);
 				g_pFontCarSpecModel->DrawText(posX, posY - g_pFontCarSpecModel->GetTextHeight() - 4, C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), (m_latestMapRBRRX.imageTexture.pTexture != nullptr ? D3DFONT_CLEARTARGET : 0));
+*/
 			}
 		}
 
@@ -755,7 +1191,7 @@ void CNGPCarMenu::RBRRX_EndScene()
 				if (m_recentMapsMaxCountRBRRX > 0)
 				{
 					m_bRecentMapsRBRRXModified = FALSE;
-					AddMapToRecentList(m_latestMapRBRRX.folderName);
+					RBRRX_AddMapToRecentList(m_latestMapRBRRX.folderName);
 					if (m_bRecentMapsRBRRXModified) SaveSettingsToRBRRXRecentMaps();
 				}
 			}

@@ -38,7 +38,10 @@ any explicit licenses. Here are references to those code snippets:
    https://gitlab.com/TheIronWolfModding/rbrcrewchief
    http://thecrewchief.org/showthread.php?1851-Richard-Burns-Rally-Crew-Chief-setup-and-known-issues&p=7539#post7539
 
-Thank you Jacob, Ivan, Simon, Sasha, TheIronWolfModding for sharing the information. And of course those who has done the ground work to keep RBR alive (WorkerBee, car and track modellers, audio authors, pacenote authors).
+ - (Typ1232) Trianglefan logic to draw a colored circle (specified precision).
+   https://stackoverflow.com/questions/21330429/draw-point-or-filled-in-circle (posted by Typ1232)
+
+Thank you Jacob, Ivan, Simon, Sasha, TheIronWolfModding, Typ1232 for sharing the information. And of course those who has done the ground work to keep RBR alive (WorkerBee, car and track modellers, audio authors, pacenote authors).
 
 This work contains components with own licence texts. Please refer to those components for more details.
  - DetourXS, Dominic Tobias. Re-routing function pointers. https://dominictobias.com

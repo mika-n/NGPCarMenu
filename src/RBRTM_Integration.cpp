@@ -39,6 +39,479 @@
 
 namespace fs = std::filesystem;
 
+//----------------------------------------------------------------------------------------------------
+//
+int CNGPCarMenu::RBRTM_FindMenuItemIdxByMapID(PRBRTMMenuItem pMenuItems, int numOfItems, int mapID)
+{
+	// Find the RBRTM menu item by mapID (search menuItem array directly). Return index to the menuItem struct or -1
+	if (pMenuItems != nullptr)
+	{
+		for (int idx = 0; idx < numOfItems; idx++)
+			if (pMenuItems[idx].mapID == mapID)
+				return idx;
+	}
+	return -1;
+}
+
+int CNGPCarMenu::RBRTM_FindMenuItemIdxByMapID(PRBRTMMenuData pMenuData, int mapID)
+{
+	// Find the RBRTM menu item by mapID. Return index to the menuItem struct or -1
+	if (pMenuData != nullptr)
+		return RBRTM_FindMenuItemIdxByMapID(pMenuData->pMenuItems, pMenuData->numOfItems, mapID);
+	return -1;
+}
+
+int CNGPCarMenu::RBRTM_CalculateNumOfValidMapsInRecentList(PRBRTMMenuData pMenuData)
+{
+	int numOfRecentMaps = 0;
+	int menuIdx;
+
+	auto it = m_recentMapsRBRTM.begin();
+	while (it != m_recentMapsRBRTM.end())
+	{
+		if ((*it)->mapID > 0 && numOfRecentMaps < m_recentMapsMaxCountRBRTM)
+		{
+			menuIdx = RBRTM_FindMenuItemIdxByMapID(pMenuData, (*it)->mapID);
+
+			if (menuIdx >= 0 || pMenuData == nullptr)
+			{
+				// The mapID in recent list is valid. Refresh the menu entry name as "[recent idx] Stage name"
+				numOfRecentMaps++;
+				if (pMenuData != nullptr)
+				{
+					(*it)->name = L"[" + std::to_wstring(numOfRecentMaps) + L"] ";
+					(*it)->name.append(pMenuData->pMenuItems[menuIdx].wszMenuItemName);
+				}
+
+				// Go to the next item in list iterator
+				++it;
+			}
+			else
+			{
+				// The map in recent list is no longer in stages menu list. Invalidate the recent item (ie. it is not added as a shortcut to RBRTM Shakedown stages menu)
+				it = m_recentMapsRBRTM.erase(it);
+			}
+		}
+		else
+		{
+			// Invalid mapID value or "too many items". Remove the item if the menu data was defined
+			if (pMenuData != nullptr)
+				it = m_recentMapsRBRTM.erase(it);
+			else
+				++it;
+		}
+	}
+
+	return numOfRecentMaps;
+}
+
+void CNGPCarMenu::RBRTM_AddMapToRecentList(int mapID)
+{
+	if (mapID <= 0) return;
+
+	// Add mapID to top of the recentMaps list (if already in the list then move it to top, otherwise add as a new item and remove the last item if the list is full)
+	for (auto& iter = m_recentMapsRBRTM.begin(); iter != m_recentMapsRBRTM.end(); ++iter)
+	{
+		if ((*iter)->mapID == mapID)
+		{
+			// MapID already in the recent list. Move it to the top of the list (no need to re-add it to the list)
+			if (iter != m_recentMapsRBRTM.begin())
+			{
+				m_recentMapsRBRTM.splice(m_recentMapsRBRTM.begin(), m_recentMapsRBRTM, iter, std::next(iter));
+				m_bRecentMapsRBRTMModified = TRUE;
+			}
+
+			// Must return after moving the item to top of list because for-iterator is now invalid because the list was modified
+			return;
+		}
+	}
+
+	// MapID is not yet in the recent list. Add it to the top of the list (we cannot delete items at this point because the to-be-removed recentItem may be used by Shakedown stages menu)
+	auto newItem = std::make_unique<RBRTM_MapInfo>();
+	newItem->mapID = mapID;
+	m_recentMapsRBRTM.push_front(std::move(newItem));
+	m_bRecentMapsRBRTMModified = TRUE;
+}
+
+
+//----------------------------------------------------------------------------------------------------
+// Read pacenote data
+//    Offset 0x5C = Num of pacenote records   
+//           0x7C = File offset to the beginning of the pacenote data structs
+//
+// Or some maps (fex track-61) uses offsets (how to detect which one is the correct logic?)
+//    Offset 0xF4  = Num of pacenote records   
+//          0x114 = File offset to the beginning of the pacenote data structs
+//
+// Or some maps (fex track-63) uses offsets (how to detect which one is the correct logic?)
+//    Offset 0x6C = Num of pacenote records   
+//           0x8C = File offset to the beginning of the pacenote data structs
+
+BOOL CNGPCarMenu::RBRTM_ReadStartSplitsFinishPacenoteDistances(const std::wstring& trackFileName, float* startDistance, float* split1Distance, float* split2Distance, float* finishDistance)
+{
+	static const WCHAR* wszPacenoteFilePostfix[4] = { L"_O.dls", L"_M.dls", L"_N.dls", L"_E.dls" };
+
+	std::wstring sPacenoteFileName;
+	__int32 numOfPacenoteRecords = 0;
+	
+	*startDistance = -1;
+	*split1Distance = -1;
+	*split2Distance = -1;
+	*finishDistance = -1;
+
+	try
+	{
+		__int32 numOfPacenotesOffset;
+		__int32 offsetFingerPrint[3];
+		__int32 fingerPrintType;
+
+		//DebugPrint(L"RBRTM_ReadStartSplitsFinishPacenoteDistances. Reading start, splits and finish line distance from %s", trackFileName.c_str());
+
+		// Get the pacenote DLS data filename (fex c:\games\rbr\Maps\Track-71_O.dls)
+		for (int idx = 0; idx < COUNT_OF_ITEMS(wszPacenoteFilePostfix); idx++)
+		{
+			sPacenoteFileName = m_sRBRRootDirW + L"\\" + trackFileName + wszPacenoteFilePostfix[idx];
+			if (fs::exists(sPacenoteFileName)) break;
+			sPacenoteFileName.clear();
+		}
+
+		if (sPacenoteFileName.empty())
+		{
+			DebugPrint(L"RBRTM_ReadStartSplitsFinishPacenoteDistances. The map %s doesn't have pacenote file. Cannot read pacenote data", trackFileName.c_str());
+			return FALSE;
+		}
+
+		// Read pacenote data from the TRK file into vector buffer
+		std::ifstream srcFile(sPacenoteFileName, std::ifstream::binary | std::ios::in);
+		if (!srcFile) return FALSE;
+
+		//srcFile.seekg(0x5C);
+		//srcFile.read((char*)&numOfPacenoteRecords, sizeof(__int32));
+		//if (srcFile.fail()) numOfPacenoteRecords = 0;
+
+		// Find the "Num of pacenote records" offset. 
+		// FIXME: Usually this is at 0x5C offset, but not always. Don't know yet the exact logic, so this code tries to identify certain "fingerprints" (not foolproof and definetly not the correct way to do it)
+		//  If @0x38 == 01 then numOfPacenote offset is always 0x5C
+		//  otherwise try to find nonZeroValue-0x00-0x1C fingerprint record (where the nonZeroValue is the num of pacenotes)
+		//
+
+		srcFile.seekg(0x38);
+		srcFile.read((char*)&offsetFingerPrint, sizeof(__int32));
+		fingerPrintType = (offsetFingerPrint[0] == 0x01 ? 0 : 1);
+
+		numOfPacenotesOffset = 0x5C;
+		while (numOfPacenotesOffset < 0x200)
+		{
+			srcFile.seekg(numOfPacenotesOffset);
+			srcFile.read((char*)&offsetFingerPrint, sizeof(offsetFingerPrint));
+			if (srcFile.fail())
+			{
+				numOfPacenoteRecords = 0;
+				break;
+			}
+
+			if(fingerPrintType == 0 || (offsetFingerPrint[0] != 0x00 && offsetFingerPrint[1] == 0x00 && offsetFingerPrint[2] == 0x1C))
+			{
+				numOfPacenoteRecords = offsetFingerPrint[0];
+				break;
+			}
+
+			numOfPacenotesOffset += sizeof(__int32);
+		}
+
+		//DebugPrint("RBRTM_ReadStartSplitsFinishPacenoteDistances. NumOfPacenoteRecords=%d", numOfPacenoteRecords);
+		if (numOfPacenoteRecords <= 0 || numOfPacenoteRecords >= 50000)
+		{
+			LogPrint("ERROR CNGPCarMenu::RBRTM_ReadStartSplitsFinishPacenoteDistances. Invalid number of records %d", numOfPacenoteRecords);
+			numOfPacenoteRecords = 0;
+		}
+		else
+		{
+			// Offset to pacenote records (always +0x20 to the offset of num of pacenote)
+			__int32 dataOffset = numOfPacenotesOffset + 0x20;
+			//srcFile.seekg(0x7C);
+			srcFile.seekg(dataOffset);
+			srcFile.read((char*)&dataOffset, sizeof(__int32));
+			if (srcFile.fail() || dataOffset <= 0)
+			{
+				LogPrint("ERROR CNGPCarMenu::RBRTM_ReadStartSplitsFinishPacenoteDistances. Invalid pacenote data offset %d", dataOffset);
+				numOfPacenoteRecords = 0;
+			}
+
+			if (numOfPacenoteRecords > 0)
+			{
+				std::vector<RBRPacenote> vectPacenoteData(numOfPacenoteRecords);
+
+				srcFile.seekg(dataOffset);
+				srcFile.read(reinterpret_cast<char*>(&vectPacenoteData[0]), (static_cast<std::streamsize>(numOfPacenoteRecords) * sizeof(RBRPacenote)));
+				if (srcFile.fail())
+				{
+					LogPrint("ERROR CNGPCarMenu::RBRTM_ReadStartSplitsFinishPacenoteDistances. Failed to read %d pacenote data records", numOfPacenoteRecords);
+					numOfPacenoteRecords = 0;
+				}
+
+				// Read "type and distance" values of pacenote records
+				for (int idx = 0; idx < numOfPacenoteRecords; idx++)
+				{
+					if (vectPacenoteData[idx].type == 21 && *startDistance < 0)
+					{
+						*startDistance = vectPacenoteData[idx].distance;
+						if (*startDistance >= 0 && *split1Distance >= 0 && *split2Distance >= 0 && *finishDistance >= 0) break;
+					}
+					else if (vectPacenoteData[idx].type == 23)
+					{
+						if (*split1Distance < 0) 
+							*split1Distance = vectPacenoteData[idx].distance;
+						else
+						{
+							// Sometimes DLS file may have splits in "wrong order", so make sure the distance of split1 < split2
+							if(vectPacenoteData[idx].distance > *split1Distance)
+								*split2Distance = vectPacenoteData[idx].distance;
+							else
+							{
+								*split2Distance = *split1Distance;
+								*split1Distance = vectPacenoteData[idx].distance;
+							}
+						}
+						if (*startDistance >= 0 && *split1Distance >= 0 && *split2Distance >= 0 && *finishDistance >= 0) break;
+					}
+					else if (vectPacenoteData[idx].type == 22 && *finishDistance < 0)
+					{
+						*finishDistance = vectPacenoteData[idx].distance;
+						if (*startDistance >= 0 && *split1Distance >= 0 && *split2Distance >= 0 && *finishDistance >= 0) break;
+					}
+				}
+			}
+		}
+		srcFile.close();
+
+		if (*startDistance < 0) *startDistance = 0.0f;
+	}
+	catch (...)
+	{
+		*startDistance = -1;
+		LogPrint(L"ERROR CNGPCarMenu::RBRTM_ReadStartSplitsFinishPacenoteDistances. Failed to read pacenote data from %s", sPacenoteFileName.c_str());
+	}
+
+	//DebugPrint("RBRTM_ReadStartSplitsFinishPacenoteDistances. Distance start=%f s1=%f s2=%f finish=%f", *startDistance, *split1Distance, *split2Distance, *finishDistance);
+
+	return (*startDistance >= 0);
+}
+
+
+//----------------------------------------------------------------------------------------------------
+// Read driveline data from TRK file
+// Offset 0x10 = Num of driveline records (DWORD)
+//        0x14 = Driveline record 8 x DWORD (x y z cx cy cz distance zero)
+//        ...N num of driveline records...
+//
+int  CNGPCarMenu::RBRTM_ReadDriveline(int mapID, CDrivelineSource& drivelineSource)
+{
+	static const WCHAR* wszDrivelineFilePostfix[4] = { L"_O.trk", L"_M.trk", L"_N.trk", L"_E.trk" };
+
+	WCHAR wszMapINISection[16];
+	std::wstring sTrackName;
+	std::wstring sDrivelineFileName;
+
+	__int32 numOfDrivelineRecords;
+
+	try
+	{
+		//DebugPrint("RBRTM_ReadDriveline. Reading driveline for mapID %d", mapID);
+
+		drivelineSource.vectDrivelinePoint.clear();
+		if (mapID <= 0 || m_pTracksIniFile == nullptr)
+			return 0;
+
+		// Get the base name of the track map data files (fex Maps\Track-71)
+		swprintf_s(wszMapINISection, COUNT_OF_ITEMS(wszMapINISection), L"Map%02d", mapID);
+		sTrackName = _RemoveEnclosingChar(m_pTracksIniFile->GetValue(wszMapINISection, L"TrackName", L""), L'"', false);
+		if (sTrackName.empty())
+			return 0;
+
+		// Get the driveline data filename (fex c:\games\rbr\Maps\Track-71_O.trk)
+		for (int idx = 0; idx < COUNT_OF_ITEMS(wszDrivelineFilePostfix); idx++)
+		{
+			sDrivelineFileName = m_sRBRRootDirW + L"\\" + sTrackName + wszDrivelineFilePostfix[idx];
+			if (fs::exists(sDrivelineFileName)) break;
+			sDrivelineFileName.clear();
+		}
+
+		if (sDrivelineFileName.empty())
+		{
+			DebugPrint("RBRTM_ReadDriveline. The mapID %d doesn't have TRK file. Cannot read driveline data", mapID);
+			return 0;
+		}
+
+		RBRTM_ReadStartSplitsFinishPacenoteDistances(sTrackName, &drivelineSource.startDistance, &drivelineSource.split1Distance, &drivelineSource.split2Distance, &drivelineSource.finishDistance);
+
+		drivelineSource.pointMin.x = drivelineSource.pointMin.y = 9999999.0f;
+		drivelineSource.pointMax.x = drivelineSource.pointMax.y = -9999999.0f;
+
+		//DebugPrint(L"RBRTM_ReadDriveline. Using %s TRK file", sDrivelineFileName.c_str());
+
+		// Read driveline data from the TRK file into vector buffer
+		std::ifstream srcFile(sDrivelineFileName, std::ifstream::binary | std::ios::in);
+		if (!srcFile) return 0;
+
+		srcFile.seekg(0x10);
+		srcFile.read((char*)&numOfDrivelineRecords, sizeof(__int32));
+		if (srcFile.fail()) numOfDrivelineRecords = 0;
+
+		//DebugPrint("RBRTM_ReadDriveline. NumOfDrivelineRecords=%d", numOfDrivelineRecords);
+		if(numOfDrivelineRecords <= 0 || numOfDrivelineRecords >= 100000)
+		{
+			LogPrint("ERROR CNGPCarMenu::RBRTM_ReadDriveline. Invalid number of records %d", numOfDrivelineRecords);
+			numOfDrivelineRecords = 0;
+		}
+		else
+		{
+			std::vector<float> vectDrivelineData(numOfDrivelineRecords * 8);
+			srcFile.read(reinterpret_cast<char*>(&vectDrivelineData[0]), (static_cast<std::streamsize>(numOfDrivelineRecords) * 8 * sizeof(float)));
+			if (srcFile.fail())
+			{
+				LogPrint("ERROR CNGPCarMenu::RBRTM_ReadDriveline. Failed to read data");
+				numOfDrivelineRecords = 0;
+			}
+
+			// Read "x y z cx cy cz distance zero" record (8 x floats)
+			for (int idx = 0; idx < numOfDrivelineRecords; idx++)
+			{
+				float x, y, distance;
+				x = vectDrivelineData[idx * 8 + 0];
+				y = vectDrivelineData[idx * 8 + 1];
+				distance = vectDrivelineData[idx * 8 + 6];
+
+				//DebugPrint("%d: %f %f %f", idx, x, y, distance);
+
+				if (distance < drivelineSource.startDistance)
+					continue;
+
+				if (drivelineSource.finishDistance > 0 && distance > drivelineSource.finishDistance)
+					break;
+
+				if (x < drivelineSource.pointMin.x) drivelineSource.pointMin.x = x;
+				if (x > drivelineSource.pointMax.x) drivelineSource.pointMax.x = x;
+				if (y < drivelineSource.pointMin.y) drivelineSource.pointMin.y = y;
+				if (y > drivelineSource.pointMax.y) drivelineSource.pointMax.y = y;
+
+				drivelineSource.vectDrivelinePoint.push_back({ {x, y}, distance });
+			}
+
+			// Sort driveline data in ascending order by distance (hmm... the DLS data seems to be already in ascending order)
+			//drivelineSource.vectDrivelinePoint.sort();
+		}
+		srcFile.close();
+	}
+	catch (...)
+	{
+		drivelineSource.vectDrivelinePoint.clear();
+		LogPrint(L"ERROR CNGPCarMenu::RBRTM_ReadDriveline. Failed to read driveline data from %s", sDrivelineFileName.c_str());
+	}
+
+	return drivelineSource.vectDrivelinePoint.size();
+}
+
+void CNGPCarMenu::RBRTM_DrawMinimap(int mapID, int screenID)
+{
+	static CMinimapData* prevMinimapData = nullptr;
+	RECT minimapRect;
+
+	if (m_minimapRBRTMPictureRect.bottom == -1)
+		return; // Minimap drawing disabled
+
+	if (screenID == 0)
+	{
+		if (m_minimapRBRRXPictureRect.top == 0 && m_minimapRBRRXPictureRect.right == 0 && m_minimapRBRRXPictureRect.left == 0 && m_minimapRBRRXPictureRect.bottom == 0)
+		{
+			// Draw minimap on top of the stage preview img
+			//RBRAPI_MapRBRPointToScreenPoint(390.0f, 320.0f, (int*)&minimapRect.left, (int*)&minimapRect.top);
+			//RBRAPI_MapRBRPointToScreenPoint(630.0f, 470.0f - (g_pFontCarSpecModel->GetTextHeight() * 1.5f), (int*)&minimapRect.right, (int*)&minimapRect.bottom);
+			minimapRect = m_mapRBRTMPictureRect;
+			minimapRect.bottom -= (g_pFontCarSpecModel->GetTextHeight() + (g_pFontCarSpecModel->GetTextHeight() / 2));
+		}
+		else
+		{
+			// INI file defines an exact size and position for the minimap
+			minimapRect = m_minimapRBRTMPictureRect;
+		}
+	}
+	else if (screenID == 1)
+	{
+		// Show the minimap on top of the map preview image in "Weather" screen in RBRRX
+		RBRAPI_MapRBRPointToScreenPoint(5.0f, 185.0f, (int*)&minimapRect.left, (int*)&minimapRect.top);
+		RBRAPI_MapRBRPointToScreenPoint(635.0f, 480.0f, (int*)&minimapRect.right, (int*)&minimapRect.bottom);
+		minimapRect.bottom -= static_cast<long>(g_pFontCarSpecModel->GetTextHeight() * 1.5f);
+	}
+	else
+	{
+		//LogPrint("WARNING. Invalid screenID %d in minimap drawing", screenID);
+		return;
+	}
+
+	// If the requested minimap and size is still the same then no need to re-calculate the minimap (just draw the existing minimap)
+	if (prevMinimapData == nullptr || (mapID != prevMinimapData->mapID|| !EqualRect(&minimapRect, &prevMinimapData->minimapRect)))
+	{
+		CDrivelineSource drivelineSource;
+
+		// Try to find existing cached minimap data
+		prevMinimapData = nullptr;
+		for (auto& item : m_cacheRBRTMMinimapData)
+		{
+			if (item->mapID == mapID && EqualRect(&item->minimapRect, &minimapRect))
+			{
+				prevMinimapData = item.get();
+				break;
+			}
+		}
+		if (prevMinimapData == nullptr)
+		{
+			//DebugPrint("RBRTN_DrawMinimap. No minimap screen %d cache for %d track. Calculating the new minimap vector graph", screenID, mapID);
+
+			// No existing minimap cache data. Calculate a new minimap data from the driveline data and add the final minimap data struct to cache (speeds up the next time the same minimap is needed)
+			auto newMinimap = std::make_unique<CMinimapData>();
+			newMinimap->mapID = mapID;
+			newMinimap->minimapRect = minimapRect;
+			prevMinimapData = newMinimap.get();
+			m_cacheRBRTMMinimapData.push_front(std::move(newMinimap));
+
+			RBRTM_ReadDriveline(mapID, drivelineSource);
+			RescaleDrivelineToFitOutputRect(drivelineSource, *prevMinimapData);
+		}
+	}
+
+	if (prevMinimapData != nullptr && prevMinimapData->vectMinimapPoint.size() >= 2)
+	{
+		//int centerPosX = max(((prevMinimapData->minimapRect.right - prevMinimapData->minimapRect.left) / 2) - (prevMinimapData->minimapSize.x / 2), 0);
+		int centerPosX = 0;
+
+		// Draw the minimap driveline
+		for (auto& item : prevMinimapData->vectMinimapPoint)
+		{
+			DWORD dwColor;
+			switch (item.splitType)
+			{
+			case 1:  dwColor = D3DCOLOR_ARGB(180, 0xF0, 0xCD, 0x30); break;	// Color for split1->split2 part of the track (yellow)
+			//default: dwColor = D3DCOLOR_ARGB(180, 0xF0, 0xF0, 0xF0); break; // Color for start->split1 and split2->finish (white)
+			default: dwColor = D3DCOLOR_ARGB(180, 0x60, 0xA8, 0x60); break; // Color for start->split1 and split2->finish (green)
+			}
+
+			D3D9DrawPrimitiveCircle(g_pRBRIDirect3DDevice9,
+				(float)(centerPosX + prevMinimapData->minimapRect.left + item.drivelineCoord.x),
+				(float)(prevMinimapData->minimapRect.top + item.drivelineCoord.y),
+				2.0f, dwColor
+			);
+		}
+
+		// Draw the start line as bigger green circle
+		D3D9DrawPrimitiveCircle(g_pRBRIDirect3DDevice9,
+			(float)(centerPosX + prevMinimapData->minimapRect.left + prevMinimapData->vectMinimapPoint.begin()->drivelineCoord.x),
+			(float)(prevMinimapData->minimapRect.top + prevMinimapData->vectMinimapPoint.begin()->drivelineCoord.y),
+			5.0f, D3DCOLOR_ARGB(255, 0x20, 0xF0, 0x20)
+		);
+	}
+}
+
 
 //----------------------------------------------------------------------------------------------------
 // RBRTM integration handler (DX9 EndScene)
@@ -206,7 +679,7 @@ void CNGPCarMenu::RBRTM_EndScene()
 					{
 						if (m_pCustomMapMenuRBRTM == nullptr)
 						{
-							int numOfRecentMaps = CalculateNumOfValidMapsInRecentList(m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData);
+							int numOfRecentMaps = RBRTM_CalculateNumOfValidMapsInRecentList(m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData);
 
 							// Initialization of custom RBRTM stages menu list in Shakedown menu (Nth recent stages on top of the menu and then the original RBRTM stage list).
 							// Use the custom list if there are recent mapIDs in the list and the feature is enabled (recent items max count > 0)
@@ -251,7 +724,7 @@ void CNGPCarMenu::RBRTM_EndScene()
 								}
 								else
 								{
-									menuIdx = FindRBRTMMenuItemIdxByMapID(m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData, m_latestMapRBRTM.mapID);
+									menuIdx = RBRTM_FindMenuItemIdxByMapID(m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData, m_latestMapRBRTM.mapID);
 									if (menuIdx >= 0)
 										m_pRBRTMPlugin->selectedItemIdx = menuIdx;
 								}
@@ -349,9 +822,12 @@ void CNGPCarMenu::RBRTM_EndScene()
 						if (m_latestMapRBRTM.imageTexture.pTexture != nullptr)
 						{
 							m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
-							D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, m_latestMapRBRTM.imageTexture.pTexture, m_latestMapRBRTM.imageTexture.vertexes2D);
+							D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, m_latestMapRBRTM.imageTexture.pTexture, m_latestMapRBRTM.imageTexture.vertexes2D, m_pD3D9RenderStateCache);
 							m_pD3D9RenderStateCache->RestoreState();
 						}
+
+						// Draw minimap in RBRTM shakedown stages menu list
+						RBRTM_DrawMinimap(m_latestMapRBRTM.mapID, 0);
 					}
 					else
 					{
@@ -377,14 +853,27 @@ void CNGPCarMenu::RBRTM_EndScene()
 						if (!m_latestMapRBRTM.previewImageFile.empty() && fs::exists(m_latestMapRBRTM.previewImageFile) && m_mapRBRTMPictureRect.bottom != -1)
 						{
 							float posLeft, posTop, posRight, posBottom;
-							RBRAPI_MapRBRPointToScreenPoint(5.0f, 185.0f, &posLeft, &posTop);
-							RBRAPI_MapRBRPointToScreenPoint(635.0f, 461.0f, &posRight, &posBottom);
+							// Stretch to fill the whole area below menu lines
+							//RBRAPI_MapRBRPointToScreenPoint(5.0f, 185.0f, &posLeft,&posTop);
+							//RBRAPI_MapRBRPointToScreenPoint(635.0f, 461.0f, &posRight, &posBottom);
+							
+							// Slightly stretched to fill the right side of the screen below menu lines (map style=0, default)
+							// dwFlags=0
+							RBRAPI_MapRBRPointToScreenPoint(200.0f, 140.0f, &posLeft, &posTop);
+							RBRAPI_MapRBRPointToScreenPoint(640.0f, 462.0f, &posRight, &posBottom);
+
+							// Optimal for 1024x1024 keepAspectRatio images (map style=1)
+							// dwFlags=IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_BOTTOM | IMAGE_TEXTURE_POSITION_HORIZONTAL_RIGHT
+							//RBRAPI_MapRBRPointToScreenPoint(340.0f, 130.0f, &posLeft, &posTop);
+							//RBRAPI_MapRBRPointToScreenPoint(640.0f, 462.0f, &posRight, &posBottom);
 
 							hResult = D3D9CreateRectangleVertexTexBufferFromFile(g_pRBRIDirect3DDevice9,
 								m_latestMapRBRTM.previewImageFile,
 								posLeft, posTop, posRight - posLeft, posBottom - posTop,
 								&m_latestMapRBRTM.imageTexture,
-								0 /*IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_BOTTOM | IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER*/);
+								0 
+							    //IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_BOTTOM | IMAGE_TEXTURE_POSITION_HORIZONTAL_RIGHT
+							);
 
 							// Image not available or loading failed
 							if (!SUCCEEDED(hResult))
@@ -392,12 +881,30 @@ void CNGPCarMenu::RBRTM_EndScene()
 						}
 					}
 
+					std::wstringstream sStrStream;
+					sStrStream << std::fixed << std::setprecision(1);
+					RBRAPI_MapRBRPointToScreenPoint(200.0f, 40.0f, &posX, &posY);
+
+					sStrStream << m_latestMapRBRTM.name << L"  (#" << g_pRBRPlugin->m_latestMapRBRTM.mapID << L")   ";
+
+					if (m_latestMapRBRTM.length > 0)
+						// TODO: KM to Miles miles=km*0.621371192 config option support
+						sStrStream << m_latestMapRBRTM.length << L" km ";
+
+					if (m_latestMapRBRTM.surface >= 0 && m_latestMapRBRTM.surface <= 2)
+						sStrStream << GetLangStr(NPlugin::GetSurfaceName(m_latestMapRBRTM.surface));
+
+					g_pFontCarSpecCustom->DrawText(posX, posY, C_CARMODELTITLETEXT_COLOR, sStrStream.str().c_str(), 0);
+
 					if (m_latestMapRBRTM.imageTexture.pTexture != nullptr)
 					{
 						m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
-						D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, m_latestMapRBRTM.imageTexture.pTexture, m_latestMapRBRTM.imageTexture.vertexes2D);
+						D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, m_latestMapRBRTM.imageTexture.pTexture, m_latestMapRBRTM.imageTexture.vertexes2D, m_pD3D9RenderStateCache);
 						m_pD3D9RenderStateCache->RestoreState();
 					}
+
+					// Draw minimap in RBRTM shakedown stages menu list
+					RBRTM_DrawMinimap(m_latestMapRBRTM.mapID, 1);
 				}
 			}
 		}
@@ -426,7 +933,7 @@ void CNGPCarMenu::RBRTM_EndScene()
 			if (m_recentMapsMaxCountRBRTM > 0)
 			{
 				m_bRecentMapsRBRTMModified = FALSE;
-				AddMapToRecentList(m_latestMapRBRTM.mapID);
+				RBRTM_AddMapToRecentList(m_latestMapRBRTM.mapID);
 				if (m_bRecentMapsRBRTMModified) SaveSettingsToRBRTMRecentMaps();
 			}
 

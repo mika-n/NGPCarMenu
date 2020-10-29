@@ -37,6 +37,7 @@
 #include <memory>					// unique_ptr and smart_ptr
 //#include <forward_list>				// std::forward_list
 #include <list>
+#include <forward_list>
 #include <deque>
 
 #include "PluginHelpers.h"
@@ -304,6 +305,81 @@ struct RBRRX_MapInfo {
 
 
 //------------------------------------------------------------------------------------------------
+// Minimap structs
+//
+typedef struct _POINT_DRIVELINE_float
+{
+	POINT_float	drivelineCoord;	// X,Y coordinate from the original driveline data
+	float drivelineDistance;	// Distance (from the beginning of driveline data)
+
+	bool operator<(const struct _POINT_DRIVELINE_float& b) const
+	{
+		return (drivelineDistance < b.drivelineDistance);
+	}
+
+	bool operator==(const struct _POINT_DRIVELINE_float& b) const
+	{
+		return (drivelineCoord == b.drivelineCoord && drivelineDistance == b.drivelineDistance);
+	}
+} POINT_DRIVELINE_float;
+
+class CDrivelineSource
+{
+public:
+	std::list<POINT_DRIVELINE_float> vectDrivelinePoint;	// Driveline data points x,y and distance
+	POINT_float pointMin;	// Minimum and maximum x and y values in the driveline data (used to calculate the size and aspect ratio of the minimap graph)
+	POINT_float pointMax;	//
+
+	float startDistance;	// The distance of start line from the beginning of the driveline data (pacenote type21).
+	float split1Distance;	//   split 1 (pacenote type23). Some BTB tracks don't have this split point.
+	float split2Distance;	//   split 2 (pacenote type23). Some BTB tracks don't have this split point.
+	float finishDistance;	// The distance of finish line from the beginning of the driveline data (pacenote type22)
+
+	CDrivelineSource()
+	{
+		startDistance = split1Distance = split2Distance = finishDistance = -1;
+		ZeroMemory(&pointMin, sizeof(POINT_float));
+		ZeroMemory(&pointMax, sizeof(POINT_float));
+	}
+};
+
+
+typedef struct _POINT_DRIVELINE_int
+{
+	POINT_int drivelineCoord;
+	int splitType;				// 0 = Start->split1, 1 = Split1->Split2, 2=Split2->Finish
+
+	bool operator<(const struct _POINT_DRIVELINE_int& b) const
+	{
+		return (drivelineCoord < b.drivelineCoord);
+	}
+
+	bool operator==(const struct _POINT_DRIVELINE_int& b) const
+	{
+		return (drivelineCoord == b.drivelineCoord && splitType == b.splitType);
+	}
+} POINT_DRIVELINE_int;
+
+class CMinimapData
+{
+public:
+	std::list<POINT_DRIVELINE_int> vectMinimapPoint;	// Scaled-down coordinates of the minimap (INT)
+	RECT minimapRect;									// Scaled-down rectangle area
+	POINT_int minimapSize;								// The actual width and height of the minimap
+
+	std::string trackFolder;							// The name of the BTB track folder (cached minimap identifier if the map is for RBRRX/BTB)
+	int mapID;											// MapID of the RBRTM track (cached minimap ID if the map is for RBRTM)
+
+	CMinimapData()
+	{
+		mapID = -1;
+		ZeroMemory(&minimapSize, sizeof(POINT_int));
+		ZeroMemory(&minimapRect, sizeof(RECT));
+	}
+};
+
+
+//------------------------------------------------------------------------------------------------
 
 #define C_SCREENSHOTAPITYPE_DIRECTX 0
 #define C_SCREENSHOTAPITYPE_GDI     1
@@ -454,21 +530,14 @@ protected:
 	std::string m_sMenuStatusText2;
 	std::string m_sMenuStatusText3;
 
+	std::forward_list<std::unique_ptr<CMinimapData>> m_cacheRBRRXMinimapData; // Cached minimap data (when a minimap is generated at runtime it is cached here to speed up the next calculation)
+	std::forward_list<std::unique_ptr<CMinimapData>> m_cacheRBRTMMinimapData; // 
+
 	DetourXS* gtcDirect3DBeginScene;
 	DetourXS* gtcDirect3DEndScene;
 	DetourXS* gtcRBRReplay;
 
-	void StartNewAutoLogonSequence()
-	{	
-		m_autoLogonSequenceLabel.clear();
-		m_autoLogonSequenceLabel.str(std::wstring());
-		for (auto& item : m_autoLogonSequenceSteps)
-			m_autoLogonSequenceLabel << (m_autoLogonSequenceLabel.tellp() != std::streampos(0) ? L"/" : L"") << _ToWString(item);
-
-		m_dwAutoLogonEventStartTick = GetTickCount32();
-		m_iAutoLogonMenuState = (m_bAutoLogonWaitProfile || m_iAutoLogonMenuState != -1 ? 3 : 1); // 3=Wait main menu (do not autoLoad a profile on bootup) 1=AutoLoad profile on RBR bootup
-	}
-
+	void StartNewAutoLogonSequence();
 	void DoAutoLogonSequence();
 
 	void CompleteProfileRenaming();
@@ -487,12 +556,22 @@ protected:
 	void RBRRX_EndScene();
 	void RBRTM_EndScene();
 
+	int RescaleDrivelineToFitOutputRect(CDrivelineSource& drivelineSource, CMinimapData& minimapData);
+
+	BOOL RBRRX_PrepareReplayTrack(const std::string& mapName);
+	void RBRRX_LoadTrack(int mapMenuIdx);
+
 	void   FocusRBRRXNthMenuIdxRow(int menuIdx);
 	void   UpdateRBRRXMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo);
 	double UpdateRBRRXINILengthOption(const std::string& sFolderName, double newLength);
 
-	BOOL RBRRX_PrepareReplayTrack(const std::string mapName);
-	void RBRRX_LoadTrack(int mapMenuIdx);
+	BOOL RBRRX_ReadStartSplitsFinishPacenoteDistances(const std::string& folderName, float* startDistance, float* split1Distance, float* split2Distance, float* finishDistance);
+	int  RBRRX_ReadDriveline(const std::string& folderName, CDrivelineSource& drivelineSource );
+	void RBRRX_DrawMinimap(const std::string& folderName, int screenID);
+
+	BOOL RBRTM_ReadStartSplitsFinishPacenoteDistances(const std::wstring& trackFileName, float* startDistance, float* split1Distance, float* split2Distance, float* finishDistance);
+	int  RBRTM_ReadDriveline(int mapID, CDrivelineSource& drivelineSource);
+	void RBRTM_DrawMinimap(int mapID, int screenID);
 
 public:
 	IRBRGame*     m_pGame;
@@ -532,6 +611,8 @@ public:
 
 	LPDIRECT3DVERTEXBUFFER9 m_screenshotCroppingRectVertexBuffer; // Screeshot rect vertex to highlight the current capture area on screen while capturing preview img
 
+	LPDIRECT3DVERTEXBUFFER9 m_minimapVertexBuffer; // Minimap rect vertex to visualize map layout as 2D overview map
+
 	int  m_iCustomReplayState;					// 0 = No custom replay (default RBR behaviour), 1 = Custom replay process is running. This plugin takes screenshots of car models
 	std::chrono::steady_clock::time_point m_tCustomReplayStateStartTime;
 
@@ -549,6 +630,8 @@ public:
 	std::wstring m_screenshotPathMapRBRTM;		// Custom map preview image path
 	RBRTM_MapInfo m_latestMapRBRTM;				// The latest selected stage (mapID) in RBRTM Shakedown menu (if the current mapID is still the same then no need to re-load the same stage preview image)
 
+	RECT		 m_minimapRBRTMPictureRect;		// Location of the minimap in RBRRX stages list
+
 	int m_recentMapsMaxCountRBRTM;				// Max num of recent stages/maps added to recentMaps vector (default 5 if not set in INI file. 0 disabled the custom Shakedown menu feature)
 	std::list<std::unique_ptr<RBRTM_MapInfo>> m_recentMapsRBRTM; // Recent maps shown on top of the Shakedown stage list
 	bool m_bRecentMapsRBRTMModified;			// Is the recent maps list modified since the last INI file saving?
@@ -563,6 +646,8 @@ public:
 	RECT         m_mapRBRRXPictureRect;			// Output rect of RBRRX map preview image (re-scaled pic area)
 	std::wstring m_screenshotPathMapRBRRX;		// Custom map preview image path
 	RBRRX_MapInfo m_latestMapRBRRX;				// The latest selected stage in RBRRX menu (if the current mapID is still the same then no need to re-load the same stage preview image)
+
+	RECT		 m_minimapRBRRXPictureRect;		// Location of the minimap in RBRRX stages list
 
 	int m_recentMapsMaxCountRBRRX;				// Max num of recent stages/maps added to recentMaps vector (default 5 if not set in INI file. 0 disabled the custom Shakedown menu feature)
 	std::list<std::unique_ptr<RBRRX_MapInfo>> m_recentMapsRBRRX; // Recent maps shown on top of the RBR_RX stage list
@@ -617,219 +702,15 @@ public:
 	void SaveSettingsToRBRTMRecentMaps();
 	void SaveSettingsToRBRRXRecentMaps();
 
-	int FindRBRTMMenuItemIdxByMapID(PRBRTMMenuItem pMenuItems, int numOfItems, int mapID)
-	{
-		// Find the RBRTM menu item by mapID (search menuItem array directly). Return index to the menuItem struct or -1
-		if (pMenuItems != nullptr)
-		{
-			for (int idx = 0; idx < numOfItems; idx++)
-				if (pMenuItems[idx].mapID == mapID)
-					return idx;
-		}
-		return -1;
-	}
+	int  RBRTM_FindMenuItemIdxByMapID(PRBRTMMenuItem pMenuItems, int numOfItems, int mapID);
+	int  RBRTM_FindMenuItemIdxByMapID(PRBRTMMenuData pMenuData, int mapID);
+	int  RBRTM_CalculateNumOfValidMapsInRecentList(PRBRTMMenuData pMenuData = nullptr);
+	void RBRTM_AddMapToRecentList(int mapID);
 
-	int FindRBRTMMenuItemIdxByMapID(PRBRTMMenuData pMenuData, int mapID)
-	{
-		// Find the RBRTM menu item by mapID. Return index to the menuItem struct or -1
-		if (pMenuData != nullptr)
-		{
-			//for (int idx = 0; idx < pMenuData->numOfItems; idx++)
-			//	if (pMenuData->pMenuItems[idx].mapID == mapID)
-			//		return idx;
-			return FindRBRTMMenuItemIdxByMapID(pMenuData->pMenuItems, pMenuData->numOfItems, mapID);
-		}
-		return -1;
-	}
-
-	int FindRBRRXMenuItemIdxByFolderName(PRBRRXMenuItem pMapMenuItemsRBRRX, int numOfItemsMenuItemsRBRRX, const std::string& folderName)
-	{
-		// Find the RBRRX menu item by folderName (map identifier because BTB tracks don't have unique ID numbers). Return index to the menuItem struct or -1
-		if (pMapMenuItemsRBRRX != nullptr && !folderName.empty())
-		{
-			std::string trackFolder;
-			trackFolder.reserve(256); // Max length of folder name in RBR_RX plugin
-			//_ToLowerCase(folderName);
-
-			for (int idx = 0; idx < numOfItemsMenuItemsRBRRX; idx++)
-			{
-				trackFolder.assign(pMapMenuItemsRBRRX[idx].szTrackFolder);
-				//DebugPrint("DEBUG: FindRBRRXMenuItemIdxByFolderName %d %s=%s", idx, trackFolder.c_str(), folderName.c_str());
-				if (_iEqual(trackFolder, folderName, true))
-					return idx;
-			}
-		}
-
-		return -1;
-	}
-
-	int FindRBRRXMenuItemIdxByMapName(PRBRRXMenuItem pMapMenuItemsRBRRX, int numOfItemsMenuItemsRBRRX, std::string mapName)
-	{
-		// Find the RBRRX menu item by trackName. Return index to the menuItem struct or -1
-		if (pMapMenuItemsRBRRX != nullptr && !mapName.empty())
-		{
-			std::string trackName;
-			trackName.reserve(256); // Max length of folder name in RBR_RX plugin
-
-			_ToLowerCase(mapName);
-			for (int idx = 0; idx < numOfItemsMenuItemsRBRRX; idx++)
-			{
-				trackName.assign(pMapMenuItemsRBRRX[idx].szTrackName);
-				if (_iEqual(trackName, mapName, true))
-					return idx;
-			}
-		}
-
-		return -1;
-	}
-
-	int CalculateNumOfValidMapsInRecentList(PRBRTMMenuData pMenuData = nullptr)
-	{
-		int numOfRecentMaps = 0;
-		int menuIdx;
-
-		auto it = m_recentMapsRBRTM.begin();
-		while (it != m_recentMapsRBRTM.end()) 
-		{
-			if ((*it)->mapID > 0 && numOfRecentMaps < m_recentMapsMaxCountRBRTM)
-			{
-				menuIdx = FindRBRTMMenuItemIdxByMapID(pMenuData, (*it)->mapID);
-
-				if (menuIdx >= 0 || pMenuData == nullptr)
-				{
-					// The mapID in recent list is valid. Refresh the menu entry name as "[recent idx] Stage name"
-					numOfRecentMaps++;
-					if (pMenuData != nullptr)
-					{
-						(*it)->name = L"[" + std::to_wstring(numOfRecentMaps) + L"] ";
-						(*it)->name.append(pMenuData->pMenuItems[menuIdx].wszMenuItemName);
-					}
-
-					// Go to the next item in list iterator
-					++it;
-				}
-				else
-				{
-					// The map in recent list is no longer in stages menu list. Invalidate the recent item (ie. it is not added as a shortcut to RBRTM Shakedown stages menu)
-					it = m_recentMapsRBRTM.erase(it);
-				}
-			}
-			else
-			{
-				// Invalid mapID value or "too many items". Remove the item if the menu data was defined
-				if (pMenuData != nullptr)
-					it = m_recentMapsRBRTM.erase(it);
-				else
-					++it;
-			}
-		}
-
-		return numOfRecentMaps;
-	}
-
-	int CalculateNumOfValidMapsInRecentList(PRBRRXMenuItem pMapMenuItemsRBRRX = nullptr, int numOfItemsMenuItemsRBRRX = 0)
-	{
-		int numOfRecentMaps = 0;
-		int menuIdx;
-
-		auto it = m_recentMapsRBRRX.begin();
-		while (it != m_recentMapsRBRRX.end())
-		{
-			if (!(*it)->folderName.empty() && numOfRecentMaps < m_recentMapsMaxCountRBRRX)
-			{
-				menuIdx = FindRBRRXMenuItemIdxByFolderName(pMapMenuItemsRBRRX, numOfItemsMenuItemsRBRRX, (*it)->folderName);
-				//DebugPrint("DEBUG: CalculateNumOfValidMapsInRecentList=%s %d", (*it)->folderName.c_str(), menuIdx);
-
-				if (menuIdx >= 0 || pMapMenuItemsRBRRX == nullptr)
-				{
-					// The mapID in recent list is valid. Refresh the menu entry name as "[recent idx] Stage name"
-					numOfRecentMaps++;
-					if (pMapMenuItemsRBRRX != nullptr)
-					{
-						(*it)->name = "[" + std::to_string(numOfRecentMaps) + "] ";
-						(*it)->name.append(pMapMenuItemsRBRRX[menuIdx].szTrackName);
-						(*it)->physicsID = pMapMenuItemsRBRRX[menuIdx].physicsID;
-					}
-
-					// Go to the next item in list iterator
-					++it;
-				}
-				else
-				{
-					// The map in recent list is no longer in stages menu list. Invalidate the recent item (ie. it is not added as a shortcut to RBRTM Shakedown stages menu)
-					it = m_recentMapsRBRRX.erase(it);
-				}
-			}
-			else
-			{
-				// Invalid map or "too many items". Remove the item if the menu data was defined
-				if (pMapMenuItemsRBRRX != nullptr)
-					it = m_recentMapsRBRRX.erase(it);
-				else
-					++it;
-			}
-		}
-
-		return numOfRecentMaps;
-	}
-
-	void AddMapToRecentList(int mapID)
-	{
-		if (mapID <= 0) return;
-
-		// Add mapID to top of the recentMaps list (if already in the list then move it to top, otherwise add as a new item and remove the last item if the list is full)
-		for (auto& iter = m_recentMapsRBRTM.begin(); iter != m_recentMapsRBRTM.end(); ++iter) 
-		{
-			if ((*iter)->mapID == mapID)
-			{
-				// MapID already in the recent list. Move it to the top of the list (no need to re-add it to the list)
-				if (iter != m_recentMapsRBRTM.begin())
-				{
-					m_recentMapsRBRTM.splice(m_recentMapsRBRTM.begin(), m_recentMapsRBRTM, iter, std::next(iter));
-					m_bRecentMapsRBRTMModified = TRUE;
-				}
-
-				// Must return after moving the item to top of list because for-iterator is now invalid because the list was modified
-				return;
-			}
-		}
-
-		// MapID is not yet in the recent list. Add it to the top of the list (we cannot delete items at this point because the to-be-removed recentItem may be used by Shakedown stages menu)
-		auto newItem = std::make_unique<RBRTM_MapInfo>();
-		newItem->mapID = mapID;
-		m_recentMapsRBRTM.push_front(std::move(newItem));
-		m_bRecentMapsRBRTMModified = TRUE;
-	}
-
-	void AddMapToRecentList(std::string folderName)
-	{
-		if (folderName.empty()) return;
-		_ToLowerCase(folderName); // RecentRBRRX vector list should have lowercase folder names
-
-		// Add map folderName to top of the recentMaps list (if already in the list then move it to top, otherwise add as a new item and remove the last item if the list is full)
-		for (auto& iter = m_recentMapsRBRRX.begin(); iter != m_recentMapsRBRRX.end(); ++iter)
-		{
-			if(folderName.compare((*iter)->folderName) == 0)
-			{
-				// MapID already in the recent list. Move it to the top of the list (no need to re-add it to the list)
-				if (iter != m_recentMapsRBRRX.begin())
-				{
-					m_recentMapsRBRRX.splice(m_recentMapsRBRRX.begin(), m_recentMapsRBRRX, iter, std::next(iter));
-					m_bRecentMapsRBRRXModified = TRUE;
-				}
-
-				// Must return after moving the item to top of list because for-iterator is now invalid because the list was modified
-				return;
-			}
-		}
-
-		// BTB folderName is not yet in the recent list. Add it to the top of the list
-		auto newItem = std::make_unique<RBRRX_MapInfo>();
-		newItem->folderName = folderName;
-		//DebugPrint("DEBUG: RBRRX_RecentMapX=%s", newItem->folderName.c_str());
-		m_recentMapsRBRRX.push_front(std::move(newItem));
-		m_bRecentMapsRBRRXModified = TRUE;
-	}
+	int  RBRRX_FindMenuItemIdxByFolderName(PRBRRXMenuItem pMapMenuItemsRBRRX, int numOfItemsMenuItemsRBRRX, const std::string& folderName);
+	int  RBRRX_FindMenuItemIdxByMapName(PRBRRXMenuItem pMapMenuItemsRBRRX, int numOfItemsMenuItemsRBRRX, std::string mapName);
+	int  RBRRX_CalculateNumOfValidMapsInRecentList(PRBRRXMenuItem pMapMenuItemsRBRRX = nullptr, int numOfItemsMenuItemsRBRRX = 0);
+	void RBRRX_AddMapToRecentList(std::string folderName);
 	
 	inline const WCHAR* GetLangStr(const WCHAR* szStrKey) 
 	{ 
@@ -844,7 +725,7 @@ public:
 	inline const std::wstring GetLangWString(const WCHAR* szStrKey, bool autoTrailingSpace = false)
 	{
 		std::wstring sResult = GetLangStr(szStrKey);
-		if (!sResult.empty()) sResult += L" ";
+		if (autoTrailingSpace && !sResult.empty()) sResult += L" ";
 		return sResult;
 	}
 
@@ -860,8 +741,7 @@ public:
 
 	inline const void AddLangStr(const WCHAR* szStrKey, const char* szResult)
 	{
-		if(szResult != nullptr)
-			AddLangStr(szStrKey, _ToWString(szResult).c_str());
+		if(szResult != nullptr) AddLangStr(szStrKey, _ToWString(szResult).c_str());
 	}
 
 

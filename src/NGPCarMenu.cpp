@@ -26,6 +26,7 @@
 
 #include <shlwapi.h>			// PathRemoveFileSpec
 
+#include <set>					// std::set
 #include <filesystem>			// fs::directory_iterator
 #include <fstream>				// std::ifstream
 #include <sstream>				// std::stringstream
@@ -99,7 +100,7 @@ protected:
 public:
 	virtual void OnError(const int errorCode) override
 	{
-		DebugPrint(L"OnError %d", errorCode);
+		//DebugPrint(L"OnError %d", errorCode);
 
 		// zero here is not an error, but just a notification that watcher thread has ended
 		if (errorCode != FILEWATCHER_ERR_NOERROR_CLOSING)
@@ -108,13 +109,13 @@ public:
 
 	virtual void OnFileChange(const std::wstring& fileName) override
 	{
-		DebugPrint(L"OnFileChange %s", fileName.c_str());
+		//DebugPrint(L"OnFileChange %s", fileName.c_str());
 		AddReplayFileToQueue(fileName);
 	}
 
 	virtual void OnFileAdded(const std::wstring& fileName) override
 	{
-		DebugPrint(L"OnFileAdded %s", fileName.c_str());
+		//DebugPrint(L"OnFileAdded %s", fileName.c_str());
 		AddReplayFileToQueue(fileName);
 	}
 
@@ -608,12 +609,14 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	ZeroMemory(&m_mapRBRTMPictureRect, sizeof(m_mapRBRTMPictureRect));
 	m_latestMapRBRTM.mapID = -1;
 	m_recentMapsMaxCountRBRTM = 5;		// Default num of recent maps/stages on top of the RBRTM Shakedown stages menu list
-	m_bRecentMapsRBRTMModified = FALSE;
+	m_bRecentMapsRBRTMModified = FALSE;	
+	ZeroMemory(&m_minimapRBRTMPictureRect, sizeof(m_minimapRBRTMPictureRect));
 
 	ZeroMemory(&m_mapRBRRXPictureRect, sizeof(m_mapRBRRXPictureRect));
 	m_latestMapRBRRX.folderName = "";
 	m_recentMapsMaxCountRBRRX = 5;		// Default num of recent maps/stages on top of the RBRRX stages menu list
 	m_bRecentMapsRBRRXModified = FALSE;
+	ZeroMemory(&m_minimapRBRRXPictureRect, sizeof(m_minimapRBRRXPictureRect));
 
 	m_pOrigMapMenuDataRBRTM = nullptr;
 	m_pOrigMapMenuItemsRBRTM = nullptr;
@@ -637,6 +640,8 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_iCustomReplayState = 0;
 	m_iCustomReplayScreenshotCount = 0;
 	m_bCustomReplayShowCroppingRect = false;
+
+	m_minimapVertexBuffer = nullptr;
 
 	m_screenshotCroppingRectVertexBuffer = nullptr;
 	m_screenshotCarPosition = 0;
@@ -731,6 +736,7 @@ CNGPCarMenu::~CNGPCarMenu(void)
 		SAFE_DELETE(g_pFontCarSpecCustom);
 		SAFE_DELETE(g_pFontCarSpecModel);
 
+		SAFE_RELEASE(m_minimapVertexBuffer);
 		SAFE_RELEASE(m_screenshotCroppingRectVertexBuffer);
 		ClearCachedCarPreviewImages();
 
@@ -1101,7 +1107,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 				//LogPrint("Notice. The list of recent driven RBRTM stages is no longer stored in Plugins\\NGPCarMenu.ini file. RBRTM_RecentMap1..N options are now stored in Plugins\\NGPCarMenu\\RBRTMRecentMaps.ini file");
 
 				for (int idx = m_recentMapsMaxCountRBRTM; idx > 0; idx--)
-					AddMapToRecentList(rbrtmRecentMapsINI.GetLongValue("Default", (std::string("RBRTM_RecentMap").append(std::to_string(idx)).c_str()), -1));
+					RBRTM_AddMapToRecentList(rbrtmRecentMapsINI.GetLongValue("Default", (std::string("RBRTM_RecentMap").append(std::to_string(idx)).c_str()), -1));
 
 				// Set "not modified" when the recent map was modifed because of reading the current INI file
 				m_bRecentMapsRBRTMModified = FALSE;
@@ -1143,8 +1149,24 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 
 				LogPrint("RBRTM_MapPictureRect value is empty. Using the default value RBRTM_MapPictureRect=%d %d %d %d", m_mapRBRTMPictureRect.left, m_mapRBRTMPictureRect.top, m_mapRBRTMPictureRect.right, m_mapRBRTMPictureRect.bottom);
 			}
-		}
 
+			// RBRRX_MinimapPictureRect
+			sTextValue = pluginINIFile.GetValue(szResolutionText, L"RBRTM_MinimapPictureRect", L"");
+			_Trim(sTextValue);
+			if (sTextValue.empty())
+			{
+				sTextValue = pluginINIFile.GetValue(L"Default", L"RBRTM_MinimapPictureRect", L"");
+				_Trim(sTextValue);
+			}
+
+			if (sTextValue != L"0")
+				_StringToRect(sTextValue, &this->m_minimapRBRTMPictureRect);
+			else
+				m_minimapRBRTMPictureRect.bottom = -1; // Disable RBRTM map preview image featre
+
+			if (m_minimapRBRTMPictureRect.top == 0 && m_minimapRBRTMPictureRect.right == 0 && m_minimapRBRTMPictureRect.left == 0 && m_minimapRBRTMPictureRect.bottom == 0)
+				LogPrint("RBRTM_MinimapPictureRect value is empty. Using the default minimap location");
+		}
 
 		// RBRRX integration properties
 		sTextValue = pluginINIFile.GetValue(L"Default", L"RBRRX_Integration", L"1");
@@ -1177,7 +1199,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 				m_recentMapsMaxCountRBRRX = min(pluginINIFile.GetLongValue(L"Default", L"RBRRX_RecentMapsMaxCount", 5), 500);
 
 				for (int idx = m_recentMapsMaxCountRBRRX; idx > 0; idx--)
-					AddMapToRecentList(std::string(rbrrxRecentMapsINI.GetValue("Default", (std::string("RBRRX_RecentMap").append(std::to_string(idx)).c_str()), "")));
+					RBRRX_AddMapToRecentList(std::string(rbrrxRecentMapsINI.GetValue("Default", (std::string("RBRRX_RecentMap").append(std::to_string(idx)).c_str()), "")));
 
 				// Set "not modified" when the recent map was modifed because of reading the current INI file
 				m_bRecentMapsRBRRXModified = FALSE;
@@ -1218,7 +1240,25 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 
 				LogPrint("RBRRX_MapPictureRect value is empty. Using the default value RBRRX_MapPictureRect=%d %d %d %d", m_mapRBRRXPictureRect.left, m_mapRBRRXPictureRect.top, m_mapRBRRXPictureRect.right, m_mapRBRRXPictureRect.bottom);
 			}
+
+			// RBRRX_MinimapPictureRect
+			sTextValue = pluginINIFile.GetValue(szResolutionText, L"RBRRX_MinimapPictureRect", L"");
+			_Trim(sTextValue);
+			if (sTextValue.empty())
+			{
+				sTextValue = pluginINIFile.GetValue(L"Default", L"RBRRX_MinimapPictureRect", L"");
+				_Trim(sTextValue);
+			}
+
+			if (sTextValue != L"0")
+				_StringToRect(sTextValue, &this->m_minimapRBRRXPictureRect);
+			else
+				m_minimapRBRRXPictureRect.bottom = -1; // Disable RBRRX map preview image featre
+
+			if (m_minimapRBRRXPictureRect.top == 0 && m_minimapRBRRXPictureRect.right == 0 && m_minimapRBRRXPictureRect.left == 0 && m_minimapRBRRXPictureRect.bottom == 0)
+				LogPrint("RBRRX_MinimapPictureRect value is empty. Using the default minimap location");
 		}
+
 
 		sTextValue = pluginINIFile.GetValue(L"Default", L"GenerateReplayMetadataFile", L"1");
 		_Trim(sTextValue);
@@ -1619,6 +1659,17 @@ int CNGPCarMenu::InitAllNewCustomPluginIntegrations()
 //-------------------------------------------------------------------------------------------------------------------
 // AutoLogin feature enabled. Do the logon sequence and take the RBR menu automatically to the defined menu (Default profile, Main, Options, Plugins, Custom plugin)
 //
+void CNGPCarMenu::StartNewAutoLogonSequence()
+{
+	m_autoLogonSequenceLabel.clear();
+	m_autoLogonSequenceLabel.str(std::wstring());
+	for (auto& item : m_autoLogonSequenceSteps)
+		m_autoLogonSequenceLabel << (m_autoLogonSequenceLabel.tellp() != std::streampos(0) ? L"/" : L"") << _ToWString(item);
+
+	m_dwAutoLogonEventStartTick = GetTickCount32();
+	m_iAutoLogonMenuState = (m_bAutoLogonWaitProfile || m_iAutoLogonMenuState != -1 ? 3 : 1); // 3=Wait main menu (do not autoLoad a profile on bootup) 1=AutoLoad profile on RBR bootup
+}
+
 void CNGPCarMenu::DoAutoLogonSequence()
 {
 	if (m_iAutoLogonMenuState > 1 && ((GetTickCount32() - m_dwAutoLogonEventStartTick) >= (DWORD) (m_bAutoLogonWaitProfile ? 15000 : 4000) || m_autoLogonSequenceSteps.size() <= 0) )
@@ -2629,6 +2680,216 @@ bool CNGPCarMenu::ReadCarPreviewImageFromFile(int selectedCarIdx, float x, float
 	if (!SUCCEEDED(hResult)) pOutImageTexture->imgSize.cx = -1;
 
 	return pOutImageTexture->imgSize.cx != -1;
+}
+
+
+//------------------------------------------------------------------------------------------------
+// Rescales the driveline coordinate data of a map to fit an output rectangle area
+//
+int CNGPCarMenu::RescaleDrivelineToFitOutputRect(CDrivelineSource& drivelineSource, CMinimapData& minimapData)
+{
+	DebugPrint("RescaleDrivelineToFitOutputRect. CountT1=%d", drivelineSource.vectDrivelinePoint.size());
+
+	BOOL bFlipMinimap = FALSE;		// If TRUE then flips X and Y axis because the minimap graph takes more vertical than horizontal space (draw area has more room vertically)
+
+	POINT_float sourceSize;
+	float sourceAspectRatio;
+
+	POINT_float  outputSize;
+	float outputAspectRatio;
+
+	POINT_float outputRange;
+
+	std::vector<POINT_DRIVELINE_int> vectTempMinimapPoint;
+
+	if(drivelineSource.vectDrivelinePoint.size() > 0)
+		vectTempMinimapPoint.reserve(drivelineSource.vectDrivelinePoint.size());
+
+	minimapData.vectMinimapPoint.clear();
+	minimapData.minimapSize.x = minimapData.minimapSize.y = INT_MIN;
+
+	// Keep the aspect ratio correct even after rescaling
+	sourceSize.x = drivelineSource.pointMax.x - drivelineSource.pointMin.x;
+	sourceSize.y = drivelineSource.pointMax.y - drivelineSource.pointMin.y;
+
+	outputSize.x = static_cast<float>(minimapData.minimapRect.right - minimapData.minimapRect.left);
+	outputSize.y = static_cast<float>(minimapData.minimapRect.bottom - minimapData.minimapRect.top);
+
+	if ((outputSize.x > outputSize.y) && (sourceSize.y > sourceSize.x) || (outputSize.x < outputSize.y) && (sourceSize.y < sourceSize.x))
+	{
+		// The width is more then height, so flip the output graph 90-degree because the output space has also more space vertically (the minimap scales better)
+		float tmpX;
+		tmpX = sourceSize.x;
+		sourceSize.x = sourceSize.y;
+		sourceSize.y = tmpX;
+
+		tmpX = drivelineSource.pointMax.x;
+		drivelineSource.pointMax.x = drivelineSource.pointMax.y;
+		drivelineSource.pointMax.y = tmpX;
+
+		tmpX = drivelineSource.pointMin.x;
+		drivelineSource.pointMin.x = drivelineSource.pointMin.y;
+		drivelineSource.pointMin.y = tmpX;
+
+		bFlipMinimap = TRUE;
+	}
+
+	if (sourceSize.y != 0) sourceAspectRatio = sourceSize.x / sourceSize.y;
+	else sourceAspectRatio = 1.0f;
+
+	if (outputSize.y != 0) outputAspectRatio = outputSize.x / outputSize.y;
+	else outputAspectRatio = 1.0f;
+
+	outputRange = outputSize;
+
+	if (sourceAspectRatio > outputAspectRatio)
+		outputRange.y = outputSize.x / sourceAspectRatio;
+	else
+		outputRange.x = outputSize.y * sourceAspectRatio;
+
+	//
+	// Re-scale coordinates to fit the minimap into the output rect and return the scaled minimap coordinate vector and the total width/height of the minimap graph
+	//
+	int newX, newY, splitType;
+	POINT_DRIVELINE_int prevPoint;
+
+	prevPoint.drivelineCoord.x = prevPoint.drivelineCoord.y = prevPoint.splitType = INT_MIN;
+	for (auto& item : drivelineSource.vectDrivelinePoint)
+	{				
+		//item.y = /*outputRange.y - */C_RANGE_REMAP(item.y, pointMin.y, pointMax.y, 0, outputRange.y);
+		if (bFlipMinimap)
+		{
+			newX = static_cast<int>(outputRange.x - C_RANGE_REMAP(item.drivelineCoord.y, drivelineSource.pointMin.x, drivelineSource.pointMax.x, 0, outputRange.x));
+			newY = static_cast<int>(outputRange.y - C_RANGE_REMAP(item.drivelineCoord.x, drivelineSource.pointMin.y, drivelineSource.pointMax.y, 0, outputRange.y));
+		}
+		else
+		{
+			newX = static_cast<int>(C_RANGE_REMAP(item.drivelineCoord.x, drivelineSource.pointMin.x, drivelineSource.pointMax.x, 0, outputRange.x));
+			newY = static_cast<int>(outputRange.y - C_RANGE_REMAP(item.drivelineCoord.y, drivelineSource.pointMin.y, drivelineSource.pointMax.y, 0, outputRange.y));
+		}
+
+		// Set the split type of the coordinate (0=start->split1, 1=split1->split2, 2=split2->finish)
+		if (item.drivelineDistance < drivelineSource.split1Distance)
+			splitType = 0;
+		else if (item.drivelineDistance < drivelineSource.split2Distance && drivelineSource.split2Distance > 0)
+			splitType = 1;
+		else if (item.drivelineDistance < drivelineSource.finishDistance)
+			splitType = (drivelineSource.split2Distance > 0 ? 2 : 1);
+		else
+			splitType = 0;
+
+		// Don't add duplicated consequtive points
+		if (prevPoint.drivelineCoord.x != newX || prevPoint.drivelineCoord.y != newY || prevPoint.splitType != splitType)
+		{
+			prevPoint.drivelineCoord.x = newX;
+			prevPoint.drivelineCoord.y = newY;
+			prevPoint.splitType = splitType;
+
+			//minimapData.vectMinimapPoint.push_back({ {newX, newY}, splitType});
+			vectTempMinimapPoint.push_back({ {newX, newY}, splitType });
+
+			if (newX > minimapData.minimapSize.x) minimapData.minimapSize.x = newX;
+			if (newY > minimapData.minimapSize.y) minimapData.minimapSize.y = newY;
+		}
+	}
+
+/*
+	// Remove duplicated consequtive coords (usually as a result of downscaling some source points end up into the same output point)
+	if (minimapData.vectMinimapPoint.size() >= 2)
+	{
+		// for (auto it = vectDrivelinePoint.begin()+1; it != minimapData.vectMinimapPoint.end(); )
+		for (auto it = std::next(minimapData.vectMinimapPoint.begin(),1); it != minimapData.vectMinimapPoint.end(); )
+		{
+			// if (*it == *((it - 1)))
+			if (*it == *((std::prev(it, 1))))
+				it = minimapData.vectMinimapPoint.erase(it);
+			else 
+				it++;
+		}
+	}
+*/
+
+	DebugPrint("RescaleDrivelineToFitOutputRect. CountT2=%d", vectTempMinimapPoint.size());
+
+/*
+#if USE_DEBUG == 1
+	std::ofstream outputFile;
+	outputFile.open("c:\\temp\\minimap.txt");
+	outputFile << "DrivelinePoints=" << drivelineSource.vectDrivelinePoint.size() << std::endl;
+	outputFile << "MinimapPointsT1=" << vectTempMinimapPoint.size() << std::endl;
+	for (auto& item : vectTempMinimapPoint)
+	{
+		outputFile << item.drivelineCoord.x << "," << item.drivelineCoord.y << std::endl;
+	}
+	outputFile << "-------------" << std::endl;
+#endif
+*/
+
+	// Minimap lines are drawn by the lazy way using inter-connected small circles. Interpolate missing coordinates to create a complete line representing the road line
+	// TODO. Implement (or find a lightweight open-source version) a real trianglefan/polyline vertex generator routine with smooth edges (directx9 compatible). 
+	//       But, for now this code uses the lazy way because the minimap doesn't need "perfect" smooth and curved lines.
+	if (vectTempMinimapPoint.size() >= 2)
+	{
+		POINT_DRIVELINE_int startPoint;
+
+		//prevPoint.drivelineCoord.x = prevPoint.drivelineCoord.y = prevPoint.splitType = INT_MIN;
+		startPoint.drivelineCoord = vectTempMinimapPoint[0].drivelineCoord;
+		startPoint.splitType = vectTempMinimapPoint[0].splitType;
+		for (auto& item : vectTempMinimapPoint)
+		{
+			// Interpolate points between the prev point and the new point
+			float lenX = static_cast<float>((item.drivelineCoord.x - startPoint.drivelineCoord.x));
+			float lenY = static_cast<float>((item.drivelineCoord.y - startPoint.drivelineCoord.y));
+			float len = ((lenX * lenX) + (lenY * lenY)) / 2.0f;
+			if (len != 0)
+			{
+				float dt = 4 / len;
+				float t;
+
+				t = dt;
+				while (t < 1.0)
+				{
+					newX = static_cast<int>((1.0f - t) * startPoint.drivelineCoord.x + t * item.drivelineCoord.x);
+					newY = static_cast<int>((1.0f - t) * startPoint.drivelineCoord.y + t * item.drivelineCoord.y);
+
+					if (newX == item.drivelineCoord.x && newY == item.drivelineCoord.y)
+						break;
+
+					if (prevPoint.drivelineCoord.x != newX || prevPoint.drivelineCoord.y != newY)
+					{
+						// Add interpolated point between start-end points
+						prevPoint.drivelineCoord.x = newX;
+						prevPoint.drivelineCoord.y = newY;
+						minimapData.vectMinimapPoint.push_back({ {newX, newY}, startPoint.splitType });
+					}
+					t += dt;
+				}
+			}
+
+			startPoint.drivelineCoord = item.drivelineCoord;
+			startPoint.splitType = item.splitType;
+
+			// Add the new target point
+			minimapData.vectMinimapPoint.push_back({ {item.drivelineCoord.x, item.drivelineCoord.y}, item.splitType });
+		}
+	}
+
+	DebugPrint("RescaleDrivelineToFitOutputRect. CountT3=%d", minimapData.vectMinimapPoint.size());
+
+/*
+#if USE_DEBUG == 1
+	outputFile << "-------------" << std::endl;
+	outputFile << "MinimapPointsT2=" << minimapData.vectMinimapPoint.size() << std::endl;
+	for (auto& item : minimapData.vectMinimapPoint)
+	{
+		outputFile << item.drivelineCoord.x << "," << item.drivelineCoord.y << std::endl;
+	}
+	outputFile << "-------------" << std::endl;
+	outputFile.close();
+#endif
+*/
+
+	return minimapData.vectMinimapPoint.size();
 }
 
 

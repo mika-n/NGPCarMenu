@@ -5,8 +5,7 @@ Custom plugin for **Richard Burns Rally game (RBR v1.02 SSE)** to improve the "S
 The original RBR game and RBRTM and RBR_RX plugins have various problems and limitations:
 - The car menu name and preview image of the car (garage) doesn't match with the custom car model.
 - The car specification details shown in a car selection screen don't match with the custom NGP car details. Also, additional info about car 3D models are missing.
-- RBRTM doesn't show custom car details or car preview images. 
-- RBRTM stage selection doesn't show a map preview image and doesn't remember which stages you have driven lately.
+- RBRTM doesn't show custom car details or car preview images. Stage selection doesn't show a map preview image and doesn't remember which stages you have driven lately.
 - RBR_RX stage selection menu list doesn't scroll (limited to 20 BTB stages), it doesn't show map preview images and doesn't remember the stages you have driven lately.
 - RBR_RX replay files cannot be replayed afterwards. You can replay those only once right after the stage is finished and before you go back to RBR main menu. After this you cannot replay RBRRX/BTB recordings.
 
@@ -14,10 +13,12 @@ Good news! **NGPCarMenu plugin solves these issues** by doing following enhancem
 - Shows the actual NGP car specs (HP, gears, transmission), car preview images and 3D car model details in **RBR/RBRTM/RBRRX** menu screens.
 - RBRTM: Shows Nth recently driven stages as a shortcut menu entries on top of the Shakedown stage list (easier and faster to choose your favorite stages and re-drive those).
 - RBRTM: Remembers the focused stage menu line even after visiting the RBRTM main menu (without NGPCarMenu plugin RBRTM would always reset back to the first menu line after visiting RBRTM main menu).
+- RBRTM: Shows a minimap of the track layout in stage selection screens.
 - RBRRX: Scrollable BTB stages menu list (pageUp/pageDown/home/end/arrow keys navigation).
 - RBRRX: Shows the stage information (length, pacenotes created or not, surface, author, version, date. See BTB track specific track.ini metadata file).
 - RBRRX: Shows Nth recently driven stages as a shortcut menu entries on top of the RBR_RX stage list.
-- RBRRX: Supports RBRRX/BTB replay files (ie. BTB replay files can be replayed at anytime, not just right after the racing).
+- RBRRX: Shows a minimap of the track layout in stage selection screens.
+- RBRRX: Supports RBRRX/BTB replay files (ie. BTB replay files can be replayed at anytime, not just right after finishing the race).
 - "AutoLogon" feature opens automatically the menu screen of your favorite plugin when RBR is launched (for example takes you to RBRTM, RBR_RX or RallySimFans menu screen).
 - "Rename profile" feature renames the driver profile while preserving profile settings (ie. you no longer have to call yourself as MULLIGATAWNY. Now you can rename the driver via NGPCarMenu plugin and still keep all maps and cars unlocked).
 
@@ -83,10 +84,12 @@ rbr\Plugins\NGPCarMenu.ini options (see the NGPCarMenu.ini.sample file for more 
 | RBRTM_CarPictureUseTransparent | 0 or 1. 0=No transparent support with PNG files. 1=If PNG file has a transparent background then use it (alpha channel) |
 | RBRTM_MapScreenshotPath | Path of custom map preview images (relative to RBR.EXE location or absolute path). NGPCarMenu uses map preview images from this folder location. If the file is missing then the plugin uses a map specific Maps\Tracks.ini SplashScreen option as a preview image. |
 | RBRTM_MapPictureRect   | Location of the map preview image on RBRTM Shakedown stages menu screen (x1 y1 x2 y2, values in screen coordinates). If missing or empty then NGPCarMenu plugin draws the image at default location. |
+| RBRTM_MinimapPictureRect | Location of the minimap in stage selecton menu screen. 0=Disables the minimap feature. By default the minimap is drawn on top of the map preview image |
 | RBRTM_RecentMapsMaxCount | Maximum number of recent driven maps shown on top of the RBRTM Shakedown stages menu list (shortcuts to a map) |
 | RBRRX_Integration      | 0 or 1. 0=RBRRX integration disabled. 1=RBRRX integration enabled |
 | RBRRX_MapScreenshotPath | Path of custom map preview images (relative to RBR.EXE location or absolute path) |
 | RBRRX_MapPictureRect   | Location of the map preview image on RBR_RX stages menu screen (x1 y1 x2 y2, values in screen coordinates). If missing or empty then NGPCarMenu plugin draws the image at default location. |
+| RBRRX_MinimapPictureRect | Location of the minimap in stage selecton menu screen. 0=Disables the minimap feature. By default the minimap is drawn on top of the map preview image |
 | RBRRX_RecentMapsMaxCount | Maximum number of recent driven maps shown on top of the RBR_RX stages menu list (shortcuts to a map) |
 | GenerateReplayMetadataFile | 0 or 1. Generates a replay metadata INI file when a new RBR, RBRTM or RBRRX replay is saved in Replays folder. BTB replay in NGPCarMenu needs this metadata file, so don't disable this if you want to replay BTB recordings afterwards. |
 
@@ -142,8 +145,8 @@ If the length attribute is missing then NGPCarMenu plugin takes the length from 
 
 ## BTB replay support
 
-RBRRX/BTB replay support in NGPCarMenu plugin requires replay metadata files next to the actual RPL replay file in rbr\Replays folder. The replay metadata file links the replay to a specific BTB track name (as shown in RBRRX/BTB stages menu list and defined in a BTB map specific track.ini Name option):
-Sample of Replays\myReplayfileName.ini file (there should be the normal myReplayfileName.rpl file also):
+RBRRX/BTB replay support in NGPCarMenu plugin requires replay metadata files next to the actual RPL replay file in rbr\Replays folder. NGPCarMenu plugin creates this metadata file automatically when a new replay is saved in RBR. The replay metadata file links the replay to a specific BTB track name (as shown in RBRRX/BTB stages menu list and defined in a BTB map specific track.ini Name option):
+Sample of Replays\myReplayfileName.ini file (replays folder should have the normal myReplayfileName.rpl file also):
   - [Replay]
   - Type=BTB
   - Name=RallyeMonteCarlo2013

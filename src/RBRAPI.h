@@ -45,7 +45,7 @@
 
 #define C_PROCESS_READ_WRITE_QUERY (PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_QUERY_INFORMATION)
 
-#define C_RANGE_REMAP(value, low1, high1, low2, high2) low2 + (value - low1) * (high2 - low2) / (high1 - low1) 
+#define C_RANGE_REMAP(value, low1, high1, low2, high2) (low2 + (value - low1) * (high2 - low2) / (high1 - low1))
 
 //------------------------------------------------------------------------------------------------
 union BYTEBUFFER_FLOAT {
@@ -210,6 +210,20 @@ typedef struct {
 	D3DXVECTOR3 spin;				// 0x190  (Spin X,Y,Z)
 	BYTE pad3[0x1C0 - 0x190 - sizeof(D3DXVECTOR3)];
 	D3DXVECTOR3 speed;				// 0x1C0 (Speed/Velocity? X,Y,Z)
+	BYTE pad4[0x85C - 0x1C0 - sizeof(D3DXVECTOR3)];
+	float driveThrottle;	// 0x85C	0.0-1.0	 (0=No throttle, 1=full throttle)
+	float driveBrake;		// 0x860	0.0-1.0  (0=No brake, 1=full brake)
+	float driveHandbrake;	// 0x864	0.0-1.0  (0=No handbrake, 1=full handbrake)
+	float driveSteering;	// 0x868	<0.0 left, 0.0 center >0.0 right
+	float driveClutch;		// 0x86C	0.0-1.0  (0=clutch released, 1=clutch pedal pushed fully down)
+
+//    +0x085C float throttle value?
+//    +0x0860 float brake value?
+//    +0x0864 float handbrake value?
+//    +0x0868 float steering value?
+//    +0x086C float Clutch  >0.85 clutch On, otherwise Off?
+//    +0x1100 long. Current gear 0..7? There is already gear value in above shown structures. What is this one?
+
 #pragma pack(pop)
 } RRBRCarMovement;
 typedef RRBRCarMovement* PRBRCarMovement;
