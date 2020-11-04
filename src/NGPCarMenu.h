@@ -393,6 +393,8 @@ extern HRESULT __fastcall CustomRBRDirectXBeginScene(void* objPointer);
 extern HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer);
 extern int     __fastcall CustomRBRReplay(void* objPointer, DWORD dummyEDX, const char* szReplayFileName, __int32* pUnknown1, __int32* pUnknown2, size_t iReplayFileSize);
 
+extern float   __fastcall CustomRBRControllerAxisData(void* objPointer, DWORD dummyEDX, __int32 axisID);
+
 extern RBRCarSelectionMenuEntry g_RBRCarSelectionMenuEntry[];
 
 #if USE_DEBUG == 1
@@ -424,6 +426,7 @@ public:
 	DWORD m_dwImageFlags;
 	
 	IMAGE_TEXTURE m_imageTexture;
+	CMinimapData m_minimapData; // if imageFileName is *.trk then this is a minimap image
 
 	CRBRPluginIntegratorLinkImage()
 	{
@@ -536,6 +539,7 @@ protected:
 	DetourXS* gtcDirect3DBeginScene;
 	DetourXS* gtcDirect3DEndScene;
 	DetourXS* gtcRBRReplay;
+	DetourXS* gtcRBRControllerAxisData;
 
 	void StartNewAutoLogonSequence();
 	void DoAutoLogonSequence();
@@ -555,8 +559,6 @@ protected:
 
 	void RBRRX_EndScene();
 	void RBRTM_EndScene();
-
-	int RescaleDrivelineToFitOutputRect(CDrivelineSource& drivelineSource, CMinimapData& minimapData);
 
 	BOOL RBRRX_PrepareReplayTrack(const std::string& mapName);
 	void RBRRX_LoadTrack(int mapMenuIdx);
@@ -623,14 +625,13 @@ public:
 	IMAGE_TEXTURE m_carPreviewTexture[8];		// 0..7 car preview image data (or NULL if missing/not loaded yet)	
 	IMAGE_TEXTURE m_carRBRTMPreviewTexture[8];  // 0..7 car preview image for RBRTM plugin integration if RBRTM integration is enabled (the same pic as in standard preview image texture, but re-scaled to fit the smaller picture are in RBRTM screen)
 
-	CSimpleIniW* m_pTracksIniFile;				// maps\Tracks.ini file (if RBRTM integration is enabled then splash/preview images are shown in Shakedown map selection list)
+	CSimpleIniWEx* m_pTracksIniFile;			// maps\Tracks.ini file (if RBRTM integration is enabled then splash/preview images are shown in Shakedown map selection list)
 
-
-	RECT         m_mapRBRTMPictureRect;			// Output rect of RBRTM map preview image (re-scaled pic area)
 	std::wstring m_screenshotPathMapRBRTM;		// Custom map preview image path
 	RBRTM_MapInfo m_latestMapRBRTM;				// The latest selected stage (mapID) in RBRTM Shakedown menu (if the current mapID is still the same then no need to re-load the same stage preview image)
 
-	RECT		 m_minimapRBRTMPictureRect;		// Location of the minimap in RBRRX stages list
+	RECT m_mapRBRTMPictureRect[2];			// Output rect of RBRTM map preview image (re-scaled pic area) (idx 0=stages menu list, 1=stage options screen)
+	RECT m_minimapRBRTMPictureRect[2];		// Location of the minimap in RBRRX stages list (screenID=0 menu lsit, screenID=1 stage options screen)
 
 	int m_recentMapsMaxCountRBRTM;				// Max num of recent stages/maps added to recentMaps vector (default 5 if not set in INI file. 0 disabled the custom Shakedown menu feature)
 	std::list<std::unique_ptr<RBRTM_MapInfo>> m_recentMapsRBRTM; // Recent maps shown on top of the Shakedown stage list
@@ -643,11 +644,11 @@ public:
 	int m_numOfItemsCustomMapMenuRBRTM;			// Num of items in m_pCustomMapMenuRBRTM (dynamic) array
 
 	LPDIRECT3DVERTEXBUFFER9 g_mapRBRRXRightBlackBarVertexBuffer;
-	RECT         m_mapRBRRXPictureRect;			// Output rect of RBRRX map preview image (re-scaled pic area)
 	std::wstring m_screenshotPathMapRBRRX;		// Custom map preview image path
 	RBRRX_MapInfo m_latestMapRBRRX;				// The latest selected stage in RBRRX menu (if the current mapID is still the same then no need to re-load the same stage preview image)
 
-	RECT		 m_minimapRBRRXPictureRect;		// Location of the minimap in RBRRX stages list
+	RECT m_mapRBRRXPictureRect[2];		// Output rect of RBRRX map preview image (re-scaled pic area) (idx 0=stages menu list, 1=weath
+	RECT m_minimapRBRRXPictureRect[2];	// Location of the minimap in RBRRX stages list (screenID=0 and screenID=1)
 
 	int m_recentMapsMaxCountRBRRX;				// Max num of recent stages/maps added to recentMaps vector (default 5 if not set in INI file. 0 disabled the custom Shakedown menu feature)
 	std::list<std::unique_ptr<RBRRX_MapInfo>> m_recentMapsRBRRX; // Recent maps shown on top of the RBR_RX stage list
@@ -690,6 +691,10 @@ public:
 
 	int GetNextScreenshotCarID(int currentCarID);
 	static bool PrepareScreenshotReplayFile(int carID);
+
+	BOOL ReadStartSplitsFinishPacenoteDistances(const std::wstring& sPacenoteFileName, float* startDistance, float* split1Distance, float* split2Distance, float* finishDistance);
+	int  ReadDriveline(const std::wstring& sDrivelineFileName, CDrivelineSource& drivelineSource);
+	int  RescaleDrivelineToFitOutputRect(CDrivelineSource& drivelineSource, CMinimapData& minimapData);
 
 	std::wstring ReplacePathVariables(const std::wstring& sPath, int selectedCarIdx = -1, bool rbrtmplugin = false, int mapID = -1, const WCHAR* mapName = nullptr, const std::string& folderName = "");
 	bool ReadCarPreviewImageFromFile(int selectedCarIdx, float x, float y, float cx, float cy, IMAGE_TEXTURE* pOutImageTexture, DWORD dwFlags = 0, bool isRBRTMPlugin = false);

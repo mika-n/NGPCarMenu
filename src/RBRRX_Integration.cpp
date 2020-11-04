@@ -263,7 +263,7 @@ void CNGPCarMenu::UpdateRBRRXMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo)
 		ReadAndSetDefaultINIValue("INFO", "comment", pRBRRXMapInfo->comment, "");
 
 		// Skip map image initializations if the map preview img feature is disabled (RBRRX_MapPictureRect=0)
-		if (m_mapRBRRXPictureRect.bottom != -1)
+		if (m_mapRBRRXPictureRect[0].bottom != -1 || m_mapRBRRXPictureRect[1].bottom != -1)
 		{
 			std::wstring sTrackName = _ToWString(pRBRRXMapInfo->name);
 
@@ -649,38 +649,17 @@ void CNGPCarMenu::RBRRX_DrawMinimap(const std::string& folderName, int screenID)
 	static CMinimapData* prevMinimapData = nullptr;
 	RECT minimapRect;
 
-	if (m_minimapRBRRXPictureRect.bottom == -1)
+	if (m_minimapRBRRXPictureRect[screenID].bottom == -1)
 		return; // Minimap drawing disabled
 
 	// ScreenID 0 = Stages menu list
 	// ScreenID 1 = The weather settings of the chosen stage menu screen (draw the minimap in pre-defined location in top right corner)
-	if (screenID == 0)
-	{
-		if (m_minimapRBRRXPictureRect.top == 0 && m_minimapRBRRXPictureRect.right == 0 && m_minimapRBRRXPictureRect.left == 0 && m_minimapRBRRXPictureRect.bottom == 0)
+	minimapRect = m_minimapRBRRXPictureRect[screenID];
+
+//	if (screenID == 0)
+//	{
+/*		if (m_minimapRBRRXPictureRect[screenID].top == 0 && m_minimapRBRRXPictureRect[screenID].right == 0 && m_minimapRBRRXPictureRect[screenID].left == 0 && m_minimapRBRRXPictureRect[screenID].bottom == 0)
 		{
-/*			if (m_mapRBRRXPictureRect.bottom == -1 || m_latestMapRBRRX.imageTexture.pTexture == nullptr)
-			{
-				// Stage map preview image is missing. Show the minimap in bigger size (the default map image size)
-				RBRAPI_MapRBRPointToScreenPoint(390.0f, 320.0f, (int*)&minimapRect.left, (int*)&minimapRect.top);
-				RBRAPI_MapRBRPointToScreenPoint(630.0f, 470.0f - 21.0f, (int*)&minimapRect.right, (int*)&minimapRect.bottom);
-			}
-			else if (g_rectRBRWndClient.right - m_mapRBRRXPictureRect.right >= 100)
-			{
-				// Map image set and the screen resolution is wide enough to leave empty space on the right side of the map preview image. Place the minimap on the right side of the map preview img
-				minimapRect.left = m_mapRBRRXPictureRect.right;
-				minimapRect.top = m_mapRBRRXPictureRect.top;
-				minimapRect.right = min(minimapRect.left + 300, g_rectRBRWndClient.right - 5);
-				minimapRect.bottom = m_mapRBRRXPictureRect.bottom - g_pFontCarSpecModel->GetTextHeight();
-			}
-			else
-			{
-				// Map image set, but the resolution is not wide enough to show both the map and minimap side by side. Draw smaller minimap on top of the map image
-				minimapRect.left = m_mapRBRRXPictureRect.right - ((m_mapRBRRXPictureRect.right - m_mapRBRRXPictureRect.left) / 3);
-				minimapRect.top = m_mapRBRRXPictureRect.bottom - ((m_mapRBRRXPictureRect.bottom - m_mapRBRRXPictureRect.top) / 2);
-				minimapRect.right = m_mapRBRRXPictureRect.right;
-				minimapRect.bottom = m_mapRBRRXPictureRect.bottom - g_pFontCarSpecModel->GetTextHeight();
-			}
-*/
 			// Draw minimap on top of the stage preview img
 			//RBRAPI_MapRBRPointToScreenPoint(390.0f, 320.0f, (int*)&minimapRect.left, (int*)&minimapRect.top);
 			//RBRAPI_MapRBRPointToScreenPoint(630.0f, 470.0f - (g_pFontCarSpecModel->GetTextHeight() * 1.5f), (int*)&minimapRect.right, (int*)&minimapRect.bottom);
@@ -690,21 +669,24 @@ void CNGPCarMenu::RBRRX_DrawMinimap(const std::string& folderName, int screenID)
 		else
 		{
 			// INI file defines an exact size and position for the minimap
-			minimapRect = m_minimapRBRRXPictureRect;
+			minimapRect = m_minimapRBRRXPictureRect[screenID];
 		}
-	}
-	else if (screenID == 1)
-	{
+*/
+//		minimapRect = m_minimapRBRRXPictureRect[0];
+//	}
+//	else if (screenID == 1)
+//	{
 		// Show the minimap on top of the map preview image in "Weather" screen in RBRRX
-		RBRAPI_MapRBRPointToScreenPoint(5.0f, 145.0f, (int*)&minimapRect.left, (int*)&minimapRect.top);
-		RBRAPI_MapRBRPointToScreenPoint(635.0f, 480.0f, (int*)&minimapRect.right, (int*)&minimapRect.bottom);
-		minimapRect.bottom -= static_cast<long>(g_pFontCarSpecModel->GetTextHeight() * 1.5f);
-	}
-	else
-	{
+//		RBRAPI_MapRBRPointToScreenPoint(5.0f, 145.0f, (int*)&minimapRect.left, (int*)&minimapRect.top);
+//		RBRAPI_MapRBRPointToScreenPoint(635.0f, 480.0f, (int*)&minimapRect.right, (int*)&minimapRect.bottom);
+//		minimapRect.bottom -= static_cast<long>(g_pFontCarSpecModel->GetTextHeight() * 1.5f);
+//	}
+//	else
+//	{
 		//LogPrint("WARNING. Invalid screenID %d in minimap drawing", screenID);
-		return;
-	}
+//		return;
+//	}
+
 
 	// If the requested minimap and size is still the same then no need to re-calculate the minimap (just draw the existing minimap)
 	if (prevMinimapData == nullptr || (folderName != prevMinimapData->trackFolder || !EqualRect(&minimapRect, &prevMinimapData->minimapRect) /*minimapRect.left != prevMinimapData->minimapRect.left || minimapRect.top != prevMinimapData->minimapRect.top || minimapRect.right != prevMinimapData->minimapRect.right || minimapRect.bottom != prevMinimapData->minimapRect.bottom*/))
@@ -755,6 +737,8 @@ void CNGPCarMenu::RBRRX_DrawMinimap(const std::string& folderName, int screenID)
 	{
 		int centerPosX = max(((prevMinimapData->minimapRect.right - prevMinimapData->minimapRect.left) / 2) - (prevMinimapData->minimapSize.x / 2), 0);
 
+		m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
+
 		// Note. Disabled the gray background because minimap is drawn on top of the map (code commented out)
 		//if(m_minimapVertexBuffer != nullptr)
 		//	D3D9DrawVertex2D(g_pRBRIDirect3DDevice9, m_minimapVertexBuffer);
@@ -776,13 +760,20 @@ void CNGPCarMenu::RBRRX_DrawMinimap(const std::string& folderName, int screenID)
 				2.0f, dwColor
 			);
 		}
-		
+
+		// Draw the finish line as bigger red circle
+		D3D9DrawPrimitiveCircle(g_pRBRIDirect3DDevice9,
+			(float)(centerPosX + prevMinimapData->minimapRect.left + prevMinimapData->vectMinimapPoint.back().drivelineCoord.x),
+			(float)(prevMinimapData->minimapRect.top + prevMinimapData->vectMinimapPoint.back().drivelineCoord.y),
+			5.0f, D3DCOLOR_ARGB(255, 0xC0, 0x10, 0x10) );
+
 		// Draw the start line as bigger green circle
 		D3D9DrawPrimitiveCircle(g_pRBRIDirect3DDevice9, 
-				(float)(centerPosX + prevMinimapData->minimapRect.left + prevMinimapData->vectMinimapPoint.begin()->drivelineCoord.x), 
-				(float)(prevMinimapData->minimapRect.top + prevMinimapData->vectMinimapPoint.begin()->drivelineCoord.y), 
-				5.0f, D3DCOLOR_ARGB(255, 0x20, 0xF0, 0x20)
-		);
+				(float)(centerPosX + prevMinimapData->minimapRect.left + prevMinimapData->vectMinimapPoint.front().drivelineCoord.x), 
+				(float)(prevMinimapData->minimapRect.top + prevMinimapData->vectMinimapPoint.front().drivelineCoord.y), 
+				5.0f, D3DCOLOR_ARGB(255, 0x20, 0xF0, 0x20) );
+
+		m_pD3D9RenderStateCache->RestoreState();
 	}
 }
 
@@ -954,11 +945,11 @@ void CNGPCarMenu::RBRRX_EndScene()
 
 							// Release previous map preview texture and read a new image file (if preview path is set and the image file exists and map preview img drawing is not disabled)
 							SAFE_RELEASE(m_latestMapRBRRX.imageTexture.pTexture);
-							if (!m_latestMapRBRRX.previewImageFile.empty() && fs::exists(m_latestMapRBRRX.previewImageFile) && m_mapRBRRXPictureRect.bottom != -1)
+							if (!m_latestMapRBRRX.previewImageFile.empty() && fs::exists(m_latestMapRBRRX.previewImageFile) && m_mapRBRRXPictureRect[0].bottom != -1)
 							{
 								hResult = D3D9CreateRectangleVertexTexBufferFromFile(g_pRBRIDirect3DDevice9,
 									m_latestMapRBRRX.previewImageFile,
-									(float)m_mapRBRRXPictureRect.left, (float)m_mapRBRRXPictureRect.top, (float)(m_mapRBRRXPictureRect.right - m_mapRBRRXPictureRect.left), (float)(m_mapRBRRXPictureRect.bottom - m_mapRBRRXPictureRect.top),
+									(float)m_mapRBRRXPictureRect[0].left, (float)m_mapRBRRXPictureRect[0].top, (float)(m_mapRBRRXPictureRect[0].right - m_mapRBRRXPictureRect[0].left), (float)(m_mapRBRRXPictureRect[0].bottom - m_mapRBRRXPictureRect[0].top),
 									&m_latestMapRBRRX.imageTexture,
 									0  /*IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_BOTTOM | IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER*/);
 
@@ -1012,12 +1003,9 @@ void CNGPCarMenu::RBRRX_EndScene()
 						m_pD3D9RenderStateCache->RestoreState();
 					}
 
-					// Draw a minimap (0=stage menu list)
-					RBRRX_DrawMinimap(m_latestMapRBRRX.folderName, 0);
-
 					// Author, version, date printed on bottom of the screen and map preview image
 					iMapInfoPrintRow = 0;
-					posY = m_mapRBRRXPictureRect.bottom - (1 * iFontHeight);
+					posY = m_mapRBRRXPictureRect[0].bottom - (1 * iFontHeight);
 
 					sStrStream.clear();
 					sStrStream.str(std::wstring());
@@ -1032,6 +1020,9 @@ void CNGPCarMenu::RBRRX_EndScene()
 
 					iFontHeight = g_pFontCarSpecModel->GetTextHeight();
 					g_pFontCarSpecModel->DrawText(posX, posY + (iMapInfoPrintRow-- * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), (m_latestMapRBRRX.imageTexture.pTexture != nullptr ? D3DFONT_CLEARTARGET : 0));
+
+					// Draw a minimap (0=stage menu list)
+					RBRRX_DrawMinimap(m_latestMapRBRRX.folderName, 0);
 				}
 			}
 			else if (g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_QUICKRALLY_WEATHER])
@@ -1047,7 +1038,7 @@ void CNGPCarMenu::RBRRX_EndScene()
 
 				if (m_latestMapRBRRX.trackOptionsFirstTimeSetup)
 				{
-					float posLeft, posTop, posRight, posBottom;
+					//float posLeft, posTop, posRight, posBottom;
 
 					m_latestMapRBRRX.trackOptionsFirstTimeSetup = FALSE;
 
@@ -1055,16 +1046,17 @@ void CNGPCarMenu::RBRRX_EndScene()
 					wcsncpy_s(m_pRBRRXPlugin->wszTrackName, min(m_latestMapRBRRX.name.length()+1, COUNT_OF_ITEMS(m_pRBRRXPlugin->wszTrackName)), _ToWString(m_latestMapRBRRX.name).c_str(), COUNT_OF_ITEMS(m_pRBRRXPlugin->wszTrackName));
 
 					// Map preview img and minimap on top of the img
-					RBRAPI_MapRBRPointToScreenPoint(5.0f, 145.0f, &posLeft, &posTop);
-					RBRAPI_MapRBRPointToScreenPoint(635.0f, 480.0f, &posRight, &posBottom);
+					//RBRAPI_MapRBRPointToScreenPoint(5.0f, 145.0f, &posLeft, &posTop);
+					//RBRAPI_MapRBRPointToScreenPoint(635.0f, 480.0f, &posRight, &posBottom);
 
 					// Release previous map preview texture and read a new image file (if preview path is set and the image file exists and map preview img drawing is not disabled)
 					SAFE_RELEASE(m_latestMapRBRRX.imageTexture.pTexture);
-					if (!m_latestMapRBRRX.previewImageFile.empty() && fs::exists(m_latestMapRBRRX.previewImageFile) && m_mapRBRRXPictureRect.bottom != -1)
+					if (!m_latestMapRBRRX.previewImageFile.empty() && fs::exists(m_latestMapRBRRX.previewImageFile) && m_mapRBRRXPictureRect[1].bottom != -1)
 					{
 						hResult = D3D9CreateRectangleVertexTexBufferFromFile(g_pRBRIDirect3DDevice9,
 							m_latestMapRBRRX.previewImageFile,
-							posLeft, posTop, posRight-posLeft, posBottom-posTop,
+							//((posLeft, posTop, posRight-posLeft, posBottom-posTop,
+							(float)m_mapRBRRXPictureRect[1].left, (float)m_mapRBRRXPictureRect[1].top, (float)(m_mapRBRRXPictureRect[1].right - m_mapRBRRXPictureRect[1].left), (float)(m_mapRBRRXPictureRect[1].bottom - m_mapRBRRXPictureRect[1].top),
 							&m_latestMapRBRRX.imageTexture,
 							0  /*IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_BOTTOM | IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER*/);
 
@@ -1111,22 +1103,6 @@ void CNGPCarMenu::RBRRX_EndScene()
 
 				// Draw a minimap (1=weather menu list)
 				RBRRX_DrawMinimap(m_latestMapRBRRX.folderName, 1);
-
-/*
-				sStrStream.clear();
-				sStrStream.str(std::wstring());
-				if (!m_latestMapRBRRX.author.empty())
-					sStrStream << GetLangWString(L"author", true) << _ToWString(m_latestMapRBRRX.author);
-
-				if (!m_latestMapRBRRX.version.empty())
-					sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << GetLangWString(L"version", true) << _ToWString(m_latestMapRBRRX.version);
-
-				if (!m_latestMapRBRRX.date.empty())
-					sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << _ToWString(m_latestMapRBRRX.date);
-
-				RBRAPI_MapRBRPointToScreenPoint(5.0f, 480.0f, &posX, &posY);
-				g_pFontCarSpecModel->DrawText(posX, posY - g_pFontCarSpecModel->GetTextHeight() - 4, C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), (m_latestMapRBRRX.imageTexture.pTexture != nullptr ? D3DFONT_CLEARTARGET : 0));
-*/
 			}
 		}
 

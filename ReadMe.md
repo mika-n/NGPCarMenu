@@ -3,11 +3,11 @@
 Custom plugin for **Richard Burns Rally game (RBR v1.02 SSE)** to improve the "Select Car" in-game menu and RBRTM and RBR_RX "Select Stage" menus (ie. for those people who don't use external RBR game launchers). 
 
 The original RBR game and RBRTM and RBR_RX plugins have various problems and limitations:
-- The car menu name and preview image of the car (garage) doesn't match with the custom car model.
-- The car specification details shown in a car selection screen don't match with the custom NGP car details. Also, additional info about car 3D models are missing.
+- The car menu name and preview image of the car (garage) doesn't match with the custom car model. The car specification details shown in a car selection screen don't match with the custom NGP car details.
 - RBRTM doesn't show custom car details or car preview images. Stage selection doesn't show a map preview image and doesn't remember which stages you have driven lately.
 - RBR_RX stage selection menu list doesn't scroll (limited to 20 BTB stages), it doesn't show map preview images and doesn't remember the stages you have driven lately.
 - RBR_RX replay files cannot be replayed afterwards. You can replay those only once right after the stage is finished and before you go back to RBR main menu. After this you cannot replay RBRRX/BTB recordings.
+- RBR has a bug how it handles inverted pedals (input.ini) at startup or after alt-tabbing to a desktop. For example throttle goes to 100% until a driver presses the inverted pedal at least once.
 
 Good news! **NGPCarMenu plugin solves these issues** by doing following enhancements in RBR:
 - Shows the actual NGP car specs (HP, gears, transmission), car preview images and 3D car model details in **RBR/RBRTM/RBRRX** menu screens.
@@ -21,6 +21,7 @@ Good news! **NGPCarMenu plugin solves these issues** by doing following enhancem
 - RBRRX: Supports RBRRX/BTB replay files (ie. BTB replay files can be replayed at anytime, not just right after finishing the race).
 - "AutoLogon" feature opens automatically the menu screen of your favorite plugin when RBR is launched (for example takes you to RBRTM, RBR_RX or RallySimFans menu screen).
 - "Rename profile" feature renames the driver profile while preserving profile settings (ie. you no longer have to call yourself as MULLIGATAWNY. Now you can rename the driver via NGPCarMenu plugin and still keep all maps and cars unlocked).
+- Inverted pedals behave correctly right away without going through the hassle of pressing all pedals at least once while waiting for a countdown.
 
 The plugin supports **RBRTM Czech Tournament** plugin (V0.88) integration. Use NGPCarMenu in-game menu or INI file to enable/disable this integration. 
 **RBR_RX** plugin (RBR_RX.dll with 417792 bytes, the file doesn't have version tag) integration. Use NGPCarMenu in-game menu or INI file to enable/disable this integration. 
@@ -61,7 +62,8 @@ rbr\Plugins\NGPCarMenu.ini options (see the NGPCarMenu.ini.sample file for more 
 | Option                 | Comment                                                                                |
 |------------------------|----------------------------------------------------------------------------------------|
 | AutoLogon              | Disabled, Main, Plugins, custom plugin name. If this is set then NGPCarMenu opens the specified menu screen automatically when RBR is launched. If you have multi-profile RBR then see AutoLogonWaitProfileSelection option also. |
-| AutoLogonWaitProfileSelection | 0 or 1. If autologon is set and you have multiple profiles in RBR then setting this option to value 1 lets you to select a profile before autologon sequence does it job. If set to value 0, NGPCarMenu autologon selects automatically the first profile. |
+| AutoLogonWaitProfileSelection | 0 (disabled) or 1 (enabled). If autologon is set and you have multiple profiles in RBR then setting this option to value 1 lets you to select a profile before autologon sequence does it job. If set to value 0, NGPCarMenu autologon selects automatically the first profile. |
+| InvertedPedalsStartupFix | 0 or 1. If enabled (default) then NGPCarMenu fixes the notorious "inverted pedals" RBR bug when the car is at starting line (ie. throttle goes to 100% until a driver presses the inverted pedal at least once). |
 | ScreenshotPath         | Path of car preview images (relative to RBR executable location or absolute path). Supports various runtime variables (see NGPCarMenu.ini.sample for more details) |
 | ScreenshotReplay       | Replay filename the plugin uses to generate preview images. |
 | ScreenshotFileType     | PNG or BMP file format in car preview image files. There is also in-game plugin option to set this value. |
@@ -85,11 +87,15 @@ rbr\Plugins\NGPCarMenu.ini options (see the NGPCarMenu.ini.sample file for more 
 | RBRTM_MapScreenshotPath | Path of custom map preview images (relative to RBR.EXE location or absolute path). NGPCarMenu uses map preview images from this folder location. If the file is missing then the plugin uses a map specific Maps\Tracks.ini SplashScreen option as a preview image. |
 | RBRTM_MapPictureRect   | Location of the map preview image on RBRTM Shakedown stages menu screen (x1 y1 x2 y2, values in screen coordinates). If missing or empty then NGPCarMenu plugin draws the image at default location. |
 | RBRTM_MinimapPictureRect | Location of the minimap in stage selecton menu screen. 0=Disables the minimap feature. By default the minimap is drawn on top of the map preview image |
+| RBRTM_MapPictureRectOpt | The same as above, but for the options screen following the stages menu list (ie. when a stage has been already selected) |
+| RBRTM_MinimapPictureRectOpt | (see the comment above) |
 | RBRTM_RecentMapsMaxCount | Maximum number of recent driven maps shown on top of the RBRTM Shakedown stages menu list (shortcuts to a map) |
 | RBRRX_Integration      | 0 or 1. 0=RBRRX integration disabled. 1=RBRRX integration enabled |
 | RBRRX_MapScreenshotPath | Path of custom map preview images (relative to RBR.EXE location or absolute path) |
 | RBRRX_MapPictureRect   | Location of the map preview image on RBR_RX stages menu screen (x1 y1 x2 y2, values in screen coordinates). If missing or empty then NGPCarMenu plugin draws the image at default location. |
 | RBRRX_MinimapPictureRect | Location of the minimap in stage selecton menu screen. 0=Disables the minimap feature. By default the minimap is drawn on top of the map preview image |
+| RBRRX_MapPictureRectOpt | The same as above, but for the options screen following the stages menu list (ie. when a stage has been already selected) |
+| RBRRX_MinimapPictureRectOpt | (see the comment above) |
 | RBRRX_RecentMapsMaxCount | Maximum number of recent driven maps shown on top of the RBR_RX stages menu list (shortcuts to a map) |
 | GenerateReplayMetadataFile | 0 or 1. Generates a replay metadata INI file when a new RBR, RBRTM or RBRRX replay is saved in Replays folder. BTB replay in NGPCarMenu needs this metadata file, so don't disable this if you want to replay BTB recordings afterwards. |
 

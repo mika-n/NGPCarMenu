@@ -24,7 +24,7 @@
 //#define WIN32_LEAN_AND_MEAN			// Exclude rarely-used stuff from Windows headers
 //#include <windows.h>
 //#include <string>
-
+#include "SimpleINI\SimpleIni.h"
 
 //------------------------------------------------------------------------------------------------
 
@@ -105,10 +105,12 @@ extern std::string _ToBinaryBitString(BYTE byteValue); // Convert BYTE value to 
 extern std::string GetFileVersionInformationAsString(const std::wstring & fileName); // Return file version info as "major.minor.patch.build" string value
 extern BOOL GetFileVersionInformationAsNumber(const std::wstring & fileName, UINT* outMajorVer, UINT* outMinorVer, UINT* outPatchVer, UINT* outBuildVer); // Return file version info
 
+inline bool _IsRectZero(const RECT& rect) { return (rect.bottom == 0 && rect.right == 0 && rect.left == 0 && rect.top == 0); } // Return TRUE if all rect coordinate values are zero
+
 extern bool _StringToRect (const std::wstring & s, RECT * outRect, const wchar_t separatorChar = L' '); // String in "0 50 200 400" format is converted as RECT struct value 
 extern bool _StringToRect (const std::string & s, RECT * outRect, const char separatorChar = ' ');
 extern bool _StringToPoint(const std::wstring & s, POINT * outPoint, const wchar_t separatorChar = L' '); // String in "0 50" format is converted as POINT struct value 
-extern bool _StringToPoint(const std::string & s, POINT * outPoint, const char separatorChar);
+extern bool _StringToPoint(const std::string & s, POINT * outPoint, const char separatorChar = ' ');
 
 // Define sub function to call 32bit GetTickCount WinAPI method and to eliminate the VC++ warning about wrapping timer if the PC runs 49 days without a reboot.
 // Another way to avoid the warning would be to us GetTickCount64 but it is not available in older WinOS versions.
@@ -124,6 +126,106 @@ inline DWORD GetTickCount32()
 #endif
 }
 
+
+//-----------------------------------------------------------------------------------------------------------------------
+// Helper interfaces to CSimpleIni/CSimpleIniW classes to read options, trim whitespaces, remove enclosing quotes and set the default value
+//
+class CSimpleIniEx : public CSimpleIni
+{
+public:
+	std::string GetValueEx(const std::string& sSection1, const std::string& sSection2, const std::string& sKey, const std::string& sDefault)
+	{
+		std::string result = this->GetValue(sSection1.c_str(), sKey.c_str(), "");
+		_Trim(result);
+		result = _RemoveEnclosingChar(result, '"', false);
+		
+		if (result.empty() && !sSection2.empty())
+		{
+			result = this->GetValue(sSection2.c_str(), sKey.c_str(), "");
+			_Trim(result);
+			result = _RemoveEnclosingChar(result, '"', false);
+		}
+
+		if (result.empty()) 
+			result = sDefault;
+
+		return result;
+	}
+
+	void GetValueEx(const std::string& sSection1, const std::string& sSection2, const std::string& sKey, const std::string& sDefault, RECT* outRect)
+	{
+		std::string result = GetValueEx(sSection1, sSection2, sKey, sDefault);
+		if (result != "0") _StringToRect(result, outRect);
+		else outRect->bottom = -1;
+	}
+
+	void GetValueEx(const std::string& sSection1, const std::string& sSection2, const std::string& sKey, const std::string& sDefault, POINT* outPoint)
+	{
+		std::string result = GetValueEx(sSection1, sSection2, sKey, sDefault);
+		_StringToPoint(result, outPoint);
+
+	}
+
+	long GetValueEx(const std::string& sSection1, const std::string& sSection2, const std::string& sKey, long iDefault)
+	{
+		long result = this->GetLongValue(sSection1.c_str(), sKey.c_str(), -9999);
+		if (result == -9999 && !sSection2.empty()) 
+			result = this->GetLongValue(sSection2.c_str(), sKey.c_str(), -9999);
+		
+		if (result == -9999)
+			result = iDefault;
+
+		return result;
+	}
+};
+
+class CSimpleIniWEx : public CSimpleIniW
+{
+public:
+	std::wstring GetValueEx(const std::wstring& sSection1, const std::wstring& sSection2, const std::wstring& sKey, const std::wstring& sDefault)
+	{
+		std::wstring result = this->GetValue(sSection1.c_str(), sKey.c_str(), L"");
+		_Trim(result);
+		result = _RemoveEnclosingChar(result, L'"', false);
+
+		if (result.empty() && !sSection2.empty())
+		{
+			result = this->GetValue(sSection2.c_str(), sKey.c_str(), L"");
+			_Trim(result);
+			result = _RemoveEnclosingChar(result, L'"', false);
+		}
+
+		if (result.empty())
+			result = sDefault;
+
+		return result;
+	}
+
+	void GetValueEx(const std::wstring& sSection1, const std::wstring& sSection2, const std::wstring& sKey, const std::wstring& sDefault, RECT* outRect)
+	{
+		std::wstring result = GetValueEx(sSection1, sSection2, sKey, sDefault);
+		if (result != L"0") _StringToRect(result, outRect);
+		else outRect->bottom = -1;
+	}
+
+	void GetValueEx(const std::wstring& sSection1, const std::wstring& sSection2, const std::wstring& sKey, const std::wstring& sDefault, POINT* outPoint)
+	{
+		std::wstring result = GetValueEx(sSection1, sSection2, sKey, sDefault);
+		_StringToPoint(result, outPoint);
+	}
+
+	long GetValueEx(const std::wstring& sSection1, const std::wstring& sSection2, const std::wstring& sKey, long iDefault)
+	{
+		long result = this->GetLongValue(sSection1.c_str(), sKey.c_str(), -9999);
+		if (result == -9999 && !sSection2.empty())
+			result = this->GetLongValue(sSection2.c_str(), sKey.c_str(), -9999);
+
+		if (result == -9999)
+			result = iDefault;
+
+		return result;
+	}
+};
 
 
 //-----------------------------------------------------------------------------------------------------------------------
@@ -239,6 +341,8 @@ public:
 #define IMAGE_TEXTURE_POSITION_VERTICAL_CENTER   0x10		// Bit5: 1=Align the picture vertically to center position in the drawing rectangle area. 0=Top align (unless POSITION_BOTTOM is set)
 #define IMAGE_TEXTURE_SCALE_PRESERVE_ORIGSIZE    0x20		// Bit6: 1=Keep the original picture size but optionally center it within the drawing rectangle. 0=If drawing rect is defined then scale the picture (keeping aspect ratio or ignoring aspect ratio)
 #define IMAGE_TEXTURE_POSITION_HORIZONTAL_RIGHT  0x40		// Bit7: 1=Align the picture horizontally to right (0=left align if neither horizontal_center is set)
+
+#define IMAGE_TEXTURE_POSITION_VERTICAL_BOTTOM   IMAGE_TEXTURE_POSITION_BOTTOM   // Alias name because vertical-bottom img alignment flag is the same as POSITION_BOTTOM flag
 
 #define IMAGE_TEXTURE_STRETCH_TO_FILL			 0x00  // Default behaviour is to stretch the image to fill the specified draw area
 #define IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_TOP	  (IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO)

@@ -56,6 +56,8 @@ typedef BOOL  (APIENTRY* tAPI_DrawTextW)(DWORD pluginID, int textID, int posX, i
 #define IMAGE_TEXTURE_SCALE_PRESERVE_ORIGSIZE    0x20  // Bit6: 1=Keep the original picture size but optionally center it in drawing rectangle. 0=If drawing rect is defined then scale the picture (keeping aspect ratio or ignoring aspect ratio)
 #define IMAGE_TEXTURE_POSITION_HORIZONTAL_RIGHT  0x40  // Bit7: 1=Align the picture horizontally to right (0=left align if neither horizontal_center is set)
 
+#define IMAGE_TEXTURE_POSITION_VERTICAL_BOTTOM   IMAGE_TEXTURE_POSITION_BOTTOM   // Alias name because vertical-bottom img alignment flag is the same as POSITION_BOTTOM flag
+
 #define IMAGE_TEXTURE_STRETCH_TO_FILL			 0x00  // Default behaviour is to stretch the image to fill the specified draw area, no alpha blending
 #define IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_TOP	  (IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO)
 #define IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_BOTTOM (IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO | IMAGE_TEXTURE_POSITION_BOTTOM)
@@ -80,6 +82,7 @@ typedef BOOL  (APIENTRY* tAPI_DrawTextW)(DWORD pluginID, int textID, int posX, i
 class CNGPCarMenuAPI
 {
 protected:
+	char szModulePath[_MAX_PATH];
 	HMODULE hDLLModule;
 
 	tAPI_InitializePluginIntegration fp_API_InitializePluginIntegration;
@@ -114,6 +117,7 @@ public:
 	CNGPCarMenuAPI()
 	{
 		hDLLModule = nullptr;
+		szModulePath[0] = '\0';
 		Cleanup();
 	}
 
@@ -122,21 +126,27 @@ public:
 		Cleanup();
 	}
 
+	// Return the root folder path of RBR executable (fex c:\games\richardBurnsRally)
+	const char* GetModulePath() { return szModulePath; }
+
 	// Initialize custom image support for szPluginName RBR plugin. Optionally provide path to NGPCarMenu.dll library, but if this param is NULL then use the default Plugins\NGPCarMenu.dll library.
 	// Return value: <= 0 Error, >0 = pluginID handle used in other API calls
 	DWORD InitializePluginIntegration(LPCSTR szPluginName, LPCSTR szPathToNGPCarMenuDLL = nullptr)
 	{
 		if (hDLLModule == nullptr)
 		{
-			char szModulePath[_MAX_PATH];
+			char szDLLFilePath[_MAX_PATH];
+
+			// Use default path to NGPCarMenu.dll file (ie. rbr\Plugins\NGPCarMenu.dll)
+			::GetModuleFileNameA(NULL, szModulePath, sizeof(szModulePath));
+			::PathRemoveFileSpecA(szModulePath);
 
 			if (szPathToNGPCarMenuDLL == nullptr)
 			{
-				// Use default path to NGPCarMenu.dll file (ie. rbr\Plugins\NGPCarMenu.dll)
-				::GetModuleFileNameA(NULL, szModulePath, sizeof(szModulePath));
-				::PathRemoveFileSpecA(szModulePath);
-				strncat_s(szModulePath, _MAX_PATH, C_NGPCARMENU_DLL_FILENAME, sizeof(C_NGPCARMENU_DLL_FILENAME));
-				szPathToNGPCarMenuDLL = szModulePath;
+				szDLLFilePath[0] = '\0';
+				strncat_s(szDLLFilePath, _MAX_PATH, szModulePath, sizeof(szModulePath));
+				strncat_s(szDLLFilePath, _MAX_PATH, C_NGPCARMENU_DLL_FILENAME, sizeof(C_NGPCARMENU_DLL_FILENAME));
+				szPathToNGPCarMenuDLL = szDLLFilePath;
 			}
 
 			hDLLModule = ::LoadLibraryA(szPathToNGPCarMenuDLL);
@@ -172,6 +182,13 @@ public:
 	{
 		POINT imagePos = { x, y };
 		SIZE  imageSize = { cx, cy };
+		LoadCustomImage(pluginID, imageID, szFileName, &imagePos, &imageSize, dwImageFlags);
+	}
+
+	void LoadCustomImageF(DWORD pluginID, int imageID, LPCSTR szFileName, float x, float y, float cx, float cy, DWORD dwImageFlags)
+	{
+		POINT imagePos = { static_cast<long>(x), static_cast<long>(y) };
+		SIZE  imageSize = { static_cast<long>(cx), static_cast<long>(cy) };
 		LoadCustomImage(pluginID, imageID, szFileName, &imagePos, &imageSize, dwImageFlags);
 	}
 

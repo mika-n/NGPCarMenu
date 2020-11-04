@@ -52,7 +52,7 @@ BOOL g_bRBRHooksInitialized = FALSE; // TRUE-RBR main memory and DX9 function ho
 tRBRDirectXBeginScene Func_OrigRBRDirectXBeginScene = nullptr;  // Re-routed built-in DX9 RBR function pointers
 tRBRDirectXEndScene   Func_OrigRBRDirectXEndScene = nullptr;
 tRBRReplay            Func_OrigRBRReplay = nullptr;				// Re-routed RBR replay class method
-
+tRBRControllerAxisData Func_OrigRBRControllerAxisData = nullptr;// Controller axis data, the custom method is used to fix inverted pedal RBR bug
 
 #if USE_DEBUG == 1
 CD3DFont* g_pFontDebug = nullptr;
@@ -76,6 +76,8 @@ WCHAR* g_pOrigCarSpecTitleTransmission = nullptr;
 WCHAR* g_pOrigCarSpecTitleHorsepower = nullptr;
 
 std::vector<std::string>* g_pRBRRXTrackNameListAlreadyInitialized = nullptr; // List of RBRRX track folder names with a missing track.ini splashscreen option and already scanned for default JPG/PNG preview image during this RBR process life time
+
+int g_iInvertedPedalsStartupFixFlag = 0; // Bit1=Throttle (0x01), Bit2=Brake (0x02), Bit3=Clutch (0x04), Bit4=Handbrake (0x08). Fix the inverted pedal bug in RBR when the game is started or alt-tabbed to desktop
 
 
 //--------------------------------------------------------------------------------------------------------------------------
@@ -335,7 +337,9 @@ BOOL APIENTRY API_LoadCustomImage(DWORD pluginID, int imageID, LPCSTR szFileName
 
 	if (bRefeshImage == true)
 	{
+		// Clear existing image or minimap data (only one of these defined at the same time)
 		SAFE_RELEASE(pPluginLinkImage->m_imageTexture.pTexture);
+		pPluginLinkImage->m_minimapData.vectMinimapPoint.clear();
 
 		pPluginLinkImage->m_sImageFileName = sFileName;
 		pPluginLinkImage->m_imagePos = *pImagePos;
@@ -344,27 +348,55 @@ BOOL APIENTRY API_LoadCustomImage(DWORD pluginID, int imageID, LPCSTR szFileName
 
 		if (szFileName != nullptr)
 		{
-			try
+			if (!_iEqual(fs::path(pPluginLinkImage->m_sImageFileName).extension().string(), ".trk", true))
 			{
-				HRESULT hResult = D3D9CreateRectangleVertexTexBufferFromFile(g_pRBRIDirect3DDevice9,
-					_ToWString(sFileName),
-					(float)pImagePos->x, (float)pImagePos->y, (float)pImageSize->cx, (float)pImageSize->cy,
-					&pPluginLinkImage->m_imageTexture,
-					dwImageFlags);
+				// Normal image file
+				try
+				{
+					HRESULT hResult = D3D9CreateRectangleVertexTexBufferFromFile(g_pRBRIDirect3DDevice9,
+						_ToWString(sFileName),
+						(float)pImagePos->x, (float)pImagePos->y, (float)pImageSize->cx, (float)pImageSize->cy,
+						&pPluginLinkImage->m_imageTexture,
+						dwImageFlags);
 
-				// Image not available. Do not try to re-load it again (set cx=-1 to indicate that the image loading failed, so no need to try to re-load it in every frame even when texture is null)
-				if (!SUCCEEDED(hResult))
+					// Image not available. Do not try to re-load it again (set cx=-1 to indicate that the image loading failed, so no need to try to re-load it in every frame even when texture is null)
+					if (!SUCCEEDED(hResult))
+					{
+						pPluginLinkImage->m_imageTexture.imgSize.cx = -1;
+						SAFE_RELEASE(pPluginLinkImage->m_imageTexture.pTexture);
+						bRetValue = FALSE;
+					}
+				}
+				catch (...)
 				{
 					pPluginLinkImage->m_imageTexture.imgSize.cx = -1;
 					SAFE_RELEASE(pPluginLinkImage->m_imageTexture.pTexture);
 					bRetValue = FALSE;
 				}
 			}
-			catch (...)
+			else
 			{
-				pPluginLinkImage->m_imageTexture.imgSize.cx = -1;
-				SAFE_RELEASE(pPluginLinkImage->m_imageTexture.pTexture);
-				bRetValue = FALSE;
+				try
+				{ 
+					// Img source is track map data  (ex maps\track-71.trk). Create a minimap vector graph (read split positions and the actual track layout)
+					CDrivelineSource drivelineSource;
+					g_pRBRPlugin->ReadStartSplitsFinishPacenoteDistances(fs::path(pPluginLinkImage->m_sImageFileName).replace_extension(".dls"), &drivelineSource.startDistance, &drivelineSource.split1Distance, &drivelineSource.split2Distance, &drivelineSource.finishDistance);
+					g_pRBRPlugin->ReadDriveline(_ToWString(pPluginLinkImage->m_sImageFileName), drivelineSource);
+
+					pPluginLinkImage->m_minimapData.trackFolder = pPluginLinkImage->m_sImageFileName;
+					pPluginLinkImage->m_minimapData.minimapRect.left   = pImagePos->x;
+					pPluginLinkImage->m_minimapData.minimapRect.top    = pImagePos->y;
+					pPluginLinkImage->m_minimapData.minimapRect.right  = pImagePos->x + pImageSize->cx;
+					pPluginLinkImage->m_minimapData.minimapRect.bottom = pImagePos->y + pImageSize->cy;
+
+					g_pRBRPlugin->RescaleDrivelineToFitOutputRect(drivelineSource, pPluginLinkImage->m_minimapData);
+				}
+				catch (...)
+				{
+					pPluginLinkImage->m_imageTexture.imgSize.cx = -1;
+					pPluginLinkImage->m_minimapData.vectMinimapPoint.clear();
+					bRetValue = FALSE;
+				}
 			}
 		}
 	}
@@ -610,13 +642,13 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_latestMapRBRTM.mapID = -1;
 	m_recentMapsMaxCountRBRTM = 5;		// Default num of recent maps/stages on top of the RBRTM Shakedown stages menu list
 	m_bRecentMapsRBRTMModified = FALSE;	
-	ZeroMemory(&m_minimapRBRTMPictureRect, sizeof(m_minimapRBRTMPictureRect));
+	ZeroMemory(m_minimapRBRTMPictureRect, sizeof(m_minimapRBRTMPictureRect));
 
 	ZeroMemory(&m_mapRBRRXPictureRect, sizeof(m_mapRBRRXPictureRect));
 	m_latestMapRBRRX.folderName = "";
 	m_recentMapsMaxCountRBRRX = 5;		// Default num of recent maps/stages on top of the RBRRX stages menu list
 	m_bRecentMapsRBRRXModified = FALSE;
-	ZeroMemory(&m_minimapRBRRXPictureRect, sizeof(m_minimapRBRRXPictureRect));
+	ZeroMemory(m_minimapRBRRXPictureRect, sizeof(m_minimapRBRRXPictureRect));
 
 	m_pOrigMapMenuDataRBRTM = nullptr;
 	m_pOrigMapMenuItemsRBRTM = nullptr;
@@ -705,10 +737,10 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_bGenerateReplayMetadataFile = TRUE;
 
 	m_pD3D9RenderStateCache = nullptr; 
-
 	gtcDirect3DBeginScene = nullptr;
 	gtcDirect3DEndScene = nullptr;
 	gtcRBRReplay = nullptr;
+	gtcRBRControllerAxisData = nullptr;
 
 	//RefreshSettingsFromPluginINIFile();
 
@@ -729,6 +761,9 @@ CNGPCarMenu::~CNGPCarMenu(void)
 
 		if (gtcDirect3DBeginScene != nullptr) delete gtcDirect3DBeginScene;
 		if (gtcDirect3DEndScene != nullptr) delete gtcDirect3DEndScene;
+
+		if (gtcRBRReplay != nullptr) delete gtcRBRReplay;
+		if (gtcRBRControllerAxisData != nullptr) delete gtcRBRControllerAxisData;
 
 #if USE_DEBUG == 1
 		SAFE_DELETE(g_pFontDebug);
@@ -790,7 +825,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 	DebugPrint("Enter CNGPCarMenu.RefreshSettingsFromPluginINIFile");
 
 	int iFileFormat;
-	CSimpleIniW pluginINIFile;
+	CSimpleIniWEx pluginINIFile;
 	std::wstring sTextValue;
 	std::string  sIniFileName = m_sRBRRootDir + "\\Plugins\\" VS_PROJECT_NAME ".ini";
 
@@ -852,16 +887,10 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		}
 
 		// The latest INI fileFormat is 2
-		sTextValue = pluginINIFile.GetValue(L"Default", L"FileFormat", L"2");
-		_Trim(sTextValue);
-		if (sTextValue.empty()) iFileFormat = 2;
-		else iFileFormat = std::stoi(sTextValue);
-
-		this->m_screenshotReplayFileName = pluginINIFile.GetValue(L"Default", L"ScreenshotReplay", L"");
-		_Trim(this->m_screenshotReplayFileName);
-
-		this->m_screenshotPath = pluginINIFile.GetValue(L"Default", L"ScreenshotPath", L"");
-		_Trim(this->m_screenshotPath);
+		iFileFormat = pluginINIFile.GetValueEx(L"Default", L"", L"FileFormat", 2);
+	
+		this->m_screenshotReplayFileName = pluginINIFile.GetValueEx(L"Default", L"", L"ScreenshotReplay", L"");
+		this->m_screenshotPath = pluginINIFile.GetValueEx(L"Default", L"", L"ScreenshotPath", L"");
 
 		// FleFormat=1 has a bit different logic in ScreenshotPath value. The "%resolution%" variable value was the default postfix. 
 		// The current fileFormat expects to see %% variables in the option value, so append the default %resolution% variable at the end of the existing path value.
@@ -895,60 +924,38 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 			}
 		}
 
-		this->m_rbrCITCarListFilePath = pluginINIFile.GetValue(L"Default", L"RBRCITCarListPath", L"");
-		_Trim(this->m_rbrCITCarListFilePath);
+		this->m_rbrCITCarListFilePath = pluginINIFile.GetValueEx(L"Default", L"", L"RBRCITCarListPath", L"");
 		if (this->m_rbrCITCarListFilePath.length() >= 2 && this->m_rbrCITCarListFilePath[0] != L'\\' && this->m_rbrCITCarListFilePath[1] != L':')
 			this->m_rbrCITCarListFilePath = this->m_sRBRRootDirW + L"\\" + this->m_rbrCITCarListFilePath;
 
-		this->m_easyRBRFilePath = pluginINIFile.GetValue(L"Default", L"EASYRBRPath", L"");
-		_Trim(this->m_easyRBRFilePath);
+		this->m_easyRBRFilePath = pluginINIFile.GetValueEx(L"Default", L"", L"EASYRBRPath", L"");
 		if (this->m_easyRBRFilePath.length() >= 2 && this->m_easyRBRFilePath[0] != L'\\' && this->m_easyRBRFilePath[1] != L':')
 			this->m_easyRBRFilePath = this->m_sRBRRootDirW + L"\\" + this->m_easyRBRFilePath;
 
 
 		// TODO: carPosition, camPosition reading from INI file (now the car and cam position is hard-coded in this plugin code)
+		pluginINIFile.GetValueEx(szResolutionText, L"Default", L"ScreenshotCropping", L"", &this->m_screenshotCroppingRect);
 
-		sTextValue = pluginINIFile.GetValue(szResolutionText, L"ScreenshotCropping", L"");
-		_StringToRect(sTextValue, &this->m_screenshotCroppingRect);
+		this->m_screenshotCarPosition = pluginINIFile.GetValueEx(szResolutionText, L"Default", L"ScreenshotCarPosition", 0); // 0=default screeshot car position, 1=on the sky in the middle of nowhere
 
-		sTextValue = pluginINIFile.GetValue(L"Default", L"ScreenshotCarPosition", L"0");
-		_Trim(sTextValue);
-		if (sTextValue.empty()) this->m_screenshotCarPosition = 0; // 0=default screeshot car position, 1=on the sky in the middle of nowhere
-		else this->m_screenshotCarPosition = std::stoi(sTextValue);
+		pluginINIFile.GetValueEx(szResolutionText, L"Default", L"CarSelectLeftBlackBar",  L"", &this->m_carSelectLeftBlackBarRect);
+		pluginINIFile.GetValueEx(szResolutionText, L"Default", L"CarSelectRightBlackBar", L"", &this->m_carSelectRightBlackBarRect);
 
-		sTextValue = pluginINIFile.GetValue(szResolutionText, L"CarSelectLeftBlackBar", L"");
-		_StringToRect(sTextValue, &this->m_carSelectLeftBlackBarRect);
-
-		sTextValue = pluginINIFile.GetValue(szResolutionText, L"CarSelectRightBlackBar", L"");
-		_StringToRect(sTextValue, &this->m_carSelectRightBlackBarRect);
-
-		// Custom location of 3D model into textbox or default location (0,0 = default)
-		sTextValue = pluginINIFile.GetValue(szResolutionText, L"Car3DModelInfoPosition", L"");
-		_StringToPoint(sTextValue, &this->m_car3DModelInfoPosition);
+		// Custom location of 3D model info textbox or default location (0,0 = default)
+		pluginINIFile.GetValueEx(szResolutionText, L"Default", L"Car3DModelInfoPosition", L"", &this->m_car3DModelInfoPosition);
 
 		// Scale the car picture in a car selection screen (0=no scale, stretch to fill the picture rect area, bit 1 = keep aspect ratio, bit 2 = place the pic to the bottom of the rect area)
 		// Default 0 is to stretch the image to fill the drawing rect area (or if the original pic is already in the same size then scaling is not necessary)
-		sTextValue = pluginINIFile.GetValue(szResolutionText, L"CarPictureScale", L"-1");
-		_Trim(sTextValue);
-		if (sTextValue.empty()) this->m_carPictureScale = -1;
-		else this->m_carPictureScale = std::stoi(sTextValue);
+		this->m_carPictureScale = pluginINIFile.GetValueEx(szResolutionText, L"Default", L"CarPictureScale", -1);
 
-		sTextValue = pluginINIFile.GetValue(szResolutionText, L"CarPictureUseTransparent", L"1");
-		_Trim(sTextValue);
-		if (sTextValue.empty()) this->m_carPictureUseTransparent = 1;
-		else this->m_carPictureUseTransparent = std::stoi(sTextValue);
-
+		this->m_carPictureUseTransparent = pluginINIFile.GetValueEx(szResolutionText, L"Default", L"CarPictureUseTransparent", 1);
 
 		// DirectX (0) or GDI (1) screenshot logic
-		sTextValue = pluginINIFile.GetValue(L"Default", L"ScreenshotAPIType", L"0");
-		_Trim(sTextValue);
-		if (sTextValue.empty()) this->m_screenshotAPIType = 0;
-		else this->m_screenshotAPIType = std::stoi(sTextValue);
+		this->m_screenshotAPIType = pluginINIFile.GetValueEx(szResolutionText, L"Default", L"ScreenshotAPIType", 0);
 
 		// Screenshot image format option. One of the values in g_RBRPluginMenu_ImageOptions array (the default is the item in the first index)
 		this->m_iMenuImageOption = 0;
-		sTextValue = pluginINIFile.GetValue(L"Default", L"ScreenshotFileType", L"");
-		_Trim(sTextValue);
+		sTextValue = pluginINIFile.GetValueEx(szResolutionText, L"Default", L"ScreenshotFileType", L"");
 		for (int idx = 0; idx < COUNT_OF_ITEMS(g_NGPCarMenu_ImageOptions); idx++)
 		{
 			std::string  sOptionValue;
@@ -968,11 +975,10 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		// Initialize the language dictionary only once when this method is called for the first time (changes to language translation strings take effect when RBR game is restarted)
 		if (m_pLangIniFile == nullptr)
 		{
-			m_pLangIniFile = new CSimpleIniW();
+			m_pLangIniFile = new CSimpleIniWEx();
 			m_pLangIniFile->SetUnicode(true);
 
-			sTextValue = pluginINIFile.GetValue(L"Default", L"LanguageFile", L"");
-			_Trim(sTextValue);
+			sTextValue = pluginINIFile.GetValueEx(L"Default", L"", L"LanguageFile", L"");
 			if (!sTextValue.empty())
 			{
 				// Append the root of RBR game location if the path is relative value
@@ -982,21 +988,18 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 				if (fs::exists(sTextValue))
 				{
 					// Load customized language translation strings
-					//m_pLangIniFile = new CSimpleIniW();
-					//m_pLangIniFile->SetUnicode(true);
 					m_pLangIniFile->LoadFile(sTextValue.c_str());
 				}
 			}
 		}
 
 
+		//
 		// RBRTM integration properties
-		sTextValue = pluginINIFile.GetValue(L"Default", L"RBRTM_Integration", L"1");
-		_Trim(sTextValue);
-		if (sTextValue.empty()) sTextValue = L"1";
+		//
 		try
 		{
-			m_iMenuRBRTMOption = (std::stoi(sTextValue) >= 1 ? 1 : 0);
+			m_iMenuRBRTMOption = (pluginINIFile.GetValueEx(L"Default", L"", L"RBRTM_Integration", 1) >= 1 ? 1 : 0);
 
 			// Initialize "RBRTM Tournament" title value in case user has localized it via a RBRTM language ile
 			if (m_sRBRTMPluginTitle.empty())
@@ -1046,10 +1049,8 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		}
 
 		// RBRTM_CarPictureRect 
-		sTextValue = pluginINIFile.GetValue(szResolutionText, L"RBRTM_CarPictureRect", L"");
-		_StringToRect(sTextValue, &this->m_carRBRTMPictureRect);
-
-		if (m_carRBRTMPictureRect.top == 0 && m_carRBRTMPictureRect.right == 0 && m_carRBRTMPictureRect.left == 0 && m_carRBRTMPictureRect.bottom == 0)
+		pluginINIFile.GetValueEx(szResolutionText, L"Default", L"RBRTM_CarPictureRect", L"", &this->m_carRBRTMPictureRect);
+		if(_IsRectZero(m_carRBRTMPictureRect))
 		{
 			// Default rectangle area of RBRTM car preview picture if RBRTM_CarPictureRect is not set in INI file
 			RBRAPI_MapRBRPointToScreenPoint(000.0f, 244.0f, (int*)&m_carRBRTMPictureRect.left, (int*)&m_carRBRTMPictureRect.top);
@@ -1059,28 +1060,19 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		}
 
 		// RBRTM_CarPictureCropping (not yet implemented)
-		sTextValue = pluginINIFile.GetValue(szResolutionText, L"RBRTM_CarPictureCropping", L"");
-		_StringToRect(sTextValue, &this->m_carRBRTMPictureCropping);
+		//pluginINIFile.GetValueEx(szResolutionText, L"Default", L"RBRTM_CarPictureCropping", L"", &this->m_carRBRTMPictureCropping);
 
 		// Scale the car picture in RBRTM screen (0=no scale, stretch to fill the picture rect area, bit 1 = keep aspect ratio, bit 2 = place the pic to the bottom of the rect area)
 		// Default 3 is to keep the aspect ratio and place the pic to bottom of the rect area.
-		sTextValue = pluginINIFile.GetValue(szResolutionText, L"RBRTM_CarPictureScale", L"3");
-		_Trim(sTextValue);
-		if (sTextValue.empty()) this->m_carRBRTMPictureScale = 3;
-		else this->m_carRBRTMPictureScale = std::stoi(sTextValue);
-
-		sTextValue = pluginINIFile.GetValue(szResolutionText, L"RBRTM_CarPictureUseTransparent", L"1");
-		_Trim(sTextValue);
-		if (sTextValue.empty()) this->m_carRBRTMPictureUseTransparent = 1;
-		else this->m_carRBRTMPictureUseTransparent = std::stoi(sTextValue);
-
+		this->m_carRBRTMPictureScale = pluginINIFile.GetValueEx(szResolutionText, L"Default", L"RBRTM_CarPictureScale", 3);
+		this->m_carRBRTMPictureUseTransparent = pluginINIFile.GetValueEx(szResolutionText, L"Default", L"RBRTM_CarPictureUseTransparent", 1);
 
 		// Read Tracks.ini map file because some custom plugins list stage names there for mapIDs
 		try
 		{
 			if (m_pTracksIniFile == nullptr)
 			{
-				m_pTracksIniFile = new CSimpleIniW();
+				m_pTracksIniFile = new CSimpleIniWEx();
 				sTextValue = m_sRBRRootDirW + L"\\Maps\\Tracks.ini";
 				m_pTracksIniFile->SetUnicode(true);
 				if (fs::exists(sTextValue)) m_pTracksIniFile->LoadFile(sTextValue.c_str());
@@ -1118,64 +1110,66 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 			}
 
 			// Custom map preview image path. NGPCarMenu checks first this folder+image. If the file doesn't exit then the plugin checks a map specific SplashScreen option in Maps\Tracks.ini file
-			this->m_screenshotPathMapRBRTM = pluginINIFile.GetValue(L"Default", L"RBRTM_MapScreenshotPath", L"");
-			_Trim(this->m_screenshotPathMapRBRTM);
-			if (this->m_screenshotPathMapRBRTM.empty())
-				this->m_screenshotPathMapRBRTM = L"Plugins\\NGPCarMenu\\preview\\maps\\%mapID%.png";  // Default value for this option
-
+			this->m_screenshotPathMapRBRTM = pluginINIFile.GetValueEx(szResolutionText, L"Default", L"RBRTM_MapScreenshotPath", L"Plugins\\NGPCarMenu\\preview\\maps\\%mapID%.png");
 			if (this->m_screenshotPathMapRBRTM.length() >= 2 && this->m_screenshotPathMapRBRTM[0] != L'\\' && this->m_screenshotPathMapRBRTM[1] != L':')
 				this->m_screenshotPathMapRBRTM = this->m_sRBRRootDirW + L"\\" + this->m_screenshotPathMapRBRTM; // Path relative to the root of RBR app path
 
 			// RBRTM_MapPictureRect
-			// TODO: All ini options with resoblock-defaultblock-trim-stripLeadingTrailingQuoteChar logic
-			sTextValue = pluginINIFile.GetValue(szResolutionText, L"RBRTM_MapPictureRect", L"");
-			_Trim(sTextValue);
-			if (sTextValue.empty())
-			{
-				sTextValue = pluginINIFile.GetValue(L"Default", L"RBRTM_MapPictureRect", L"");
-				_Trim(sTextValue);
-			}
-
-			if (sTextValue != L"0")
-				_StringToRect(sTextValue, &this->m_mapRBRTMPictureRect);
-			else
-				m_mapRBRTMPictureRect.bottom = -1; // Disable RBRTM Shakedown map preview image featre
-
-			if (m_mapRBRTMPictureRect.top == 0 && m_mapRBRTMPictureRect.right == 0 && m_mapRBRTMPictureRect.left == 0 && m_mapRBRTMPictureRect.bottom == 0)
+			pluginINIFile.GetValueEx(szResolutionText, L"Default", L"RBRTM_MapPictureRect", L"", &this->m_mapRBRTMPictureRect[0]);
+			if(_IsRectZero(m_mapRBRTMPictureRect[0]))
 			{
 				// Default rectangle area of RBRTM map preview picture if RBRTM_MapPictureRect is not set in INI file
-				RBRAPI_MapRBRPointToScreenPoint(295.0f, 230.0f, (int*)&m_mapRBRTMPictureRect.left, (int*)&m_mapRBRTMPictureRect.top);
-				RBRAPI_MapRBRPointToScreenPoint(628.0f, 455.0f, (int*)&m_mapRBRTMPictureRect.right, (int*)&m_mapRBRTMPictureRect.bottom);
+				RBRAPI_MapRBRPointToScreenPoint(295.0f, 230.0f, (int*)&m_mapRBRTMPictureRect[0].left, (int*)&m_mapRBRTMPictureRect[0].top);
+				RBRAPI_MapRBRPointToScreenPoint(628.0f, 455.0f, (int*)&m_mapRBRTMPictureRect[0].right, (int*)&m_mapRBRTMPictureRect[0].bottom);
 
-				LogPrint("RBRTM_MapPictureRect value is empty. Using the default value RBRTM_MapPictureRect=%d %d %d %d", m_mapRBRTMPictureRect.left, m_mapRBRTMPictureRect.top, m_mapRBRTMPictureRect.right, m_mapRBRTMPictureRect.bottom);
+				LogPrint("RBRTM_MapPictureRect value is empty. Using the default value RBRTM_MapPictureRect=%d %d %d %d", m_mapRBRTMPictureRect[0].left, m_mapRBRTMPictureRect[0].top, m_mapRBRTMPictureRect[0].right, m_mapRBRTMPictureRect[0].bottom);
 			}
 
-			// RBRRX_MinimapPictureRect
-			sTextValue = pluginINIFile.GetValue(szResolutionText, L"RBRTM_MinimapPictureRect", L"");
-			_Trim(sTextValue);
-			if (sTextValue.empty())
+			pluginINIFile.GetValueEx(szResolutionText, L"Default", L"RBRTM_MapPictureRectOpt", L"", &this->m_mapRBRTMPictureRect[1]);
+			if (_IsRectZero(m_mapRBRTMPictureRect[1]))
 			{
-				sTextValue = pluginINIFile.GetValue(L"Default", L"RBRTM_MinimapPictureRect", L"");
-				_Trim(sTextValue);
+				// Default rectangle area of RBRTM map preview picture if RBRTM_MapPictureRect is not set in INI file
+				RBRAPI_MapRBRPointToScreenPoint(200.0f, 140.0f, (int*)&m_mapRBRTMPictureRect[1].left, (int*)&m_mapRBRTMPictureRect[1].top);
+				RBRAPI_MapRBRPointToScreenPoint(640.0f, 462.0f, (int*)&m_mapRBRTMPictureRect[1].right, (int*)&m_mapRBRTMPictureRect[1].bottom);
+
+				LogPrint("RBRTM_MapPictureRectOpt value is empty. Using the default value RBRTM_MapPictureRectOpt=%d %d %d %d", m_mapRBRTMPictureRect[1].left, m_mapRBRTMPictureRect[1].top, m_mapRBRTMPictureRect[1].right, m_mapRBRTMPictureRect[1].bottom);
 			}
 
-			if (sTextValue != L"0")
-				_StringToRect(sTextValue, &this->m_minimapRBRTMPictureRect);
-			else
-				m_minimapRBRTMPictureRect.bottom = -1; // Disable RBRTM map preview image featre
+			// RBRTM_MinimapPictureRect
+			pluginINIFile.GetValueEx(szResolutionText, L"Default", L"RBRTM_MinimapPictureRect", L"", &this->m_minimapRBRTMPictureRect[0]);
+			if (_IsRectZero(m_minimapRBRTMPictureRect[0]))
+			{
+				if(m_mapRBRTMPictureRect[0].bottom != -1)
+					m_minimapRBRTMPictureRect[0] = m_mapRBRTMPictureRect[0];
+				else
+				{
+					// Default rectangle area of RBRTM minimap if the map preview is disabled
+					RBRAPI_MapRBRPointToScreenPoint(295.0f, 230.0f, (int*)&m_minimapRBRTMPictureRect[0].left, (int*)&m_minimapRBRTMPictureRect[0].top);
+					RBRAPI_MapRBRPointToScreenPoint(628.0f, 480.0f, (int*)&m_minimapRBRTMPictureRect[0].right, (int*)&m_minimapRBRTMPictureRect[0].bottom);
+					m_minimapRBRTMPictureRect[0].bottom -= (g_pFontCarSpecModel->GetTextHeight()); // +(g_pFontCarSpecModel->GetTextHeight() / 2));
+				}								
 
-			if (m_minimapRBRTMPictureRect.top == 0 && m_minimapRBRTMPictureRect.right == 0 && m_minimapRBRTMPictureRect.left == 0 && m_minimapRBRTMPictureRect.bottom == 0)
-				LogPrint("RBRTM_MinimapPictureRect value is empty. Using the default minimap location");
+				LogPrint("RBRTM_MinimapPictureRect value is empty. Using the default value RBRTM_MinimapPictureRect=%d %d %d %d", m_minimapRBRTMPictureRect[0].left, m_minimapRBRTMPictureRect[0].top, m_minimapRBRTMPictureRect[0].right, m_minimapRBRTMPictureRect[0].bottom);
+			}			
+
+			pluginINIFile.GetValueEx(szResolutionText, L"Default", L"RBRTM_MinimapPictureRectOpt", L"", &this->m_minimapRBRTMPictureRect[1]);
+			if (_IsRectZero(m_minimapRBRTMPictureRect[1]))
+			{
+				// Default rectangle area of RBRTM minimap on stage options screen if the map preview is disabled
+				RBRAPI_MapRBRPointToScreenPoint(5.0f, 185.0f, (int*)&m_minimapRBRTMPictureRect[1].left, (int*)&m_minimapRBRTMPictureRect[1].top);
+				RBRAPI_MapRBRPointToScreenPoint(635.0f, 480.0f, (int*)&m_minimapRBRTMPictureRect[1].right, (int*)&m_minimapRBRTMPictureRect[1].bottom);
+				m_minimapRBRTMPictureRect[1].bottom -= (g_pFontCarSpecModel->GetTextHeight() +(g_pFontCarSpecModel->GetTextHeight() / 2));
+
+				LogPrint("RBRTM_MinimapPictureRectOpt value is empty. Using the default value RBRTM_MinimapPictureRectOpt=%d %d %d %d", m_minimapRBRTMPictureRect[1].left, m_minimapRBRTMPictureRect[1].top, m_minimapRBRTMPictureRect[1].right, m_minimapRBRTMPictureRect[1].bottom);
+			}
 		}
 
+		//
 		// RBRRX integration properties
-		sTextValue = pluginINIFile.GetValue(L"Default", L"RBRRX_Integration", L"1");
-		_Trim(sTextValue);
-		if (sTextValue.empty()) sTextValue = L"1";
+		//
 		try
 		{
-			m_iMenuRBRRXOption = (std::stoi(sTextValue) >= 1 ? 1 : 0);
-
+			m_iMenuRBRRXOption = (pluginINIFile.GetValueEx(L"Default", L"", L"RBRRX_Integration", 1) >= 1 ? 1 : 0);
 			if (m_iMenuRBRRXOption)
 				g_bNewCustomPluginIntegrations = TRUE;  // If RBRRX integration is enabled then signal initialization of "custom plugin integration"
 		}
@@ -1210,62 +1204,92 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 			}
 
 			// Custom map preview image path. NGPCarMenu checks first this folder+image. If the file doesn't exit then the plugin checks a map specific SplashScreen option in Maps\Tracks.ini file
-			this->m_screenshotPathMapRBRRX = pluginINIFile.GetValue(L"Default", L"RBRRX_MapScreenshotPath", L"");
-			_Trim(this->m_screenshotPathMapRBRRX);
-			if (this->m_screenshotPathMapRBRRX.empty())
-				this->m_screenshotPathMapRBRRX = L"Plugins\\NGPCarMenu\\preview\\maps\\%mapfolder%.png";  // Default value for this option
-
+			this->m_screenshotPathMapRBRRX = pluginINIFile.GetValueEx(szResolutionText, L"Default", L"RBRRX_MapScreenshotPath", L"Plugins\\NGPCarMenu\\preview\\maps\\%mapfolder%.png");
 			if (this->m_screenshotPathMapRBRRX.length() >= 2 && this->m_screenshotPathMapRBRRX[0] != L'\\' && this->m_screenshotPathMapRBRRX[1] != L':')
 				this->m_screenshotPathMapRBRRX = this->m_sRBRRootDirW + L"\\" + this->m_screenshotPathMapRBRRX; // Path relative to the root of RBR app path
 
 			// RBRRX_MapPictureRect
-			sTextValue = pluginINIFile.GetValue(szResolutionText, L"RBRRX_MapPictureRect", L"");
-			_Trim(sTextValue);
-			if (sTextValue.empty())
-			{
-				sTextValue = pluginINIFile.GetValue(L"Default", L"RBRRX_MapPictureRect", L"");
-				_Trim(sTextValue);
-			}
-
-			if (sTextValue != L"0")
-				_StringToRect(sTextValue, &this->m_mapRBRRXPictureRect);
-			else
-				m_mapRBRRXPictureRect.bottom = -1; // Disable RBRRX map preview image featre
-
-			if (m_mapRBRRXPictureRect.top == 0 && m_mapRBRRXPictureRect.right == 0 && m_mapRBRRXPictureRect.left == 0 && m_mapRBRRXPictureRect.bottom == 0)
+			pluginINIFile.GetValueEx(szResolutionText, L"Default", L"RBRRX_MapPictureRect", L"", &this->m_mapRBRRXPictureRect[0]);
+			if(_IsRectZero(m_mapRBRRXPictureRect[0]))
 			{
 				// Default rectangle area of RBRRX map preview picture if RBRRX_MapPictureRect is not set in INI file
-				RBRAPI_MapRBRPointToScreenPoint(390.0f, 320.0f, (int*)&m_mapRBRRXPictureRect.left, (int*)&m_mapRBRRXPictureRect.top);
-				RBRAPI_MapRBRPointToScreenPoint(630.0f, 470.0f, (int*)&m_mapRBRRXPictureRect.right, (int*)&m_mapRBRRXPictureRect.bottom);
+				RBRAPI_MapRBRPointToScreenPoint(390.0f, 320.0f, (int*)&m_mapRBRRXPictureRect[0].left, (int*)&m_mapRBRRXPictureRect[0].top);
+				RBRAPI_MapRBRPointToScreenPoint(630.0f, 470.0f, (int*)&m_mapRBRRXPictureRect[0].right, (int*)&m_mapRBRRXPictureRect[0].bottom);
 
-				LogPrint("RBRRX_MapPictureRect value is empty. Using the default value RBRRX_MapPictureRect=%d %d %d %d", m_mapRBRRXPictureRect.left, m_mapRBRRXPictureRect.top, m_mapRBRRXPictureRect.right, m_mapRBRRXPictureRect.bottom);
+				LogPrint("RBRRX_MapPictureRect value is empty. Using the default value RBRRX_MapPictureRect=%d %d %d %d", m_mapRBRRXPictureRect[0].left, m_mapRBRRXPictureRect[0].top, m_mapRBRRXPictureRect[0].right, m_mapRBRRXPictureRect[0].bottom);
 			}
+
+			pluginINIFile.GetValueEx(szResolutionText, L"Default", L"RBRRX_MapPictureRectOpt", L"", &this->m_mapRBRRXPictureRect[1]);
+			if (_IsRectZero(m_mapRBRRXPictureRect[1]))
+			{
+				// Default rectangle area of RBRRX map preview picture if RBRRX_MapPictureRect is not set in INI file
+				RBRAPI_MapRBRPointToScreenPoint(5.0f, 145.0f, (int*)&m_mapRBRRXPictureRect[1].left, (int*)&m_mapRBRRXPictureRect[1].top);
+				RBRAPI_MapRBRPointToScreenPoint(635.0f, 480.0f, (int*)&m_mapRBRRXPictureRect[1].right, (int*)&m_mapRBRRXPictureRect[1].bottom);
+
+				LogPrint("RBRRX_MapPictureRectOpt value is empty. Using the default value RBRRX_MapPictureRectOpt=%d %d %d %d", m_mapRBRRXPictureRect[1].left, m_mapRBRRXPictureRect[1].top, m_mapRBRRXPictureRect[1].right, m_mapRBRRXPictureRect[1].bottom);
+			}
+
 
 			// RBRRX_MinimapPictureRect
-			sTextValue = pluginINIFile.GetValue(szResolutionText, L"RBRRX_MinimapPictureRect", L"");
-			_Trim(sTextValue);
-			if (sTextValue.empty())
+			pluginINIFile.GetValueEx(szResolutionText, L"Default", L"RBRRX_MinimapPictureRect", L"", &this->m_minimapRBRRXPictureRect[0]);
+			if(_IsRectZero(m_minimapRBRRXPictureRect[0]))
 			{
-				sTextValue = pluginINIFile.GetValue(L"Default", L"RBRRX_MinimapPictureRect", L"");
-				_Trim(sTextValue);
+				if (m_mapRBRRXPictureRect[0].bottom != -1)
+					m_minimapRBRRXPictureRect[0] = m_mapRBRRXPictureRect[0];	
+				else
+				{
+					// Default rectangle area of RBRRX minimap preview picture if the map itself is disabled (ie. coordinates not set)
+					RBRAPI_MapRBRPointToScreenPoint(390.0f, 320.0f, (int*)&m_minimapRBRRXPictureRect[0].left, (int*)&m_minimapRBRRXPictureRect[0].top);
+					RBRAPI_MapRBRPointToScreenPoint(630.0f, 480.0f, (int*)&m_minimapRBRRXPictureRect[0].right, (int*)&m_minimapRBRRXPictureRect[0].bottom);					
+				}				
+				m_minimapRBRRXPictureRect[0].bottom -= (g_pFontCarSpecModel->GetTextHeight()); // +(g_pFontCarSpecModel->GetTextHeight() / 2));
+
+				LogPrint("RBRRX_MinimapPictureRect value is empty. Using the default value RBRRX_MinimapPictureRect=%d %d %d %d", m_minimapRBRRXPictureRect[0].left, m_minimapRBRRXPictureRect[0].top, m_minimapRBRRXPictureRect[0].right, m_minimapRBRRXPictureRect[0].bottom);
 			}
 
-			if (sTextValue != L"0")
-				_StringToRect(sTextValue, &this->m_minimapRBRRXPictureRect);
-			else
-				m_minimapRBRRXPictureRect.bottom = -1; // Disable RBRRX map preview image featre
+			pluginINIFile.GetValueEx(szResolutionText, L"Default", L"RBRRX_MinimapPictureRectOpt", L"", &this->m_minimapRBRRXPictureRect[1]);
+			if (_IsRectZero(m_minimapRBRRXPictureRect[1]))
+			{
+				if (m_mapRBRRXPictureRect[1].bottom != -1)
+					m_minimapRBRRXPictureRect[1] = m_mapRBRRXPictureRect[1];
+				else
+				{
+					// Default rectangle area of RBRRX minimap preview picture if the map itself is disabled (ie. coordinates not set)
+					RBRAPI_MapRBRPointToScreenPoint(5.0f, 145.0f, (int*)&m_minimapRBRRXPictureRect[1].left, (int*)&m_minimapRBRRXPictureRect[1].top);
+					RBRAPI_MapRBRPointToScreenPoint(635.0f, 480.0f, (int*)&m_minimapRBRRXPictureRect[1].right, (int*)&m_minimapRBRRXPictureRect[1].bottom);
+				}
+				m_minimapRBRRXPictureRect[1].bottom -= g_pFontCarSpecModel->GetTextHeight();
 
-			if (m_minimapRBRRXPictureRect.top == 0 && m_minimapRBRRXPictureRect.right == 0 && m_minimapRBRRXPictureRect.left == 0 && m_minimapRBRRXPictureRect.bottom == 0)
-				LogPrint("RBRRX_MinimapPictureRect value is empty. Using the default minimap location");
+				LogPrint("RBRRX_MinimapPictureRectOpt value is empty. Using the default value RBRRX_MinimapPictureRectOpt=%d %d %d %d", m_minimapRBRRXPictureRect[1].left, m_minimapRBRRXPictureRect[1].top, m_minimapRBRRXPictureRect[1].right, m_minimapRBRRXPictureRect[1].bottom);
+			}
 		}
 
 
-		sTextValue = pluginINIFile.GetValue(L"Default", L"GenerateReplayMetadataFile", L"1");
-		_Trim(sTextValue);
-		if (sTextValue.empty()) m_bGenerateReplayMetadataFile = TRUE;
-		else m_bGenerateReplayMetadataFile = std::stoi(sTextValue) == 1;
+		m_bGenerateReplayMetadataFile = (pluginINIFile.GetValueEx(L"Default", L"", L"GenerateReplayMetadataFile", 1) != 0);
 
 
+		// Check if "inverted pedals RBR bug fix workaround" is enabled and for which pedals (0=disabled. Bit flag 1..4)
+		g_iInvertedPedalsStartupFixFlag = pluginINIFile.GetValueEx(L"Default", L"", L"InvertedPedalsStartupFix", 1);
+		if (g_iInvertedPedalsStartupFixFlag != 0)
+		{
+			CSimpleIniEx inputIniFile;
+
+			g_iInvertedPedalsStartupFixFlag = 0;
+			if (fs::exists(m_sRBRRootDir + "\\input.ini"))
+			{
+				inputIniFile.LoadFile((m_sRBRRootDir + "\\input.ini").c_str());
+
+				if (inputIniFile.GetBoolValue("Settings", "InvertThrottleAxis", false))  g_iInvertedPedalsStartupFixFlag = 0x01;
+				if (inputIniFile.GetBoolValue("Settings", "InvertBrakeAxis", false))     g_iInvertedPedalsStartupFixFlag |= 0x02;
+				if (inputIniFile.GetBoolValue("Settings", "InvertClutchAxis", false))    g_iInvertedPedalsStartupFixFlag |= 0x04;
+				if (inputIniFile.GetBoolValue("Settings", "InvertHandbrakeAxis", false)) g_iInvertedPedalsStartupFixFlag |= 0x08;
+
+				if (g_iInvertedPedalsStartupFixFlag != 0)
+					LogPrint("InvertedPedalsStartupFix enabled and inverted pedals bitflag=%d", g_iInvertedPedalsStartupFixFlag);
+			}
+		}
+
+		
 		//
 		// If the existing INI file format is an old version1 then save the file using the new format specifier
 		//
@@ -1290,8 +1314,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		if (m_iAutoLogonMenuState < 0)
 		{
 			// RBR bootup autoLogon option is read only at first time this method is called (ie RBR launch time)
-			m_sAutoLogon = _ToString(pluginINIFile.GetValue(L"Default", L"AutoLogon", L"Disabled"));
-			_Trim(m_sAutoLogon);
+			m_sAutoLogon = _ToString(pluginINIFile.GetValueEx(L"Default", L"", L"AutoLogon", L"Disabled"));
 			if (!_iEqual(m_sAutoLogon, "disabled", true) && m_sAutoLogon != "0")
 			{
 				// Autologon navigation needs a initialization of plugin menu in case the target menu is a plugin
@@ -1328,7 +1351,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 	catch (...)
 	{
 		LogPrint("ERROR CNGPCarMenu.RefreshSettingsFromPluginINIFile. %s INI reading failed", sIniFileName.c_str());
-		m_sMenuStatusText1 = sIniFileName + " file access error";
+		m_sMenuStatusText1 = sIniFileName + " file access or file format error";
 		m_iAutoLogonMenuState = 0;
 	}
 	DebugPrint("Exit CNGPCarMenu.RefreshSettingsFromPluginINIFile");
@@ -2606,6 +2629,224 @@ bool CNGPCarMenu::PrepareScreenshotReplayFile(int carID)
 
 
 //-----------------------------------------------------------------------------------------------
+// Read start/spli1/split2/finish distances from a pacenote DLS map file
+//
+BOOL CNGPCarMenu::ReadStartSplitsFinishPacenoteDistances(const std::wstring& sPacenoteFileName, float* startDistance, float* split1Distance, float* split2Distance, float* finishDistance)
+{
+	__int32 numOfPacenoteRecords = 0;
+
+	*startDistance = -1;
+	*split1Distance = -1;
+	*split2Distance = -1;
+	*finishDistance = -1;
+
+	try
+	{
+		__int32 numOfPacenotesOffset;
+		__int32 offsetFingerPrint[3];
+		__int32 fingerPrintType;
+
+		if (!fs::exists(sPacenoteFileName)) return FALSE;
+
+		// Read pacenote data from the DLS file into vector buffer
+		std::ifstream srcFile(sPacenoteFileName, std::ifstream::binary | std::ios::in);
+		if (!srcFile) return FALSE;
+
+		//srcFile.seekg(0x5C);
+		//srcFile.read((char*)&numOfPacenoteRecords, sizeof(__int32));
+		//if (srcFile.fail()) numOfPacenoteRecords = 0;
+
+		// Find the "Num of pacenote records" offset. 
+		// FIXME: Usually this is at 0x5C offset, but not always. Don't know yet the exact logic, so this code tries to identify certain "fingerprints" (not foolproof and definetly not the correct way to do it)
+		//  If @0x38 == 01 then numOfPacenote offset is always 0x5C
+		//  otherwise try to find nonZeroValue-0x00-0x1C fingerprint record (where the nonZeroValue is the num of pacenotes)
+		//
+
+		srcFile.seekg(0x38);
+		srcFile.read((char*)&offsetFingerPrint, sizeof(__int32));
+		fingerPrintType = (offsetFingerPrint[0] == 0x01 ? 0 : 1);
+
+		numOfPacenotesOffset = 0x5C;
+		while (numOfPacenotesOffset < 0x200)
+		{
+			srcFile.seekg(numOfPacenotesOffset);
+			srcFile.read((char*)&offsetFingerPrint, sizeof(offsetFingerPrint));
+			if (srcFile.fail())
+			{
+				numOfPacenoteRecords = 0;
+				break;
+			}
+
+			if (fingerPrintType == 0 || (offsetFingerPrint[0] != 0x00 && offsetFingerPrint[1] == 0x00 && offsetFingerPrint[2] == 0x1C))
+			{
+				numOfPacenoteRecords = offsetFingerPrint[0];
+				break;
+			}
+
+			numOfPacenotesOffset += sizeof(__int32);
+		}
+
+		//DebugPrint("RBRTM_ReadStartSplitsFinishPacenoteDistances. NumOfPacenoteRecords=%d", numOfPacenoteRecords);
+		if (numOfPacenoteRecords <= 0 || numOfPacenoteRecords >= 50000)
+		{
+			LogPrint("ERROR CNGPCarMenu::ReadStartSplitsFinishPacenoteDistances. Invalid number of records %d", numOfPacenoteRecords);
+			numOfPacenoteRecords = 0;
+		}
+		else
+		{
+			// Offset to pacenote records (always +0x20 to the offset of num of pacenote)
+			__int32 dataOffset = numOfPacenotesOffset + 0x20;
+			//srcFile.seekg(0x7C);
+			srcFile.seekg(dataOffset);
+			srcFile.read((char*)&dataOffset, sizeof(__int32));
+			if (srcFile.fail() || dataOffset <= 0)
+			{
+				LogPrint("ERROR CNGPCarMenu::ReadStartSplitsFinishPacenoteDistances. Invalid pacenote data offset %d", dataOffset);
+				numOfPacenoteRecords = 0;
+			}
+
+			if (numOfPacenoteRecords > 0)
+			{
+				std::vector<RBRPacenote> vectPacenoteData(numOfPacenoteRecords);
+
+				srcFile.seekg(dataOffset);
+				srcFile.read(reinterpret_cast<char*>(&vectPacenoteData[0]), (static_cast<std::streamsize>(numOfPacenoteRecords) * sizeof(RBRPacenote)));
+				if (srcFile.fail())
+				{
+					LogPrint("ERROR CNGPCarMenu::ReadStartSplitsFinishPacenoteDistances. Failed to read %d pacenote data records", numOfPacenoteRecords);
+					numOfPacenoteRecords = 0;
+				}
+
+				// Read "type and distance" values of pacenote records
+				for (int idx = 0; idx < numOfPacenoteRecords; idx++)
+				{
+					if (vectPacenoteData[idx].type == 21 && *startDistance < 0)
+					{
+						*startDistance = vectPacenoteData[idx].distance;
+						if (*startDistance >= 0 && *split1Distance >= 0 && *split2Distance >= 0 && *finishDistance >= 0) break;
+					}
+					else if (vectPacenoteData[idx].type == 23)
+					{
+						if (*split1Distance < 0)
+							*split1Distance = vectPacenoteData[idx].distance;
+						else
+						{
+							// Sometimes DLS file may have splits in "wrong order", so make sure the distance of split1 < split2
+							if (vectPacenoteData[idx].distance > * split1Distance)
+								*split2Distance = vectPacenoteData[idx].distance;
+							else
+							{
+								*split2Distance = *split1Distance;
+								*split1Distance = vectPacenoteData[idx].distance;
+							}
+						}
+						if (*startDistance >= 0 && *split1Distance >= 0 && *split2Distance >= 0 && *finishDistance >= 0) break;
+					}
+					else if (vectPacenoteData[idx].type == 22 && *finishDistance < 0)
+					{
+						*finishDistance = vectPacenoteData[idx].distance;
+						if (*startDistance >= 0 && *split1Distance >= 0 && *split2Distance >= 0 && *finishDistance >= 0) break;
+					}
+				}
+			}
+		}
+		srcFile.close();
+
+		if (*startDistance < 0) *startDistance = 0.0f;
+	}
+	catch (...)
+	{
+		*startDistance = -1;
+		LogPrint(L"ERROR CNGPCarMenu::ReadStartSplitsFinishPacenoteDistances. Failed to read pacenote data from %s", sPacenoteFileName.c_str());
+	}
+
+	//DebugPrint("ReadStartSplitsFinishPacenoteDistances. Distance start=%f s1=%f s2=%f finish=%f", *startDistance, *split1Distance, *split2Distance, *finishDistance);
+
+	return (*startDistance >= 0);
+}
+
+
+//----------------------------------------------------------------------------------------------------
+// Read driveline data from TRK file
+// Offset 0x10 = Num of driveline records (DWORD)
+//        0x14 = Driveline record 8 x DWORD (x y z cx cy cz distance zero)
+//        ...N num of driveline records...
+//
+int CNGPCarMenu::ReadDriveline(const std::wstring& sDrivelineFileName, CDrivelineSource& drivelineSource)
+{
+	__int32 numOfDrivelineRecords;
+
+	try
+	{
+		drivelineSource.vectDrivelinePoint.clear();
+
+		drivelineSource.pointMin.x = drivelineSource.pointMin.y = 9999999.0f;
+		drivelineSource.pointMax.x = drivelineSource.pointMax.y = -9999999.0f;
+
+		// Read driveline data from the TRK file into vector buffer
+		std::ifstream srcFile(sDrivelineFileName, std::ifstream::binary | std::ios::in);
+		if (!srcFile) return 0;
+
+		srcFile.seekg(0x10);
+		srcFile.read((char*)&numOfDrivelineRecords, sizeof(__int32));
+		if (srcFile.fail()) numOfDrivelineRecords = 0;
+
+		//DebugPrint("RBRTM_ReadDriveline. NumOfDrivelineRecords=%d", numOfDrivelineRecords);
+		if (numOfDrivelineRecords <= 0 || numOfDrivelineRecords >= 100000)
+		{
+			LogPrint("ERROR CNGPCarMenu::ReadDriveline. Invalid number of records %d", numOfDrivelineRecords);
+			numOfDrivelineRecords = 0;
+		}
+		else
+		{
+			std::vector<float> vectDrivelineData(numOfDrivelineRecords * 8);
+			srcFile.read(reinterpret_cast<char*>(&vectDrivelineData[0]), (static_cast<std::streamsize>(numOfDrivelineRecords) * 8 * sizeof(float)));
+			if (srcFile.fail())
+			{
+				LogPrint("ERROR CNGPCarMenu::ReadDriveline. Failed to read data");
+				numOfDrivelineRecords = 0;
+			}
+
+			// Read "x y z cx cy cz distance zero" record (8 x floats)
+			for (int idx = 0; idx < numOfDrivelineRecords; idx++)
+			{
+				float x, y, distance;
+				x = vectDrivelineData[idx * 8 + 0];
+				y = vectDrivelineData[idx * 8 + 1];
+				distance = vectDrivelineData[idx * 8 + 6];
+
+				//DebugPrint("%d: %f %f %f", idx, x, y, distance);
+
+				if (distance < drivelineSource.startDistance)
+					continue;
+
+				if (drivelineSource.finishDistance > 0 && distance > drivelineSource.finishDistance)
+					break;
+
+				if (x < drivelineSource.pointMin.x) drivelineSource.pointMin.x = x;
+				if (x > drivelineSource.pointMax.x) drivelineSource.pointMax.x = x;
+				if (y < drivelineSource.pointMin.y) drivelineSource.pointMin.y = y;
+				if (y > drivelineSource.pointMax.y) drivelineSource.pointMax.y = y;
+
+				drivelineSource.vectDrivelinePoint.push_back({ {x, y}, distance });
+			}
+
+			// Sort driveline data in ascending order by distance (hmm... the DLS data seems to be already in ascending order)
+			//drivelineSource.vectDrivelinePoint.sort();
+		}
+		srcFile.close();
+	}
+	catch (...)
+	{
+		drivelineSource.vectDrivelinePoint.clear();
+		LogPrint(L"ERROR CNGPCarMenu::ReadDriveline. Failed to read driveline data from %s", sDrivelineFileName.c_str());
+	}
+
+	return drivelineSource.vectDrivelinePoint.size();
+}
+
+
+//-----------------------------------------------------------------------------------------------
 // Replace all %variableName% RBR path variables with the actual value
 //
 std::wstring CNGPCarMenu::ReplacePathVariables(const std::wstring& sPath, int selectedCarIdx, bool rbrtmplugin, int mapID, const WCHAR* mapName, const std::string& folderName)
@@ -2809,7 +3050,7 @@ int CNGPCarMenu::RescaleDrivelineToFitOutputRect(CDrivelineSource& drivelineSour
 	}
 */
 
-	DebugPrint("RescaleDrivelineToFitOutputRect. CountT2=%d", vectTempMinimapPoint.size());
+	//DebugPrint("RescaleDrivelineToFitOutputRect. CountT2=%d", vectTempMinimapPoint.size());
 
 /*
 #if USE_DEBUG == 1
@@ -2832,7 +3073,6 @@ int CNGPCarMenu::RescaleDrivelineToFitOutputRect(CDrivelineSource& drivelineSour
 	{
 		POINT_DRIVELINE_int startPoint;
 
-		//prevPoint.drivelineCoord.x = prevPoint.drivelineCoord.y = prevPoint.splitType = INT_MIN;
 		startPoint.drivelineCoord = vectTempMinimapPoint[0].drivelineCoord;
 		startPoint.splitType = vectTempMinimapPoint[0].splitType;
 		for (auto& item : vectTempMinimapPoint)
@@ -2875,19 +3115,6 @@ int CNGPCarMenu::RescaleDrivelineToFitOutputRect(CDrivelineSource& drivelineSour
 	}
 
 	DebugPrint("RescaleDrivelineToFitOutputRect. CountT3=%d", minimapData.vectMinimapPoint.size());
-
-/*
-#if USE_DEBUG == 1
-	outputFile << "-------------" << std::endl;
-	outputFile << "MinimapPointsT2=" << minimapData.vectMinimapPoint.size() << std::endl;
-	for (auto& item : minimapData.vectMinimapPoint)
-	{
-		outputFile << item.drivelineCoord.x << "," << item.drivelineCoord.y << std::endl;
-	}
-	outputFile << "-------------" << std::endl;
-	outputFile.close();
-#endif
-*/
 
 	return minimapData.vectMinimapPoint.size();
 }
@@ -2946,9 +3173,9 @@ const char* CNGPCarMenu::GetName(void)
 	
 		// Init RBR API objects
 		RBRAPI_InitializeObjReferences();
-		m_pD3D9RenderStateCache = new CD3D9RenderStateCache(g_pRBRIDirect3DDevice9, false);
 
-		RefreshSettingsFromPluginINIFile(true);
+		RBRAPI_RefreshWndRect();
+		m_pD3D9RenderStateCache = new CD3D9RenderStateCache(g_pRBRIDirect3DDevice9, false);				
 
 		// Init font to draw custom car spec info text (3D model and custom livery text)
 		int iFontSize = 14;
@@ -2965,6 +3192,8 @@ const char* CNGPCarMenu::GetName(void)
 		g_pFontCarSpecModel = new CD3DFont(L"Trebuchet MS", (iFontSize >= 14 ? iFontSize - 2 : iFontSize), 0 /*D3DFONT_BOLD*/);
 		g_pFontCarSpecModel->InitDeviceObjects(g_pRBRIDirect3DDevice9);
 		g_pFontCarSpecModel->RestoreDeviceObjects();
+
+		RefreshSettingsFromPluginINIFile(true);
 
 		// If EASYRBRPath is not set then assume cars have been setup using RBRCIT car manager tool
 		if (m_easyRBRFilePath.empty()) InitCarSpecData_RBRCIT();
@@ -3019,7 +3248,11 @@ const char* CNGPCarMenu::GetName(void)
 		gtcRBRReplay = new DetourXS((LPVOID)0x4999B0, ::CustomRBRReplay, TRUE);
 		Func_OrigRBRReplay = (tRBRReplay)gtcRBRReplay->GetTrampoline();
 
-		//DebugPrint("CRBRNetTNG.GetName. BeginSceneIsFirst=%d  EndSceneIsFirst=%d", gtcDirect3DBeginScene->IsFirstHook(), gtcDirect3DEndScene->IsFirstHook());
+		if (g_iInvertedPedalsStartupFixFlag != 0)
+		{
+			gtcRBRControllerAxisData = new DetourXS((LPVOID)0x4C2610, ::CustomRBRControllerAxisData, TRUE);
+			Func_OrigRBRControllerAxisData = (tRBRControllerAxisData)gtcRBRControllerAxisData->GetTrampoline();
+		}
 
 		// RBR memory and DX9 function hooks in place. Ready to do customized RBR logic
 		g_bRBRHooksInitialized = TRUE;
@@ -3683,6 +3916,7 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 
 
 #if USE_DEBUG == 1
+/*
 	static int prevMode = -1;
 	static int prevModeExt = -1;
 	static PRBRMenuObj prevMenu = nullptr;
@@ -3710,7 +3944,9 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 		prevModeExt = g_pRBRGameModeExt->gameModeExt;
 		prevMenu = g_pRBRMenuSystem->currentMenuObj;
 	}
+*/
 #endif
+
 
 	if ((g_pRBRGameMode->gameMode == 0x02 /*&& m_bRBRTMPluginActive*/) || g_pRBRGameMode->gameMode == 0x09)
 	{
@@ -3877,17 +4113,8 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 				//RBRAPI_MapRBRPointToScreenPoint(rbrPosX, g_pRBRMenuSystem->menuImagePosY, &posX, &posY);
 				RBRAPI_MapRBRPointToScreenPoint(218.0f, g_pRBRMenuSystem->menuImagePosY, &posX, &posY);
 				posY -= 6 * iFontHeight;
-
-				//if (g_pRBRPlugin->m_car3DModelInfoPosition.x != 0)
-				//	posX = g_pRBRPlugin->m_car3DModelInfoPosition.x;  // Custom X-position
-				//else if (rbrPosX == -1)
-				//	posX = ((g_rectRBRWndClient.right - g_rectRBRWndClient.left) / 2) - 50; // Default brute-force "center of the horizontal screen line"
-
-				if (m_car3DModelInfoPosition.x != 0)
-					posX = m_car3DModelInfoPosition.x;  // Custom X-position
-
-				if (m_car3DModelInfoPosition.y != 0)
-					posY = m_car3DModelInfoPosition.y;  // Custom Y-position
+				if (m_car3DModelInfoPosition.x != 0) posX = m_car3DModelInfoPosition.x;  // Custom X-position
+				if (m_car3DModelInfoPosition.y != 0) posY = m_car3DModelInfoPosition.y;  // Custom Y-position
 
 				PRBRCarSelectionMenuEntry pCarSelectionMenuEntry = &g_RBRCarSelectionMenuEntry[selectedCarIdx];
 
@@ -3934,15 +4161,70 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 				{
 					for (auto& imageItem : item->m_imageList)
 					{
-						if (imageItem->m_bShowImage && imageItem->m_imageTexture.pTexture != nullptr && imageItem->m_imageSize.cx != -1)
+						if (imageItem->m_bShowImage)
 						{
-							if (imageItem->m_dwImageFlags & IMAGE_TEXTURE_ALPHA_BLEND)
-								m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
+							if (imageItem->m_imageTexture.pTexture != nullptr && imageItem->m_imageSize.cx != -1)
+							{
+								// Image item
+								if (imageItem->m_dwImageFlags & IMAGE_TEXTURE_ALPHA_BLEND)
+									m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
 
-							D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, imageItem->m_imageTexture.pTexture, imageItem->m_imageTexture.vertexes2D);
+								D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, imageItem->m_imageTexture.pTexture, imageItem->m_imageTexture.vertexes2D, m_pD3D9RenderStateCache);
 
-							if (imageItem->m_dwImageFlags & IMAGE_TEXTURE_ALPHA_BLEND)
 								m_pD3D9RenderStateCache->RestoreState();
+							}
+							else if (imageItem->m_minimapData.vectMinimapPoint.size() >= 2)
+							{
+								// Minimap item
+								int centerPosX, centerPosY;
+								if (imageItem->m_dwImageFlags & IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER)
+									centerPosX = max(((imageItem->m_minimapData.minimapRect.right - imageItem->m_minimapData.minimapRect.left) / 2) - (imageItem->m_minimapData.minimapSize.x / 2), 0);
+								else if (imageItem->m_dwImageFlags & IMAGE_TEXTURE_POSITION_HORIZONTAL_RIGHT)
+									centerPosX = max((imageItem->m_minimapData.minimapRect.right - imageItem->m_minimapData.minimapRect.left) - imageItem->m_minimapData.minimapSize.x, 0);
+								else
+									centerPosX = 0;
+
+								if (imageItem->m_dwImageFlags & IMAGE_TEXTURE_POSITION_VERTICAL_CENTER)
+									centerPosY = max(((imageItem->m_minimapData.minimapRect.bottom - imageItem->m_minimapData.minimapRect.top) / 2) - (imageItem->m_minimapData.minimapSize.y / 2), 0);
+								else if (imageItem->m_dwImageFlags & IMAGE_TEXTURE_POSITION_BOTTOM)
+									centerPosY = max((imageItem->m_minimapData.minimapRect.bottom - imageItem->m_minimapData.minimapRect.top) - imageItem->m_minimapData.minimapSize.y, 0);
+								else
+									centerPosY = 0;
+
+								m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
+								//g_pFontCarSpecCustom->DrawTextA(1, 1, D3DCOLOR_ARGB(255, 0xF0, 0xF0, 0xF0), "minimap",0);
+
+								// Draw the minimap driveline
+								for (auto& item : imageItem->m_minimapData.vectMinimapPoint)
+								{
+									DWORD dwColor;
+									switch (item.splitType)
+									{
+									case 1:  dwColor = D3DCOLOR_ARGB(180, 0xF0, 0xCD, 0x30); break;	// Color for split1->split2 part of the track (yellow)
+									//default: dwColor = D3DCOLOR_ARGB(180, 0xF0, 0xF0, 0xF0); break; // Color for start->split1 and split2->finish (white)
+									default: dwColor = D3DCOLOR_ARGB(180, 0x60, 0xA8, 0x60); break; // Color for start->split1 and split2->finish (green)
+									}
+
+									D3D9DrawPrimitiveCircle(g_pRBRIDirect3DDevice9,
+										(float)(centerPosX + imageItem->m_minimapData.minimapRect.left + item.drivelineCoord.x),
+										(float)(centerPosY + imageItem->m_minimapData.minimapRect.top + item.drivelineCoord.y),
+										2.0f, dwColor);
+								}
+								
+								// Draw the finish line as bigger red circle
+								D3D9DrawPrimitiveCircle(g_pRBRIDirect3DDevice9,
+									(float)(centerPosX + imageItem->m_minimapData.minimapRect.left + imageItem->m_minimapData.vectMinimapPoint.back().drivelineCoord.x),
+									(float)(centerPosY + imageItem->m_minimapData.minimapRect.top + imageItem->m_minimapData.vectMinimapPoint.back().drivelineCoord.y),
+									5.0f, D3DCOLOR_ARGB(255, 0xC0, 0x10, 0x10));
+
+								// Draw the start line as bigger green circle
+								D3D9DrawPrimitiveCircle(g_pRBRIDirect3DDevice9,
+									(float)(centerPosX + imageItem->m_minimapData.minimapRect.left + imageItem->m_minimapData.vectMinimapPoint.front().drivelineCoord.x),
+									(float)(centerPosY + imageItem->m_minimapData.minimapRect.top + imageItem->m_minimapData.vectMinimapPoint.front().drivelineCoord.y),
+									5.0f, D3DCOLOR_ARGB(255, 0x20, 0xF0, 0x20));
+
+								m_pD3D9RenderStateCache->RestoreState();
+							}
 						}
 					}
 					
@@ -3978,12 +4260,6 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 		g_watcherNewReplayFiles.Stop();
 	}
 
-
-//	if (m_bCustomReplayShowCroppingRect && m_iCustomReplayState >= 2 && m_iCustomReplayState != 4)
-//	{
-		// Draw rectangle to highlight the screenshot capture area (except when state == 4 because then this plugin takes the car preview screenshot and we don't want to see the gray box in a preview image)
-//		D3D9DrawVertex2D(g_pRBRIDirect3DDevice9, m_screenshotCroppingRectVertexBuffer);
-//	}
 	
 #if USE_DEBUG == 1
 /*
@@ -4278,6 +4554,28 @@ HRESULT __fastcall CustomRBRDirectXBeginScene(void* objPointer)
 	if (!g_bRBRHooksInitialized) 
 		return S_OK;
 
+/*
+	if (g_iInvertedPedalsStartupFixFlag != 0)
+	{
+		// Fix the inverted throttle pedal 
+		if (g_iInvertedPedalsStartupFixFlag & 0x01 && g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[3].controllerAxisData != nullptr)
+			g_pRBRGameConfig->controllerBaseObj->controllerObj->throttleInverted = (g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[3].controllerAxisData->dinputStatus == 0);
+
+		// Fix the inverted brake pedal
+		if (g_iInvertedPedalsStartupFixFlag & 0x02 && g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[5].controllerAxisData != nullptr)
+			g_pRBRGameConfig->controllerBaseObj->controllerObj->brakeInverted = (g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[5].controllerAxisData->dinputStatus == 0);
+
+		// Fix the inverted clutch pedal
+		if (g_iInvertedPedalsStartupFixFlag & 0x04 && g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[11].controllerAxisData != nullptr)
+			g_pRBRGameConfig->controllerBaseObj->controllerObj->clutchInverted = (g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[11].controllerAxisData->dinputStatus == 0);
+
+		// Fix the inverted handbrake
+		if (g_iInvertedPedalsStartupFixFlag & 0x08 && g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[6].controllerAxisData != nullptr)
+			g_pRBRGameConfig->controllerBaseObj->controllerObj->handbrakeInverted = (g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[6].controllerAxisData->dinputStatus == 0);
+	}
+
+*/
+
 	// Call the origial RBR BeginScene and let it to initialize the new D3D scene
 	HRESULT hResult = ::Func_OrigRBRDirectXBeginScene(objPointer);
 
@@ -4317,5 +4615,41 @@ int __fastcall CustomRBRReplay(void* objPointer, DWORD /*ignoreEDX*/, const char
 		return 0; // ERROR 
 
 	return Func_OrigRBRReplay(objPointer, szReplayFileName, pUnknown1, pUnknown2, iReplayFileSize);
+}
+
+
+
+//----------------------------------------------------------------------------------------------------------------------------
+// RBR controller axis data handler. Workaround the RBR bug with inverted pedals (ie. throttle goes to 100% at starting line until user presses the inverted pedal at least once)
+//
+float __fastcall CustomRBRControllerAxisData(void* objPointer, DWORD /*ignoreEDX*/, __int32 axisID)
+{
+	//PRBRControllerAxis pAxis = &((PRBRControllerAxis)objPointer)[axisID];
+
+	switch (axisID)
+	{
+	case 3: // Throttle
+		if (g_iInvertedPedalsStartupFixFlag & 0x01 && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData != nullptr && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->dinputStatus != 0) //g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[3].controllerAxisData->dinputStatus != 0)
+			return 1.0f;//@0x795e14 max value. Could it be something else than 1.0f?
+		return Func_OrigRBRControllerAxisData(objPointer, axisID);
+
+	case 5: // Brake
+		if (g_iInvertedPedalsStartupFixFlag & 0x02 && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData != nullptr && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->dinputStatus != 0)
+			return 1.0f;
+		return Func_OrigRBRControllerAxisData(objPointer, axisID);
+
+	case 6: // Clutch 
+		if (g_iInvertedPedalsStartupFixFlag & 0x08 && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData != nullptr && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->dinputStatus != 0)
+			return 1.0f;
+		return Func_OrigRBRControllerAxisData(objPointer, axisID);
+
+	case 11: // Handbrake
+		if (g_iInvertedPedalsStartupFixFlag & 0x04 && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData != nullptr && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->dinputStatus != 0)
+			return 1.0f;
+		return Func_OrigRBRControllerAxisData(objPointer, axisID);
+
+	default:
+		return Func_OrigRBRControllerAxisData(objPointer, axisID);
+	}
 }
 

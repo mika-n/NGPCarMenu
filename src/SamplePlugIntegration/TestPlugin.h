@@ -40,6 +40,7 @@ const char* g_szDecorationImages[] =
 
 #define C_SAMPLEIMAGE_ID  100	// Anything above zero value. Each cached image is uniquely identified by ID
 #define C_DECORIMAGE_ID   101
+#define C_MINIMAP_ID      102
 
 
 #ifndef D3DCOLOR_DEFINED
@@ -197,11 +198,11 @@ public:
 			m_pGame->WriteText(73.0f, 70.0f + (static_cast<float>(i) * 21.0f), pszMenuText);
 		}		
 
-		m_pGame->DrawFlatBox(105.0f, 245.0f, 155.0f, 135.0f);
+		m_pGame->DrawFlatBox(105.0f, 220.0f, 155.0f, 135.0f);
 
 		m_pGame->SetMenuColor(IRBRGame::MENU_HEADING);
 		m_pGame->SetFont(IRBRGame::FONT_BIG);
-		m_pGame->WriteText(80.0f, 250.0f, "This text should be behind the image");
+		m_pGame->WriteText(30.0f, 170.0f, "This text should be behind the image");
 
 		//m_pGame->DrawBox(GEN_BOX_LOGOS_CITROEN, 400.0f, 300.0f );
 	}
@@ -210,6 +211,14 @@ public:
 	//------------------------------------------------------------------------------------------------//
 	virtual void HandleFrontEndEvents( char txtKeyboard, bool bUp, bool bDown, bool bLeft, bool bRight, bool bSelect )
 	{
+		char szTextBuf[260];
+		wchar_t wszTextBuf[260];
+
+		long remappedX = 0;
+		long remappedY = 0;
+		long remappedCX = 0;
+		long remappedCY = 0;
+	
 		if( bSelect )
 		{
 			if( m_iSelection == C_CMD_STAGESTART && NPlugin::GetStageName( m_iMap ) )
@@ -235,20 +244,18 @@ public:
 				if (m_bShowText)
 				{
 					POINT   textPos;
-					char    szTextBuf[255];
-					wchar_t wszTextBuf[255];
 
 					sprintf_s (szTextBuf,  sizeof(szTextBuf) / sizeof(char),     "Ipsolum %s absolum %s", NPlugin::GetStageName(m_iMap), m_szVersionText);
 					swprintf_s(wszTextBuf, sizeof(szTextBuf) / sizeof(wchar_t), L"This unicode widechar %d should be front of the image", rand());
 
 					// Draw a custom text with custom font style (text background is transparent), char string
-					m_pNGPCarMenuAPI->DrawTextA(m_dwPluginID, 1, 50, 100, szTextBuf, m_dwFont1ID, D3DCOLOR_ARGB(255, 0x7F, 0x7F, 0x0), 0);
+					m_pNGPCarMenuAPI->DrawTextA(m_dwPluginID, 1, 5, 20, szTextBuf, m_dwFont1ID, D3DCOLOR_ARGB(255, 0x7F, 0x7F, 0x0), 0);
 					
 
 					// Draw a custom text on top of the custom image (tip! You may want to use MapRBRPointToScreenPoint method to map RBR menu coordinates to physical screen coordinates. DrawText methods take physical screen coordinates, not RBR in-game menu coordinates)
 					// Uses random opaque (alpha color), random "blue" color tint and a random sliding X-position, widechar string
 					int randomNum = RAND_MAX_MIN(255, 50);
-					m_pNGPCarMenuAPI->MapRBRPointToScreenPoint(30 + (randomNum / 2), 275, &textPos.x, &textPos.y);
+					m_pNGPCarMenuAPI->MapRBRPointToScreenPoint(10 + (randomNum / 2), 210, &textPos.x, &textPos.y);
 					m_pNGPCarMenuAPI->DrawTextW(m_dwPluginID, 2, textPos.x, textPos.y, wszTextBuf, m_dwFont2ID, D3DCOLOR_ARGB(randomNum, 0xF0, 0x00, randomNum), 0);
 
 
@@ -298,6 +305,18 @@ public:
 						m_iMap = 0;
 				}
 			}
+
+			//
+			// MINIMAP drawing example (GetModulePath returns the RBR app path and m_iMap is used as a track filename identifier)
+			// When map selection is changed then refresh the minimap to show track-mapID_M.trk track layout.
+			// Note! This is a quick-and-dirty example because the code assumes that all tracks have overcast (O) trk file (which is not necessarily true. Production code should check which TRK file actually exists)
+			// 
+			m_pNGPCarMenuAPI->MapRBRPointToScreenPoint(250, 130, &remappedX, &remappedY);    // Map RBR in-game menu coordinates to native screen point coordinates
+			m_pNGPCarMenuAPI->MapRBRPointToScreenPoint(380, 340, &remappedCX, &remappedCY);
+
+			sprintf_s(szTextBuf, sizeof(szTextBuf) / sizeof(char), "%s\\Maps\\track-%d_O.trk", m_pNGPCarMenuAPI->GetModulePath(), m_iMap);
+			m_pNGPCarMenuAPI->LoadCustomImage(m_dwPluginID, C_MINIMAP_ID, szTextBuf, remappedX, remappedY, remappedCX, remappedCY, IMAGE_TEXTURE_POSITION_HORIZONTAL_RIGHT | IMAGE_TEXTURE_POSITION_VERTICAL_BOTTOM);
+			m_pNGPCarMenuAPI->ShowHideImage(m_dwPluginID, C_MINIMAP_ID, true);
 		}
 		else if (m_iSelection == C_CMD_DECORATION)
 		{
@@ -316,21 +335,15 @@ public:
 
 		if (m_iSelection == C_CMD_DECORATION)
 		{
-			float remappedX = 0.0f;
-			float remappedY = 0.0f;
-			float remappedCX = 0.0f;
-			float remappedCY = 0.0f;
-
 			// Remap RBR "game coordinates" to the actual screen coordinates (relative to screen resolution and menu coordinate fix in Fixup plugin).
 			// Internally RBR uses 640x480 coordinate system while drawing a frontend menu. DX9 images use screen coordinates, so "RBR coordinates" need to be remapped.
-			m_pNGPCarMenuAPI->MapRBRPointToScreenPoint(110.0f, 250.0f, &remappedX, &remappedY);
-			m_pNGPCarMenuAPI->MapRBRPointToScreenPoint(140.0f, 125.0f, &remappedCX, &remappedCY);
+			m_pNGPCarMenuAPI->MapRBRPointToScreenPoint(110, 155, &remappedX, &remappedY);
+			m_pNGPCarMenuAPI->MapRBRPointToScreenPoint(140, 125, &remappedCX, &remappedCY);
 
 			// Decoration menu line focused. Refresh image properties of the imageID. If properties are still the same then do nothing (ie. re-use the existing DX9 texture)
 			m_pNGPCarMenuAPI->LoadCustomImage(m_dwPluginID, C_DECORIMAGE_ID, g_szDecorationImages[m_iDecorationImage],
-					static_cast<int>(remappedX), static_cast<int>(remappedY), 
-					static_cast<int>(remappedCX), static_cast<int>(remappedCY),
-					IMAGE_TEXTURE_STRETCH_TO_FILL);
+					remappedX, remappedY, remappedCX, remappedCY,
+					IMAGE_TEXTURE_STRETCH_TO_FILL | IMAGE_TEXTURE_ALPHA_BLEND);
 
 			m_pNGPCarMenuAPI->ShowHideImage(m_dwPluginID, C_DECORIMAGE_ID, m_bShowImage);
 		}

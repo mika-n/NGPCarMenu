@@ -118,6 +118,9 @@ typedef HRESULT(__fastcall* tRBRDirectXEndScene)(void* objPointer);
 // Overloaded RBR replay method
 typedef int(__thiscall* tRBRReplay)(void* objPointer, const char* szReplayFileName, __int32* pUnknown1, __int32* pUnknown2, size_t iReplayFileSize);
 
+// Overloaded dinput controller axis (digital button/steering analog axis) handler method
+typedef float(__thiscall* tRBRControllerAxisData)(void* objPointer, __int32 axisID);
+
 
 //----------------------------------------------------------------------------------
 // Note! The formula of PAD size = Start idx of the next item - Idx of the prev item - sizeof of the previous item
@@ -229,13 +232,73 @@ typedef struct {
 typedef RRBRCarMovement* PRBRCarMovement;
 
 
+typedef struct
+{
+#pragma pack(push,1)
+	BYTE pad1[0x24];
+	__int32 status;           // 0x24  <=1 axis disabled
+	__int32 unknown1;         // 0x28
+	__int32 dinputStatus;     // 0x2C  0=Dinput data received <>0=not yet received any dinput events (either controller is offline or pedals/wheels not moved yet)
+
+	float   axisValue;		// 0x30 -1.0..1.0 the current axis value
+	DWORD   axisRawValue;   // 0x34 0..FFFF the current raw axis value
+
+	float   axisValue2;		// 0x38 Always the same as above? Or are these before and after output linearity transformations?
+	DWORD   axisRawValue2;  // 0x3C 
+#pragma pack(pop)
+} RBRControllerAxisData;
+typedef RBRControllerAxisData* PRBRControllerAxisData;
+
+typedef struct
+{
+#pragma pack(push,1)
+	char*  szAxisNameID;  // 0x00
+	WCHAR* wszAxisName;   // 0x04
+	__int32 unknown1;	  // 0x08
+	PRBRControllerAxisData controllerAxisData;// 0x0C
+	__int32 unknown2;	  // 0x10
+#pragma pack(pop)
+} RBRControllerAxis;
+typedef RBRControllerAxis* PRBRControllerAxis;
+
+typedef struct {
+#pragma pack(push,1)
+	BYTE pad1[0x24];
+	RBRControllerAxis controllerAxis[21];	// 0x24
+											// 0=Steering analog, 1=Left digital, 2=Right digital, 3=Throttle analog, 4=CombinedThrottleBrake analog
+											// 5=Brake, 6=Handbrake, 7=GearUp, 8=GearDown, 9=ChangeCam, 10=Pause, 11=Clutch, 12=Ignition, 
+											// 13=Reverse, 14=Neutral, 15..20=Gear1..6
+
+	BYTE pad2[0x258 - 0x24 - (sizeof(RBRControllerAxis)*21)];
+	__int32 throttleInverted; // 0x258  0=not inverted (input.ini file), 1=inverted
+	__int32 brakeInverted;    // 0x25C 
+	__int32 combinedThrottleBrakeInverted;  // 0x260
+	__int32 handbrakeInverted;// 0x264
+	__int32 clutchInverted;   // 0x268
+	__int32 unknown1;         // 0x26c
+#pragma pack(pop)
+} RBRControllerObj;
+typedef RBRControllerObj* PRBRControllerObj;
+
+typedef struct {
+#pragma pack(push,1)
+	__int32 unknown1;					// 0x00
+	PRBRControllerObj controllerObj;	// 0x04
+#pragma pack(pop)
+} RBRControllerBaseObj;
+typedef RBRControllerBaseObj* PRBRControllerBaseObj;
+
+
 // Offset 0x007EAC48. Game configurations (0x007EAC48 -> +0x5C= IRBRGame instance obj)
 typedef struct {
 #pragma pack(push,1)
-	BYTE pad1[0x54];
-	__int32 resolutionX;
-	__int32 resolutionY;
+	BYTE pad1[0x54];		// 0x00
+	__int32 resolutionX;	// 0x54
+	__int32 resolutionY;	// 0x58
 	// TODO: What are the values following resolution?
+
+	BYTE pad3[0x0CF8 - 0x58 - sizeof(__int32)];
+	PRBRControllerBaseObj controllerBaseObj; // 0xCF8
 #pragma pack(pop)
 } RBRGameConfig;
 typedef RBRGameConfig* PRBRGameConfig;
@@ -274,11 +337,7 @@ typedef struct {
 	//      0D = (not available) (0x0D status after 0x05 map loading step is completed. After few secs the status goes to 0x0A and camera starts to spin around the car)
     //      0E = (not available) (status goes to 0x0F and then RBR crashes)
 	//      0F = ? Doesnt work anymore. Goes to menu? Pause racing and replaying and hide all on-screen instruments and timers (supported only after the race or replay has started, ie 0x0A and 0x10 status has changed to 0x08 or 0x01)
-	//		10 = Before starting a race start countdown (the camera is moving around the car at starting line or in replay)
-	//		11 = ? (black out)
-	//		12 = go to the main or plugin menu (stage finished or retired at this point)
-	//		13 = switch screen from menu to something else
-	//		14-255 = ?
+	//		10-0xFF = ?
 	__int32 gameMode; // 0x728
 #pragma pack(pop)
 } RBRGameMode;

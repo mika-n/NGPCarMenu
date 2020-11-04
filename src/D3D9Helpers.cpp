@@ -308,7 +308,7 @@ inline std::string _ToString(const std::wstring& s)
 	return std::string{ buf.get() };
 }
 
-std::string _ToUTF8String(const wchar_t* wszTextBuf, int iLen)
+inline std::string _ToUTF8String(const wchar_t* wszTextBuf, int iLen)
 {
 	std::string sResult;
 	int iChars = ::WideCharToMultiByte(CP_UTF8, 0, wszTextBuf, iLen, nullptr, 0, nullptr, nullptr);
@@ -325,7 +325,7 @@ inline std::string _ToUTF8String(const std::wstring& s)
 	return ::_ToUTF8String(s.c_str(), (int)s.size());
 }
 
-std::wstring _ToUTF8WString(const char* szTextBuf, int iLen)
+inline std::wstring _ToUTF8WString(const char* szTextBuf, int iLen)
 {
 	std::wstring sResult;
 	int iChars = ::MultiByteToWideChar(CP_UTF8, 0, szTextBuf, -1, nullptr, 0);
@@ -457,7 +457,7 @@ int _SplitString(const std::string& s, std::vector<std::string>& splittedTokens,
 	return splittedTokens.size();
 }
 
-int _SplitInHalf(const std::string& s, std::vector<std::string>& splittedTokens, std::string sep, bool caseInsensitiveSep, bool sepAlreadyLowercase)
+inline int _SplitInHalf(const std::string& s, std::vector<std::string>& splittedTokens, std::string sep, bool caseInsensitiveSep, bool sepAlreadyLowercase)
 {
 	return _SplitString(s, splittedTokens, sep, caseInsensitiveSep, sepAlreadyLowercase, 2);
 }
@@ -1561,8 +1561,8 @@ void D3D9DrawPrimitiveCircle(const LPDIRECT3DDEVICE9 pD3Device, float mx, float 
 		circleVertexes[i].color = color;
 	}
 
-	pD3Device->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
-	pD3Device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+	pD3Device->SetFVF(CUSTOM_VERTEX_FORMAT_2D /*D3DFVF_XYZRHW | D3DFVF_DIFFUSE*/);
+	//pD3Device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
 	//pD3Device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_MAX);			// D3DBLENDOP_MIN OR MAX
 	pD3Device->DrawPrimitiveUP(D3DPT_TRIANGLEFAN, CIRCLE_RESOLUTION-1, &circleVertexes, sizeof(CUSTOM_VERTEX_2D));
 }
@@ -1606,6 +1606,7 @@ void D3D9DrawVertexTex2D(const LPDIRECT3DDEVICE9 pD3Device, IDirect3DTexture9* p
 	pD3Device->SetFVF(CUSTOM_VERTEX_FORMAT_TEX_2D);
 	pD3Device->SetTexture(0, pTexture);
 	pD3Device->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, vertexes2D, sizeof(CUSTOM_VERTEX_TEX_2D));
+	pD3Device->SetTexture(0, nullptr);
 }
 
 

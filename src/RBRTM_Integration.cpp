@@ -159,11 +159,11 @@ BOOL CNGPCarMenu::RBRTM_ReadStartSplitsFinishPacenoteDistances(const std::wstrin
 	*split2Distance = -1;
 	*finishDistance = -1;
 
-	try
-	{
-		__int32 numOfPacenotesOffset;
-		__int32 offsetFingerPrint[3];
-		__int32 fingerPrintType;
+	//try
+	//{
+		//__int32 numOfPacenotesOffset;
+		//__int32 offsetFingerPrint[3];
+		//__int32 fingerPrintType;
 
 		//DebugPrint(L"RBRTM_ReadStartSplitsFinishPacenoteDistances. Reading start, splits and finish line distance from %s", trackFileName.c_str());
 
@@ -181,7 +181,10 @@ BOOL CNGPCarMenu::RBRTM_ReadStartSplitsFinishPacenoteDistances(const std::wstrin
 			return FALSE;
 		}
 
-		// Read pacenote data from the TRK file into vector buffer
+		return ReadStartSplitsFinishPacenoteDistances(sPacenoteFileName, startDistance, split1Distance, split2Distance, finishDistance);
+
+/*
+		// Read pacenote data from the DLS file into vector buffer
 		std::ifstream srcFile(sPacenoteFileName, std::ifstream::binary | std::ios::in);
 		if (!srcFile) return FALSE;
 
@@ -296,6 +299,7 @@ BOOL CNGPCarMenu::RBRTM_ReadStartSplitsFinishPacenoteDistances(const std::wstrin
 	//DebugPrint("RBRTM_ReadStartSplitsFinishPacenoteDistances. Distance start=%f s1=%f s2=%f finish=%f", *startDistance, *split1Distance, *split2Distance, *finishDistance);
 
 	return (*startDistance >= 0);
+*/
 }
 
 
@@ -313,12 +317,11 @@ int  CNGPCarMenu::RBRTM_ReadDriveline(int mapID, CDrivelineSource& drivelineSour
 	std::wstring sTrackName;
 	std::wstring sDrivelineFileName;
 
-	__int32 numOfDrivelineRecords;
+	//__int32 numOfDrivelineRecords;
 
 	try
 	{
 		//DebugPrint("RBRTM_ReadDriveline. Reading driveline for mapID %d", mapID);
-
 		drivelineSource.vectDrivelinePoint.clear();
 		if (mapID <= 0 || m_pTracksIniFile == nullptr)
 			return 0;
@@ -343,8 +346,12 @@ int  CNGPCarMenu::RBRTM_ReadDriveline(int mapID, CDrivelineSource& drivelineSour
 			return 0;
 		}
 
-		RBRTM_ReadStartSplitsFinishPacenoteDistances(sTrackName, &drivelineSource.startDistance, &drivelineSource.split1Distance, &drivelineSource.split2Distance, &drivelineSource.finishDistance);
+		DebugPrint(L"RBRTM_ReadDriveline. Reading driveline from %s TRK file", sDrivelineFileName.c_str());
 
+		RBRTM_ReadStartSplitsFinishPacenoteDistances(sTrackName, &drivelineSource.startDistance, &drivelineSource.split1Distance, &drivelineSource.split2Distance, &drivelineSource.finishDistance);
+		ReadDriveline(sDrivelineFileName, drivelineSource);
+
+/*
 		drivelineSource.pointMin.x = drivelineSource.pointMin.y = 9999999.0f;
 		drivelineSource.pointMax.x = drivelineSource.pointMax.y = -9999999.0f;
 
@@ -402,6 +409,7 @@ int  CNGPCarMenu::RBRTM_ReadDriveline(int mapID, CDrivelineSource& drivelineSour
 			//drivelineSource.vectDrivelinePoint.sort();
 		}
 		srcFile.close();
+*/
 	}
 	catch (...)
 	{
@@ -417,12 +425,15 @@ void CNGPCarMenu::RBRTM_DrawMinimap(int mapID, int screenID)
 	static CMinimapData* prevMinimapData = nullptr;
 	RECT minimapRect;
 
-	if (m_minimapRBRTMPictureRect.bottom == -1)
+	if (m_minimapRBRTMPictureRect[screenID].bottom == -1)
 		return; // Minimap drawing disabled
 
+	minimapRect = m_minimapRBRTMPictureRect[screenID];
+
+/*
 	if (screenID == 0)
 	{
-		if (m_minimapRBRRXPictureRect.top == 0 && m_minimapRBRRXPictureRect.right == 0 && m_minimapRBRRXPictureRect.left == 0 && m_minimapRBRRXPictureRect.bottom == 0)
+		if (m_minimapRBRTMPictureRect[screenID].top == 0 && m_minimapRBRTMPictureRect[screenID].right == 0 && m_minimapRBRTMPictureRect[screenID].left == 0 && m_minimapRBRTMPictureRect[screenID].bottom == 0)
 		{
 			// Draw minimap on top of the stage preview img
 			//RBRAPI_MapRBRPointToScreenPoint(390.0f, 320.0f, (int*)&minimapRect.left, (int*)&minimapRect.top);
@@ -433,12 +444,12 @@ void CNGPCarMenu::RBRTM_DrawMinimap(int mapID, int screenID)
 		else
 		{
 			// INI file defines an exact size and position for the minimap
-			minimapRect = m_minimapRBRTMPictureRect;
+			minimapRect = m_minimapRBRTMPictureRect[screenID];
 		}
 	}
 	else if (screenID == 1)
 	{
-		// Show the minimap on top of the map preview image in "Weather" screen in RBRRX
+		// Show the minimap on top of the map preview image in "Weather" screen in rbrtm
 		RBRAPI_MapRBRPointToScreenPoint(5.0f, 185.0f, (int*)&minimapRect.left, (int*)&minimapRect.top);
 		RBRAPI_MapRBRPointToScreenPoint(635.0f, 480.0f, (int*)&minimapRect.right, (int*)&minimapRect.bottom);
 		minimapRect.bottom -= static_cast<long>(g_pFontCarSpecModel->GetTextHeight() * 1.5f);
@@ -448,6 +459,7 @@ void CNGPCarMenu::RBRTM_DrawMinimap(int mapID, int screenID)
 		//LogPrint("WARNING. Invalid screenID %d in minimap drawing", screenID);
 		return;
 	}
+*/
 
 	// If the requested minimap and size is still the same then no need to re-calculate the minimap (just draw the existing minimap)
 	if (prevMinimapData == nullptr || (mapID != prevMinimapData->mapID|| !EqualRect(&minimapRect, &prevMinimapData->minimapRect)))
@@ -466,7 +478,7 @@ void CNGPCarMenu::RBRTM_DrawMinimap(int mapID, int screenID)
 		}
 		if (prevMinimapData == nullptr)
 		{
-			//DebugPrint("RBRTN_DrawMinimap. No minimap screen %d cache for %d track. Calculating the new minimap vector graph", screenID, mapID);
+			DebugPrint("RBRTM_DrawMinimap. No minimap screen %d cache for %d track. Calculating the new minimap vector graph", screenID, mapID);
 
 			// No existing minimap cache data. Calculate a new minimap data from the driveline data and add the final minimap data struct to cache (speeds up the next time the same minimap is needed)
 			auto newMinimap = std::make_unique<CMinimapData>();
@@ -484,6 +496,8 @@ void CNGPCarMenu::RBRTM_DrawMinimap(int mapID, int screenID)
 	{
 		//int centerPosX = max(((prevMinimapData->minimapRect.right - prevMinimapData->minimapRect.left) / 2) - (prevMinimapData->minimapSize.x / 2), 0);
 		int centerPosX = 0;
+
+		m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
 
 		// Draw the minimap driveline
 		for (auto& item : prevMinimapData->vectMinimapPoint)
@@ -503,12 +517,19 @@ void CNGPCarMenu::RBRTM_DrawMinimap(int mapID, int screenID)
 			);
 		}
 
+		// Draw the finishline as bigger red circle
+		D3D9DrawPrimitiveCircle(g_pRBRIDirect3DDevice9,
+			(float)(centerPosX + prevMinimapData->minimapRect.left + prevMinimapData->vectMinimapPoint.back().drivelineCoord.x),
+			(float)(prevMinimapData->minimapRect.top + prevMinimapData->vectMinimapPoint.back().drivelineCoord.y),
+			5.0f, D3DCOLOR_ARGB(255, 0xC0, 0x10, 0x10) );
+
 		// Draw the start line as bigger green circle
 		D3D9DrawPrimitiveCircle(g_pRBRIDirect3DDevice9,
-			(float)(centerPosX + prevMinimapData->minimapRect.left + prevMinimapData->vectMinimapPoint.begin()->drivelineCoord.x),
-			(float)(prevMinimapData->minimapRect.top + prevMinimapData->vectMinimapPoint.begin()->drivelineCoord.y),
-			5.0f, D3DCOLOR_ARGB(255, 0x20, 0xF0, 0x20)
-		);
+			(float)(centerPosX + prevMinimapData->minimapRect.left + prevMinimapData->vectMinimapPoint.front().drivelineCoord.x),
+			(float)(prevMinimapData->minimapRect.top + prevMinimapData->vectMinimapPoint.front().drivelineCoord.y),
+			5.0f, D3DCOLOR_ARGB(255, 0x20, 0xF0, 0x20) );
+
+		m_pD3D9RenderStateCache->RestoreState();
 	}
 }
 
@@ -759,7 +780,7 @@ void CNGPCarMenu::RBRTM_EndScene()
 							if (m_latestMapRBRTM.surface < 0) m_latestMapRBRTM.surface = m_pTracksIniFile->GetLongValue(wszMapINISection, L"Surface", -1);
 
 							// Skip map image initializations if the map preview img feature is disabled (RBRTM_MapPictureRect=0)
-							if (m_mapRBRTMPictureRect.bottom != -1)
+							if (m_mapRBRTMPictureRect[0].bottom != -1)
 							{
 								// Use custom map image path at first (set in RBRTM_MapScreenshotPath ini option). If the option or file is missing then take the stage preview image name from maps\Tracks.ini file
 								m_latestMapRBRTM.previewImageFile = ReplacePathVariables(m_screenshotPathMapRBRTM, -1, TRUE, m_latestMapRBRTM.mapID, m_latestMapRBRTM.name.c_str());
@@ -781,11 +802,11 @@ void CNGPCarMenu::RBRTM_EndScene()
 
 							// Release previous map preview texture and read a new image file (if preview path is set and the image file exists and map preview img drawing is not disabled)
 							SAFE_RELEASE(m_latestMapRBRTM.imageTexture.pTexture);
-							if (!m_latestMapRBRTM.previewImageFile.empty() && fs::exists(m_latestMapRBRTM.previewImageFile) && m_mapRBRTMPictureRect.bottom != -1)
+							if (!m_latestMapRBRTM.previewImageFile.empty() && fs::exists(m_latestMapRBRTM.previewImageFile) && m_mapRBRTMPictureRect[0].bottom != -1)
 							{
 								hResult = D3D9CreateRectangleVertexTexBufferFromFile(g_pRBRIDirect3DDevice9,
 									m_latestMapRBRTM.previewImageFile,
-									(float)m_mapRBRTMPictureRect.left, (float)m_mapRBRTMPictureRect.top, (float)(m_mapRBRTMPictureRect.right - m_mapRBRTMPictureRect.left), (float)(m_mapRBRTMPictureRect.bottom - m_mapRBRTMPictureRect.top),
+									(float)m_mapRBRTMPictureRect[0].left, (float)m_mapRBRTMPictureRect[0].top, (float)(m_mapRBRTMPictureRect[0].right - m_mapRBRTMPictureRect[0].left), (float)(m_mapRBRTMPictureRect[0].bottom - m_mapRBRTMPictureRect[0].top),
 									&m_latestMapRBRTM.imageTexture,
 									0 /*IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_BOTTOM | IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER*/ );
 
@@ -818,16 +839,15 @@ void CNGPCarMenu::RBRTM_EndScene()
 
 						//g_pFontCarSpecCustom->DrawText(posX, posY + ((++iMapInfoPrintRow) * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), 0);
 						g_pFontCarSpecCustom->DrawText(posX, posY, C_CARMODELTITLETEXT_COLOR, sStrStream.str().c_str(), 0);
-
+						
 						if (m_latestMapRBRTM.imageTexture.pTexture != nullptr)
 						{
 							m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
 							D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, m_latestMapRBRTM.imageTexture.pTexture, m_latestMapRBRTM.imageTexture.vertexes2D, m_pD3D9RenderStateCache);
 							m_pD3D9RenderStateCache->RestoreState();
 						}
-
 						// Draw minimap in RBRTM shakedown stages menu list
-						RBRTM_DrawMinimap(m_latestMapRBRTM.mapID, 0);
+						RBRTM_DrawMinimap(m_latestMapRBRTM.mapID, 0);					
 					}
 					else
 					{
@@ -850,17 +870,18 @@ void CNGPCarMenu::RBRTM_EndScene()
 
 						// Release previous map preview texture and read a new image file (if preview path is set and the image file exists and map preview img drawing is not disabled)
 						SAFE_RELEASE(m_latestMapRBRTM.imageTexture.pTexture);
-						if (!m_latestMapRBRTM.previewImageFile.empty() && fs::exists(m_latestMapRBRTM.previewImageFile) && m_mapRBRTMPictureRect.bottom != -1)
+						if (!m_latestMapRBRTM.previewImageFile.empty() && fs::exists(m_latestMapRBRTM.previewImageFile) && m_mapRBRTMPictureRect[1].bottom != -1)
 						{
-							float posLeft, posTop, posRight, posBottom;
+							//float posLeft, posTop, posRight, posBottom;
+
 							// Stretch to fill the whole area below menu lines
 							//RBRAPI_MapRBRPointToScreenPoint(5.0f, 185.0f, &posLeft,&posTop);
 							//RBRAPI_MapRBRPointToScreenPoint(635.0f, 461.0f, &posRight, &posBottom);
 							
 							// Slightly stretched to fill the right side of the screen below menu lines (map style=0, default)
 							// dwFlags=0
-							RBRAPI_MapRBRPointToScreenPoint(200.0f, 140.0f, &posLeft, &posTop);
-							RBRAPI_MapRBRPointToScreenPoint(640.0f, 462.0f, &posRight, &posBottom);
+							//RBRAPI_MapRBRPointToScreenPoint(200.0f, 140.0f, &posLeft, &posTop);
+							//RBRAPI_MapRBRPointToScreenPoint(640.0f, 462.0f, &posRight, &posBottom);
 
 							// Optimal for 1024x1024 keepAspectRatio images (map style=1)
 							// dwFlags=IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_BOTTOM | IMAGE_TEXTURE_POSITION_HORIZONTAL_RIGHT
@@ -869,7 +890,8 @@ void CNGPCarMenu::RBRTM_EndScene()
 
 							hResult = D3D9CreateRectangleVertexTexBufferFromFile(g_pRBRIDirect3DDevice9,
 								m_latestMapRBRTM.previewImageFile,
-								posLeft, posTop, posRight - posLeft, posBottom - posTop,
+								//posLeft, posTop, posRight - posLeft, posBottom - posTop,
+								(float)m_mapRBRTMPictureRect[1].left, (float)m_mapRBRTMPictureRect[1].top, (float)(m_mapRBRTMPictureRect[1].right - m_mapRBRTMPictureRect[1].left), (float)(m_mapRBRTMPictureRect[1].bottom - m_mapRBRTMPictureRect[1].top),
 								&m_latestMapRBRTM.imageTexture,
 								0 
 							    //IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_BOTTOM | IMAGE_TEXTURE_POSITION_HORIZONTAL_RIGHT
