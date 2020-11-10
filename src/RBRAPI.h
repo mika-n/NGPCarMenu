@@ -684,6 +684,21 @@ typedef struct {
 typedef RBRProfile* PRBRProfile; 
 
 
+// Offset 0x007D1D50. RBR staus text labels ("Loading %s" or "Loading Replay" and so on)
+typedef struct {
+#pragma pack(push,1)
+	BYTE     pad1[0x8c];
+	char*    szLoadDestTitleID;	     // 0x8c
+	wchar_t* wszLoadDestTitleName;   // 0x90
+	__int32  unknown1;				 // 0x94
+	char*    szLoadReplayTitleID;    // 0x98
+	wchar_t* wszLoadReplayTitleName; // 0x9C
+	__int32  unknown2;			     // 0xA0
+#pragma pack(pop)
+} RBRStatusText;
+typedef RBRStatusText* PRBRStatusText;
+
+
 // Offset 0x007EABA8.  Pacenotes. (Contributed by TheIronWolf)
 typedef struct
 {
@@ -741,10 +756,11 @@ extern PRBRMenuSystem		g_pRBRMenuSystem;
 extern PRBRPacenotes		g_pRBRPacenotes;	// Array of pacenotes. Valid only at racetime.
 
 extern wchar_t*				g_pRBRMapLocationName; // Offset 0x007D1D64. The name of the current stage (map, WCHAR string). Valid only at racetime.
+extern PRBRProfile			g_pRBRProfile;		   // Offset 0x007D2554. The name of the current driver profile
 
-extern PRBRProfile			g_pRBRProfile;		// Offset 0x007D2554. The name of the current driver profile
+extern PRBRColorTable		g_pRBRColorTable;	   // Offset 0x007C3668
 
-extern PRBRColorTable		g_pRBRColorTable;	// Offset 0x007C3668
+extern PRBRStatusText		g_pRBRStatusText;	   // Offset 0x007d1d50
 
 //
 // TODO:

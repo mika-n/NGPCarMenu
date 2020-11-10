@@ -77,6 +77,8 @@ PRBRProfile			 g_pRBRProfile = nullptr;		// Offset 0x007D2554. The name of the c
 
 PRBRColorTable		 g_pRBRColorTable = nullptr;	// Offset 0x007C3668
 
+PRBRStatusText		 g_pRBRStatusText = nullptr;
+
 //----------------------------------------------------------------------------------------------------------------------------
 // Helper functions to modify RBR memory locations on the fly
 //
@@ -244,6 +246,7 @@ BOOL RBRAPI_InitializeObjReferences()
 	// Fixed location to RBR color table (menu background rgb-a)
 	g_pRBRColorTable = (PRBRColorTable) (0x007C3668);
 
+	g_pRBRStatusText = (PRBRStatusText) * (DWORD*)(0x007D1D50);
 
 	// Get a pointer to DX9 device handler before re-routing the RBR function
 	if(g_pRBRIDirect3DDevice9 == nullptr) g_pRBRIDirect3DDevice9 = (LPDIRECT3DDEVICE9) * (DWORD*)(*(DWORD*)(*(DWORD*)0x007EA990 + 0x28) + 0xF4);

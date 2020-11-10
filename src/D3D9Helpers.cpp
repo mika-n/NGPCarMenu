@@ -34,6 +34,7 @@
 
 #include <wincodec.h>		// IWICxx image funcs
 #include <shlwapi.h>		// PathRemoveFileSpec
+#include <shellapi.h>		// CommandLineToArgvW
 
 #include <winver.h>			// GetFileVersionInfo
 #pragma comment(lib, "version.lib")
@@ -642,6 +643,82 @@ bool _StringToPoint(const std::string& s, POINT* outPoint, const char separatorC
 	}
 
 	return (items.size() >= 2);
+}
+
+
+// Return the value of specified command line argument (fex "RichardBurnsRally_SSE.exe -AutoLogonParam1 myRun.rpl" would have -AutoLogonParam1 arg)
+std::wstring GetCmdLineArgValue(const std::wstring& argName)
+{
+	std::wstring sResult;
+	LPWSTR* wszArglist;
+	int     nArgs;
+
+	wszArglist = ::CommandLineToArgvW(::GetCommandLineW(), &nArgs);
+	for (int idx = 0; idx < nArgs; idx++)
+	{
+		if (_iEqual(wszArglist[idx], argName))
+		{
+			idx++;
+			sResult = (idx < nArgs ? wszArglist[idx] : L"");
+			break;
+		}
+	}
+
+	_Trim(sResult);
+	sResult = _RemoveEnclosingChar(sResult, L'"', false);
+	return sResult;
+}
+
+std::string GetCmdLineArgValue(const std::string& argName)
+{
+	return _ToString(::GetCmdLineArgValue(_ToWString(argName)));
+}
+
+
+// Is the file in UTF16 format instead of UTF8 or ANSI-ASCII?
+bool _IsFileInUTF16Format(const std::string& fileName)
+{
+	BYTE buffer[2];
+
+	std::ifstream srcFile(fileName, std::ifstream::binary | std::ios::in);
+	if (!srcFile) return FALSE;	
+	srcFile.read((char*)&buffer, sizeof(buffer));
+
+	if ( (buffer[0] == 0xFF && buffer[1] == 0xFE)   // UTF16 little-endian LE
+	  || (buffer[0] == 0xFE && buffer[1] == 0xFF)	// UTF16 big-endian BE
+	)
+		return TRUE;
+
+	return FALSE;
+}
+
+bool _IsFileInUTF16Format(const std::wstring& fileName)
+{
+	return _IsFileInUTF16Format(_ToString(fileName));
+}
+
+// Read UTF16 file content and convert it to multibyte UTF8 string
+std::string _ConvertUTF16FileContentToUTF8(const std::string& fileName)
+{
+	std::string sResult;
+	size_t fileSize;
+	std::ifstream srcFile(fileName, std::ios::binary);
+
+	srcFile.seekg(0, std::ios::end);
+	fileSize = (size_t)srcFile.tellg();
+	if (fileSize >= 4)
+	{
+		// Skip UTF16 BOM header bytes
+		srcFile.seekg(2, std::ios::beg);
+		fileSize -= 2;
+
+		// Convert UTF16 wchar to UTF8 multibyte string
+		std::u16string u16Str((fileSize / 2) + 1, '\0');
+		srcFile.read((char*)&u16Str[0], fileSize);
+		sResult = _ToUTF8String((wchar_t*)&u16Str[0]);
+	}
+
+	return sResult;
 }
 
 

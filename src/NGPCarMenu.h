@@ -241,6 +241,8 @@ typedef struct {
 	__int32 menuID;				// 0x60918  0=main, 1=stages, 2=replay
 	BYTE pad41[0x609A0 - 0x60918 - sizeof(__int32)];
 
+								// 0x60958  Ptr to struct of BTB track definition (file names to various INI files of the loaded BTB track)?
+
 	__int32 currentPhysicsID;	// 0x609A0  The current physicsID while loading a BTB track (0..2)
 	__int32 loadTrackStatusA4;  // 0x609A4  LoadTrack status (0x01 = Loading track, 0x00 = Not loading)
 	BYTE pad5[0x66528 - 0x609A4 - sizeof(__int32)];

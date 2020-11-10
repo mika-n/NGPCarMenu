@@ -112,6 +112,14 @@ extern bool _StringToRect (const std::string & s, RECT * outRect, const char sep
 extern bool _StringToPoint(const std::wstring & s, POINT * outPoint, const wchar_t separatorChar = L' '); // String in "0 50" format is converted as POINT struct value 
 extern bool _StringToPoint(const std::string & s, POINT * outPoint, const char separatorChar = ' ');
 
+extern std::wstring GetCmdLineArgValue(const std::wstring& argName); // Return the value of specified command line argument (fex "RichardBurnsRally_SSE.exe -AutoLogonParam1 myRun.rpl" would have -AutoLogonParam1 arg)
+extern std::string  GetCmdLineArgValue(const std::string& argName);
+
+extern bool _IsFileInUTF16Format(const std::string& fileName);  // Is the file in UTF16 format instead of UTF8 or ANSI-ASCII?
+extern bool _IsFileInUTF16Format(const std::wstring& fileName); //
+
+extern std::string  _ConvertUTF16FileContentToUTF8(const std::string& fileName);  // Read UTF16 file content and convert it to UTF8 string
+
 // Define sub function to call 32bit GetTickCount WinAPI method and to eliminate the VC++ warning about wrapping timer if the PC runs 49 days without a reboot.
 // Another way to avoid the warning would be to us GetTickCount64 but it is not available in older WinOS versions.
 inline DWORD GetTickCount32()

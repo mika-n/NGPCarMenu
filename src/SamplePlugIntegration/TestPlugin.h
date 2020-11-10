@@ -35,7 +35,8 @@ const char* g_szDecorationImages[] =
 {
 	"C:\\Windows\\System32\\SecurityAndMaintenance.png",				// Just sample images, hopefully all PCs have these WinOS image files
 	"C:\\Windows\\System32\\SecurityAndMaintenance_Alert.png",
-	"C:\\Windows\\System32\\SecurityAndMaintenance_Error.png"
+	"C:\\Windows\\System32\\SecurityAndMaintenance_Error.png",
+	"C:\\Apps\\rbr\\Plugins\\NGPCarMenu\\preview\\maps\\BTB_SS08 MÖKKIPERÄ 11km 1.0.3 (SSTF RXRBR.png"
 };
 
 #define C_SAMPLEIMAGE_ID  100	// Anything above zero value. Each cached image is uniquely identified by ID
@@ -313,6 +314,10 @@ public:
 			// 
 			m_pNGPCarMenuAPI->MapRBRPointToScreenPoint(250, 130, &remappedX, &remappedY);    // Map RBR in-game menu coordinates to native screen point coordinates
 			m_pNGPCarMenuAPI->MapRBRPointToScreenPoint(380, 340, &remappedCX, &remappedCY);
+
+			//m_pNGPCarMenuAPI->LoadCustomImage(m_dwPluginID, C_DECORIMAGE_ID, g_szDecorationImages[m_iDecorationImage],
+			//	remappedX, remappedY, remappedCX, remappedCY,
+			//	IMAGE_TEXTURE_STRETCH_TO_FILL | IMAGE_TEXTURE_ALPHA_BLEND);
 
 			sprintf_s(szTextBuf, sizeof(szTextBuf) / sizeof(char), "%s\\Maps\\track-%d_O.trk", m_pNGPCarMenuAPI->GetModulePath(), m_iMap);
 			m_pNGPCarMenuAPI->LoadCustomImage(m_dwPluginID, C_MINIMAP_ID, szTextBuf, remappedX, remappedY, remappedCX, remappedCY, IMAGE_TEXTURE_POSITION_HORIZONTAL_RIGHT | IMAGE_TEXTURE_POSITION_VERTICAL_BOTTOM);

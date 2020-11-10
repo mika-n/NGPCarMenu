@@ -54,6 +54,9 @@ tRBRDirectXEndScene   Func_OrigRBRDirectXEndScene = nullptr;
 tRBRReplay            Func_OrigRBRReplay = nullptr;				// Re-routed RBR replay class method
 tRBRControllerAxisData Func_OrigRBRControllerAxisData = nullptr;// Controller axis data, the custom method is used to fix inverted pedal RBR bug
 
+wchar_t* g_pOrigLoadReplayStatusText = nullptr;        // The original (localized) "Loading Replay" text
+wchar_t  g_wszCustomLoadReplayStatusText[256] = L"\0"; // Custom LoadReplay text (Loading Replay <rpl file name>)
+
 #if USE_DEBUG == 1
 CD3DFont* g_pFontDebug = nullptr;
 #endif 
@@ -1313,10 +1316,14 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		//
 		if (m_iAutoLogonMenuState < 0)
 		{
-			// RBR bootup autoLogon option is read only at first time this method is called (ie RBR launch time)
-			m_sAutoLogon = _ToString(pluginINIFile.GetValueEx(L"Default", L"", L"AutoLogon", L"Disabled"));
+			// RBR bootup autoLogon option is read only at first time when this method is called (ie RBR launch time).
+			// Check cmdline option first and then INI file value.
+			m_sAutoLogon = GetCmdLineArgValue("-autologon");
+			if(m_sAutoLogon.empty())
+				m_sAutoLogon = _ToString(pluginINIFile.GetValueEx(L"Default", L"", L"AutoLogon", L"Disabled"));
+
 			if (!_iEqual(m_sAutoLogon, "disabled", true) && m_sAutoLogon != "0")
-			{
+			{				
 				// Autologon navigation needs a initialization of plugin menu in case the target menu is a plugin
 				g_bNewCustomPluginIntegrations = TRUE;
 
@@ -1324,7 +1331,21 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 
 				m_autoLogonSequenceSteps.clear();
 				m_autoLogonSequenceSteps.push_back("main");
-				if (!_iEqual(m_sAutoLogon, "main", true))
+				if (_iEqual(m_sAutoLogon, "replay", true))
+				{
+					std::wstring sAutoLogonParam1;
+
+					m_autoLogonSequenceSteps.push_back("replay");
+
+					// Check if cmdline set the AutoLogonParam1 value, otherwise read the value from INI file
+					sAutoLogonParam1 = GetCmdLineArgValue(L"-autologonparam1");
+					if (sAutoLogonParam1.empty())
+						sAutoLogonParam1 = pluginINIFile.GetValueEx(L"Default", L"", L"AutoLogonParam1", L"");
+
+					if (!sAutoLogonParam1.empty())
+						m_autoLogonSequenceSteps.push_back(_ToString(sAutoLogonParam1));
+				}
+				else if (!_iEqual(m_sAutoLogon, "main", true))
 				{
 					m_autoLogonSequenceSteps.push_back("options");
 					m_autoLogonSequenceSteps.push_back("plugins");
@@ -1761,10 +1782,23 @@ void CNGPCarMenu::DoAutoLogonSequence()
 				m_autoLogonSequenceSteps.pop_front();
 				if (m_autoLogonSequenceSteps.size() > 0)
 				{
-					// The next menu in mainMenu will be DriverProfile or Options
+					// The next menu in mainMenu will be DriverProfile or Options or Replay
 					if (_iEqual(m_autoLogonSequenceSteps[0], "driverprofile", true)) newSelectedItemIdx = 0x08;
 					else if (_iEqual(m_autoLogonSequenceSteps[0], "options", true)) newSelectedItemIdx = 0x09;
+					else if (_iEqual(m_autoLogonSequenceSteps[0], "replay", true)) newSelectedItemIdx = -1;
 					else newSelectedItemIdx = -2;
+				}
+			}
+			else if (_iEqual(m_autoLogonSequenceSteps[0], "replay", true) && g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN])
+			{
+				// Special "Replay" autoLogon option. The next step is always the replay filename (or if the RPL param name is missing then do nothing).
+				// External apps can use AutoLogon=Replay and AutoLogonParam1=someFileName.rpl options to force RBR to replay the RPL file automatically at RBR startup.
+				m_autoLogonSequenceSteps.pop_front();
+				if (m_autoLogonSequenceSteps.size() > 0)
+				{
+					std::string sReplayFileName = m_autoLogonSequenceSteps[0];
+					m_autoLogonSequenceSteps.clear();
+					::RBRAPI_Replay(m_sRBRRootDir, sReplayFileName.c_str());
 				}
 			}
 			else if (_iEqual(m_autoLogonSequenceSteps[0], "driverprofile", true) && g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_DRIVERPROFILE])
@@ -1772,7 +1806,7 @@ void CNGPCarMenu::DoAutoLogonSequence()
 				m_autoLogonSequenceSteps.pop_front();
 				if (m_autoLogonSequenceSteps.size() > 0)
 				{
-					// The next menu in driverProfile will be SaveProfile or LoadReplay
+					// The next menu in driverProfile will be SaveProfile or LoadReplay menu screen
 					if (_iEqual(m_autoLogonSequenceSteps[0], "saveprofile", true)) newSelectedItemIdx = 0x05;
 					else if (_iEqual(m_autoLogonSequenceSteps[0], "loadreplay", true)) { newSelectedItemIdx = 0x06; m_autoLogonSequenceSteps.clear(); }
 					else newSelectedItemIdx = -2;
@@ -1876,8 +1910,21 @@ void CNGPCarMenu::InitCarSpecData_RBRCIT()
 	{
 		int iNumOfGears;
 
+		DebugPrint(L"InitCarSpecData_RBRCIT. RbrCITCarListFilePath=%s", m_rbrCITCarListFilePath.c_str());
+
 		if (fs::exists(m_rbrCITCarListFilePath))
-			ngpCarListINIFile.LoadFile(m_rbrCITCarListFilePath.c_str());
+		{
+			if (_IsFileInUTF16Format(m_rbrCITCarListFilePath))
+			{
+				LogPrint(L"InitCarSpecData_RBRCIT. %s file is in UTF16 format. Reading the file content and converting the result as UTF8", m_rbrCITCarListFilePath.c_str());
+
+				// UTF16 file. Convert it to UTF8 because CSimpleIniW doesn't support UTF16 format (RBRPro uses UTF16 formatted carList.ini file)
+				ngpCarListINIFile.LoadData(_ConvertUTF16FileContentToUTF8(_ToString(m_rbrCITCarListFilePath)));
+			}
+			else
+				// The usual UTF8 or ANSI-ASCII carList.ini file
+				ngpCarListINIFile.LoadFile(m_rbrCITCarListFilePath.c_str());
+		}
 		else
 			// Add warning about missing RBRCIT carList.ini file
 			wcsncpy_s(g_RBRCarSelectionMenuEntry[0].wszCarPhysicsCustomTxt, (m_rbrCITCarListFilePath + L" missing. Cannot show car specs").c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[0].wszCarPhysicsCustomTxt));
@@ -2402,7 +2449,7 @@ bool CNGPCarMenu::InitCarSpecDataFromNGPFile(CSimpleIniW* ngpCarListINIFile, PRB
 
 		CSimpleIniW::TNamesDepend::const_iterator iter;
 		for (iter = allSections.begin(); iter != allSections.end(); ++iter)
-		{
+		{	
 			const WCHAR* wszIniItemValue = ngpCarListINIFile->GetValue(iter->pItem, L"name", nullptr);
 			if (wszIniItemValue == nullptr)
 				continue;
@@ -2410,7 +2457,6 @@ bool CNGPCarMenu::InitCarSpecDataFromNGPFile(CSimpleIniW* ngpCarListINIFile, PRB
 			if (_wcsicmp(wszIniItemValue, pRBRCarSelectionMenuEntry->wszCarModel) == 0)
 			{
 				//size_t len;
-				//DebugPrint(iter->pItem);
 
 				wszIniItemValue = ngpCarListINIFile->GetValue(iter->pItem, L"cat", nullptr);
 				wcstombs_s(nullptr, pRBRCarSelectionMenuEntry->szCarCategory, sizeof(pRBRCarSelectionMenuEntry->szCarCategory), wszIniItemValue, _TRUNCATE);
@@ -2434,10 +2480,6 @@ bool CNGPCarMenu::InitCarSpecDataFromNGPFile(CSimpleIniW* ngpCarListINIFile, PRB
 				bResult = TRUE;
 				break;
 			}
-
-			//ngpCarListINIFile->GetAllKeys(iter->pItem, allSectionKeys);		
-			//DebugPrint(iter->pItem);
-			//DebugPrint(iter->pItem);
 		}
 	}
 	catch (...)
@@ -2575,6 +2617,10 @@ bool CNGPCarMenu::PrepareScreenshotReplayFile(int carID)
 
 	try
 	{
+		// If rbrAppPath\Replays folder is missing then create it now
+		if (!fs::exists(g_pRBRPlugin->m_sRBRRootDirW + L"\\Replays\\"))
+			fs::create_directory(g_pRBRPlugin->m_sRBRRootDirW + L"\\Replays\\");
+
 		std::wstring screenshotReplayFileNameWithoutExt = fs::path(g_pRBRPlugin->m_screenshotReplayFileName).replace_extension();
 
 		// Lookup the replay template used to generate a car preview image. The replay file is chosen based on carModel name, category name or finally the "global" default file if more specific version was not found
@@ -4391,11 +4437,20 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 BOOL CNGPCarMenu::CustomRBRReplay(const char* szReplayFileName)
 {
 	BOOL bResult = TRUE;
+	std::wstring sReplayFileName = _ToWString(szReplayFileName);
 
 	if (szReplayFileName == nullptr)
 		return FALSE;
 
-	// If RBRRX integrations is disabled then no need to do RBRRX replay customization
+	// Customize the "Loading Replay" label text to include the RPL filename (unless the special "generate preview img" replay state is active)
+	if (g_pRBRPlugin->m_iCustomReplayState > 0 || _iEqual(sReplayFileName, C_REPLAYFILENAME_SCREENSHOTW))
+		g_wszCustomLoadReplayStatusText[0] = L'\0';
+	else if(g_pOrigLoadReplayStatusText != nullptr)
+		swprintf_s(g_wszCustomLoadReplayStatusText, COUNT_OF_ITEMS(g_wszCustomLoadReplayStatusText) - 1, L"%s %s", g_pOrigLoadReplayStatusText, sReplayFileName.c_str());
+	else
+		swprintf_s(g_wszCustomLoadReplayStatusText, COUNT_OF_ITEMS(g_wszCustomLoadReplayStatusText) - 1, L"%s", sReplayFileName.c_str());
+
+	// If RBRRX integration is disabled then no need to do RBRRX replay customization
 	if (m_iMenuRBRRXOption == 0)
 		return TRUE;
 
@@ -4582,7 +4637,22 @@ HRESULT __fastcall CustomRBRDirectXBeginScene(void* objPointer)
 	// Do custom dx scene only if RBR is not in racing state
 	//if (g_pRBRGameMode->gameMode != 01 && !(g_pRBRPlugin->m_bRBRTMPluginActive && g_pRBRGameMode->gameMode == 0x0A)) //|| g_pRBRPlugin->m_iCustomReplayState > 0)
 	if (g_pRBRGameMode->gameMode == 0x03 || g_pRBRPlugin->m_iCustomReplayState > 0)
+	{
 		g_pRBRPlugin->CustomRBRDirectXBeginScene();
+	}
+	else if (g_pRBRGameMode->gameMode == 0x05)
+	{
+		if (g_pOrigLoadReplayStatusText == nullptr && g_pRBRStatusText->wszLoadReplayTitleName != nullptr)
+		{
+			std::wstring sTmpText = g_wszCustomLoadReplayStatusText;
+
+			// First time initialization of custom "Load Replay" text label. At this point g_wszCustomLoadReplayStatusText had only RPL filename, so insert the localized "Loading Replay" text
+			g_pOrigLoadReplayStatusText = g_pRBRStatusText->wszLoadReplayTitleName;
+			swprintf_s(g_wszCustomLoadReplayStatusText, COUNT_OF_ITEMS(g_wszCustomLoadReplayStatusText) - 1, L"%s %s", g_pOrigLoadReplayStatusText, sTmpText.c_str());
+
+			WriteOpCodePtr((LPVOID)&g_pRBRStatusText->wszLoadReplayTitleName, g_wszCustomLoadReplayStatusText);
+		}
+	}
 
 	return hResult;
 }
@@ -4595,6 +4665,12 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 {
 	if (!g_bRBRHooksInitialized)
 		return S_OK;
+
+#if USE_DEBUG == 1
+	wchar_t szTxtBuf[32];
+	swprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, L"%d / %d", g_pRBRGameMode->gameMode, rand());
+	g_pFontDebug->DrawText(5, 5, C_DEBUGTEXT_COLOR, szTxtBuf);
+#endif
 
 	// Do RBRTM/RBRRX/RBR/RallySimFans menu and replay things only when racing is not active
 	if (g_pRBRPlugin->m_iCustomReplayState > 0 
