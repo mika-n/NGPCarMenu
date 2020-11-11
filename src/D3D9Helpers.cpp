@@ -1624,7 +1624,7 @@ HRESULT D3D9CreateCircleVertexBuffer(const LPDIRECT3DDEVICE9 pD3Device, float mx
 */
 
 
-#define CIRCLE_RESOLUTION 8
+#define CIRCLE_RESOLUTION 10
 void D3D9DrawPrimitiveCircle(const LPDIRECT3DDEVICE9 pD3Device, float mx, float my, float r, DWORD color)
 {
 	CUSTOM_VERTEX_2D circleVertexes[CIRCLE_RESOLUTION];
@@ -1639,9 +1639,7 @@ void D3D9DrawPrimitiveCircle(const LPDIRECT3DDEVICE9 pD3Device, float mx, float 
 	}
 
 	pD3Device->SetFVF(CUSTOM_VERTEX_FORMAT_2D /*D3DFVF_XYZRHW | D3DFVF_DIFFUSE*/);
-	//pD3Device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
-	//pD3Device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_MAX);			// D3DBLENDOP_MIN OR MAX
-	pD3Device->DrawPrimitiveUP(D3DPT_TRIANGLEFAN, CIRCLE_RESOLUTION-1, &circleVertexes, sizeof(CUSTOM_VERTEX_2D));
+	pD3Device->DrawPrimitiveUP(D3DPT_TRIANGLEFAN, CIRCLE_RESOLUTION-2, &circleVertexes, sizeof(CUSTOM_VERTEX_2D));
 }
 
 

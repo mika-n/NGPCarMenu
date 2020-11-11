@@ -1939,12 +1939,21 @@ void CNGPCarMenu::InitCarSpecData_RBRCIT()
 			iNumOfGears = -1;
 			sPath = CNGPCarMenu::m_sRBRRootDir + "\\physics\\" + szPhysicsCarFolder[idx];
 
-			if (!InitCarSpecDataFromPhysicsFile(sPath, &g_RBRCarSelectionMenuEntry[idx], &iNumOfGears))
+			// Use rbr\cars\Cars.ini file to lookup the car model name ([CarXX] where xx=00..07 and CarName attribute)
+			sStockCarModelName = InitCarModelNameFromCarsFile(&stockCarListINIFile, idx);
+			if (!sStockCarModelName.empty())
+				wcsncpy_s(g_RBRCarSelectionMenuEntry[idx].wszCarModel, sStockCarModelName.c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[idx].wszCarModel));
+			else
+				g_RBRCarSelectionMenuEntry[idx].wszCarModel[0] = L'\0';
+
+			if (!InitCarSpecDataFromPhysicsFile(sPath, &g_RBRCarSelectionMenuEntry[idx], &iNumOfGears) && g_RBRCarSelectionMenuEntry[idx].wszCarModel[0] == L'\0')
 			{
+				LogPrint("Warning. Car in [Car0%d] slot doesn't have CarName attribute in Cars\\Cars.ini file or NGP model file in %s folder", ::RBRAPI_MapMenuIdxToCarID(idx), sPath.c_str());
+
 				// If the Physics\<carFolder> doesn't have the NGP car description file then use rbr\cars\Cars.ini file to lookup the car model name (the car is probably original model)
-				sStockCarModelName = InitCarModelNameFromCarsFile(&stockCarListINIFile, idx);
-				if(!sStockCarModelName.empty())
-					wcsncpy_s(g_RBRCarSelectionMenuEntry[idx].wszCarModel, sStockCarModelName.c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[idx].wszCarModel));
+				//sStockCarModelName = InitCarModelNameFromCarsFile(&stockCarListINIFile, idx);
+				//if(!sStockCarModelName.empty())
+				//	wcsncpy_s(g_RBRCarSelectionMenuEntry[idx].wszCarModel, sStockCarModelName.c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[idx].wszCarModel));
 			}
 
 			// NGP car model or stock car model lookup to RBCIT/carList/carList.ini file. If the car specs are missing then try to use NGPCarMenu custom carspec INI file
@@ -2388,10 +2397,13 @@ bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, 
 
 					if (bResult)
 					{
-						// If NGP car model file found then set carModel string value and no need to iterate through other files (without file extension)
-						wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarModel, (_ToWString(fsFileName)).c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarModel));
-						pRBRCarSelectionMenuEntry->wszCarModel[COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarModel) - 1] = '\0';
-
+						// If NGP car model file found then set carModel string value if it was not already set based on Cars.ini CarName attribute values and no need to iterate through other files (without file extension)
+						if (pRBRCarSelectionMenuEntry->wszCarModel[0] == L'\0')
+						{
+							wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarModel, (_ToWString(fsFileName)).c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarModel));
+							// Make sure the str is nullterminated in case wcsncpy had to truncate the string because of out-of-buffer space
+							pRBRCarSelectionMenuEntry->wszCarModel[COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarModel) - 1] = '\0';
+						}
 						break;
 					}
 				}
