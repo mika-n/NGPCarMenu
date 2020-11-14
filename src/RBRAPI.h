@@ -88,12 +88,16 @@ extern RECT g_rectRBRWndMapped;		// RBR client area re-mapped to screen points (
 
 //--------------------------------------------------------------------------------------------------
 
+extern LPVOID GetModuleBaseAddr(const char* szModuleName);
+
 inline float DWordBufferToFloat(DWORD dwValue) { BYTEBUFFER_FLOAT byteFloat; byteFloat.dwordBuffer = dwValue; return byteFloat.fValue; }
 
 extern BOOL WriteOpCodeHexString(const LPVOID writeAddr, LPCSTR sHexText);
 extern BOOL WriteOpCodeBuffer(const LPVOID writeAddr, const BYTE* buffer, const int iBufLen);
 extern BOOL WriteOpCodePtr(const LPVOID writeAddr, const LPVOID ptrValue);
 extern BOOL WriteOpCodeInt32(const LPVOID writeAddr, const __int32 iValue);
+extern BOOL WriteOpCodeNearCallCmd(const LPVOID writeAddr, const LPVOID callTargetAddr);
+extern BOOL WriteOpCodeNearJmpCmd(const LPVOID writeAddr, const LPVOID jmpTargetAddr);
 
 extern BOOL ReadOpCodePtr(const LPVOID readAddr, LPVOID* ptrValue);
 
@@ -110,6 +114,7 @@ extern void RBRAPI_MapRBRPointToScreenPoint(const float srcX, const float srcY, 
 
 extern void RBRAPI_RefreshWndRect();
 extern BOOL RBRAPI_MapRBRColorToRGBA(IRBRGame::EMenuColors colorType, int* outRed, int* outGreen, int* outBlue, int* outAlpha); // TRUE=Changed values, could not use cached values, FALSE=The same value, used cached values
+
 
 // Overloaded RBR specific DX9 function types. These re-routed functions are used to draw custom graphics on top of RBR graphics. The custom DX9 function should call these "parent functions" to let RBR do it's own things also.
 typedef HRESULT(__fastcall* tRBRDirectXBeginScene)(void* objPointer);
@@ -729,6 +734,10 @@ typedef struct {
 	PRBRMenuObj optionsMenuObj;			// Options menuObj (pressing "ESC" in a plugin takes RBR back to this menu instead of Plugins menu even when custom plugin menu has Plugins obj as a parent menu. Weird)
 } RBRPluginMenuSystem;
 typedef RBRPluginMenuSystem* PRBRPluginMenuSystem;
+
+
+//--------------------------------------------------------------------------------------------
+extern int RBRAPI_MapRBRMenuObjToID(PRBRMenuObj pMenuObj);
 
 
 //--------------------------------------------------------------------------------------------

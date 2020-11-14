@@ -165,6 +165,8 @@ void CNGPCarMenu::FocusRBRRXNthMenuIdxRow(int menuIdx)
 {
 	//if (m_currentCustomMapSelectedItemIdxRBRRX == menuIdx)
 	//	return;
+	//DebugPrint("FocusRBRRXNthMenuIdxRow: NumOfItemsCustomMenu=%d menuIdx=%d currentCustomMapSelectItem=%d", m_numOfItemsCustomMapMenuRBRRX, menuIdx, m_currentCustomMapSelectedItemIdxRBRRX);
+
 	m_latestMapRBRRX.mapIDMenuIdx = -1;
 
 	if (menuIdx <= 0)
@@ -231,14 +233,19 @@ void CNGPCarMenu::UpdateRBRRXMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo)
 	_ToLowerCase(pRBRRXMapInfo->folderName);
 
 	pRBRRXMapInfo->name = m_pCustomMapMenuRBRRX[menuIdx].szTrackName;
-	if (menuIdx < min((int)m_recentMapsRBRRX.size(), m_recentMapsMaxCountRBRRX))
+
+	// RecentMaps shortcuts are shown in the menu only when the num of orig BTB tracks is >=17
+	if (m_origNumOfItemsMenuItemsRBRRX >= 8 + 1 + 8)
 	{
-		// Shortcut menu name. Remove the "[N] " leading tag because it is not part of the stage name
-		size_t iPos = pRBRRXMapInfo->name.find_first_of(']');
-		if (iPos != std::string::npos && iPos <= 5)
-			pRBRRXMapInfo->name = (pRBRRXMapInfo->name.length() > iPos + 2 ? pRBRRXMapInfo->name.substr(iPos + 2) : "");
+		if (menuIdx < min((int)m_recentMapsRBRRX.size(), m_recentMapsMaxCountRBRRX))
+		{
+			// Shortcut menu name. Remove the "[N] " leading tag because it is not part of the stage name
+			size_t iPos = pRBRRXMapInfo->name.find_first_of(']');
+			if (iPos != std::string::npos && iPos <= 5)
+				pRBRRXMapInfo->name = (pRBRRXMapInfo->name.length() > iPos + 2 ? pRBRRXMapInfo->name.substr(iPos + 2) : "");
+		}
 	}
-	
+
 	try
 	{
 		const char* pszValue;
@@ -407,6 +414,123 @@ typedef void(__cdecl* tRBRRXLoadTrackSetup3)(__int32 value1, __int32 value2);
 
 
 //----------------------------------------------------------------------------------------------------
+// Callback handler for a custom RBRRX "Load Track" screen drawing
+//
+void __fastcall RBRRX_CustomLoadTrackScreen()
+{	
+	g_pRBRPlugin->RBRRX_CustomLoadTrackScreen();
+}
+
+void CNGPCarMenu::RBRRX_CustomLoadTrackScreen()
+{
+	if (m_pRBRRXPlugin != nullptr && m_pRBRRXPlugin->pRBRRXIDirect3DDevice9 != nullptr)
+	{				
+		int posx = 0, posy = 0;
+		int iFontHeight;
+		int iPrintRow = 0;
+
+		if (g_pFontRBRRXLoadTrack == nullptr)
+		{
+			// Font to draw RBRRX "Loading: stageName" text
+			g_pFontRBRRXLoadTrack = new CD3DFont(L"Trebuchet MS", 14, 0 /*D3DFONT_BOLD*/);
+			g_pFontRBRRXLoadTrack->InitDeviceObjects(m_pRBRRXPlugin->pRBRRXIDirect3DDevice9);
+			g_pFontRBRRXLoadTrack->RestoreDeviceObjects();
+		}
+
+		if (g_pFontRBRRXLoadTrackSpec == nullptr)
+		{
+			// Font to draw track details in RBRRX LoadTrack screen
+			g_pFontRBRRXLoadTrackSpec = new CD3DFont(L"Trebuchet MS", 12, 0 /*D3DFONT_BOLD*/);
+			g_pFontRBRRXLoadTrackSpec->InitDeviceObjects(m_pRBRRXPlugin->pRBRRXIDirect3DDevice9);
+			g_pFontRBRRXLoadTrackSpec->RestoreDeviceObjects();
+		}
+
+		iFontHeight = g_pFontRBRRXLoadTrack->GetTextHeight();
+
+		D3DRECT rec = { 0, 0, g_rectRBRWndClient.right, g_rectRBRWndClient.bottom };
+		m_pRBRRXPlugin->pRBRRXIDirect3DDevice9->Clear(1, &rec, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 0, 0, 0), 0, 0);
+
+		if (m_bRBRRXLoadingNewTrack)
+		{
+			// New BTB track loading. Initialize the custom LoadTrack screen
+			m_bRBRRXLoadingNewTrack = false;
+
+			SAFE_RELEASE(m_latestMapRBRRX.imageTextureLoadTrack.pTexture);
+			if (!m_latestMapRBRRX.previewImageFile.empty() && fs::exists(m_latestMapRBRRX.previewImageFile) && m_mapRBRRXPictureRect[2].bottom != -1)
+			{
+				HRESULT hResult = D3D9CreateRectangleVertexTexBufferFromFile(m_pRBRRXPlugin->pRBRRXIDirect3DDevice9,
+					m_latestMapRBRRX.previewImageFile,
+					(float)m_mapRBRRXPictureRect[2].left, (float)m_mapRBRRXPictureRect[2].top, (float)(m_mapRBRRXPictureRect[2].right - m_mapRBRRXPictureRect[2].left), (float)(m_mapRBRRXPictureRect[2].bottom - m_mapRBRRXPictureRect[2].top),
+					&m_latestMapRBRRX.imageTextureLoadTrack,
+					IMAGE_TEXTURE_PRESERVE_ASPECTRATIO_TOP | IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER /*| IMAGE_TEXTURE_POSITION_VERTICAL_CENTER*/);
+
+				// Image not available or loading failed
+				if (!SUCCEEDED(hResult))
+					SAFE_RELEASE(m_latestMapRBRRX.imageTextureLoadTrack.pTexture);
+			}
+		}
+
+		// Draw RBRRX map preview img on LoadTrack screen
+		if (m_latestMapRBRRX.imageTextureLoadTrack.pTexture != nullptr)
+			D3D9DrawVertexTex2D(m_pRBRRXPlugin->pRBRRXIDirect3DDevice9, m_latestMapRBRRX.imageTextureLoadTrack.pTexture, m_latestMapRBRRX.imageTextureLoadTrack.vertexes2D);
+
+		// Vertical red bar and "Loading <trackName>" txt
+		RBRAPI_MapRBRPointToScreenPoint(50, 400, &posx, &posy);
+		rec.x1 = posx - 10;
+		rec.y1 = posy;
+		rec.x2 = rec.x1 + 5;
+		rec.y2 = rec.y1 + (iFontHeight * 2);
+		g_pRBRPlugin->m_pRBRRXPlugin->pRBRRXIDirect3DDevice9->Clear(1, &rec, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 0xB2, 0x2B, 0x2B), 0, 0);
+
+		g_pFontRBRRXLoadTrack->DrawText(posx, posy + (iFontHeight * iPrintRow++), C_CARSPECTEXT_COLOR, (std::wstring(L"Loading: ") + _ToWString(m_latestMapRBRRX.name)).c_str(), 0);
+
+		// Track details
+		std::wstringstream sStrStream;
+		sStrStream << std::fixed << std::setprecision(1);
+		if (m_latestMapRBRRX.length > 0)
+			// TODO: KM to Miles miles=km*0.621371192 config option support
+			sStrStream << m_latestMapRBRRX.length << L" km";
+
+		if (!m_latestMapRBRRX.surface.empty())
+			sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << GetLangStr(m_latestMapRBRRX.surface.c_str());
+
+		if (m_latestMapRBRRX.numOfPacenotes >= 15)
+			sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << GetLangStr(L"pacenotes");
+
+		//if (!m_latestMapRBRRX.comment.empty())
+		//	sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << _ToWString(m_latestMapRBRRX.comment);
+
+		g_pFontRBRRXLoadTrackSpec->DrawText(posx, posy + (iFontHeight * iPrintRow++), C_CARMODELTITLETEXT_COLOR, sStrStream.str().c_str(), 0);
+		g_pFontRBRRXLoadTrackSpec->DrawText(posx, posy + (iFontHeight * iPrintRow++), C_CARMODELTITLETEXT_COLOR, m_latestMapRBRRX.author.c_str(), 0);
+
+		// Draw RBRRX minimap on LoadTrack screen
+		RBRRX_DrawMinimap(m_latestMapRBRRX.folderName, 2, m_pRBRRXPlugin->pRBRRXIDirect3DDevice9);
+
+		g_pRBRPlugin->m_pRBRRXPlugin->pRBRRXIDirect3DDevice9->EndScene();
+		g_pRBRPlugin->m_pRBRRXPlugin->pRBRRXIDirect3DDevice9->Present(0, 0, 0, 0);
+	}
+}
+
+
+//----------------------------------------------------------------------------------------------------
+//
+void CNGPCarMenu::RBRRX_OverrideLoadTrackScreen()
+{
+	PRBRRXPlugin pTmpRBRRXPlugin = (PRBRRXPlugin)GetModuleBaseAddr("RBR_RX.DLL");
+
+	// Exit if RBRRX plugin is missing
+	if (pTmpRBRRXPlugin == nullptr)
+	{
+		LogPrint("ERROR. RBR_RX.DLL plugin missing. Cannot override LoadTrack screen");
+		return;
+	}
+
+	WriteOpCodeNearCallCmd((LPVOID)((DWORD)pTmpRBRRXPlugin + 0x97AC), &::RBRRX_CustomLoadTrackScreen);
+	WriteOpCodeNearJmpCmd((LPVOID)((DWORD)pTmpRBRRXPlugin + 0x97B1), (LPVOID)((DWORD)pTmpRBRRXPlugin + 0x97DE));
+}
+
+
+//----------------------------------------------------------------------------------------------------
 // Prepare a replay loader to load BTB track instead of tranditional RBR track in a map slot #41 (Corte D'Arbroz)
 //
 BOOL CNGPCarMenu::RBRRX_PrepareReplayTrack(const std::string& mapName)
@@ -415,16 +539,7 @@ BOOL CNGPCarMenu::RBRRX_PrepareReplayTrack(const std::string& mapName)
 
 	pTmpRBRRXPlugin = m_pRBRRXPlugin;
 	if (pTmpRBRRXPlugin == nullptr)
-	{
-		// RBRRX custom plugin is not yet opened at all. Use a temporary plugin object until user navigates to Options/Plugins/RBR_RX menu at least once
-
-		HMODULE hModule = nullptr;
-		if (::GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, "RBR_RX.DLL", &hModule))
-		{
-			// Get the RBR_RX base offset and check that the DLL was already loaded by RBR executable (don't accept the DLL if this LoadLibrary call was the first one)
-			pTmpRBRRXPlugin = (PRBRRXPlugin)hModule;
-		}
-	}
+		pTmpRBRRXPlugin = (PRBRRXPlugin)GetModuleBaseAddr("RBR_RX.DLL");
 
 	// Exit if RBRRX plugin is missing
 	if (pTmpRBRRXPlugin == nullptr)
@@ -644,7 +759,7 @@ int CNGPCarMenu::RBRRX_ReadDriveline(const std::string& folderName, CDrivelineSo
 //----------------------------------------------------------------------------------------------------
 // Draw a minimap of BTB track using the driveline data
 //
-void CNGPCarMenu::RBRRX_DrawMinimap(const std::string& folderName, int screenID)
+void CNGPCarMenu::RBRRX_DrawMinimap(const std::string& folderName, int screenID, LPDIRECT3DDEVICE9 pOutputD3DDevice)
 {
 	static CMinimapData* prevMinimapData = nullptr;
 	RECT minimapRect;
@@ -652,44 +767,17 @@ void CNGPCarMenu::RBRRX_DrawMinimap(const std::string& folderName, int screenID)
 	if (m_minimapRBRRXPictureRect[screenID].bottom == -1)
 		return; // Minimap drawing disabled
 
+	// If target D3D device is not specified then use the default RBR device (RBRRX LoadTrack custom screen has another output device)
+	if (pOutputD3DDevice == nullptr)
+		pOutputD3DDevice = g_pRBRIDirect3DDevice9;
+
 	// ScreenID 0 = Stages menu list
 	// ScreenID 1 = The weather settings of the chosen stage menu screen (draw the minimap in pre-defined location in top right corner)
+	// ScreenID 2 = RBRRX LoadTrack custom screen
 	minimapRect = m_minimapRBRRXPictureRect[screenID];
 
-//	if (screenID == 0)
-//	{
-/*		if (m_minimapRBRRXPictureRect[screenID].top == 0 && m_minimapRBRRXPictureRect[screenID].right == 0 && m_minimapRBRRXPictureRect[screenID].left == 0 && m_minimapRBRRXPictureRect[screenID].bottom == 0)
-		{
-			// Draw minimap on top of the stage preview img
-			//RBRAPI_MapRBRPointToScreenPoint(390.0f, 320.0f, (int*)&minimapRect.left, (int*)&minimapRect.top);
-			//RBRAPI_MapRBRPointToScreenPoint(630.0f, 470.0f - (g_pFontCarSpecModel->GetTextHeight() * 1.5f), (int*)&minimapRect.right, (int*)&minimapRect.bottom);
-			minimapRect = m_mapRBRRXPictureRect;
-			minimapRect.bottom -= (g_pFontCarSpecModel->GetTextHeight() + (g_pFontCarSpecModel->GetTextHeight() / 2));
-		}
-		else
-		{
-			// INI file defines an exact size and position for the minimap
-			minimapRect = m_minimapRBRRXPictureRect[screenID];
-		}
-*/
-//		minimapRect = m_minimapRBRRXPictureRect[0];
-//	}
-//	else if (screenID == 1)
-//	{
-		// Show the minimap on top of the map preview image in "Weather" screen in RBRRX
-//		RBRAPI_MapRBRPointToScreenPoint(5.0f, 145.0f, (int*)&minimapRect.left, (int*)&minimapRect.top);
-//		RBRAPI_MapRBRPointToScreenPoint(635.0f, 480.0f, (int*)&minimapRect.right, (int*)&minimapRect.bottom);
-//		minimapRect.bottom -= static_cast<long>(g_pFontCarSpecModel->GetTextHeight() * 1.5f);
-//	}
-//	else
-//	{
-		//LogPrint("WARNING. Invalid screenID %d in minimap drawing", screenID);
-//		return;
-//	}
-
-
 	// If the requested minimap and size is still the same then no need to re-calculate the minimap (just draw the existing minimap)
-	if (prevMinimapData == nullptr || (folderName != prevMinimapData->trackFolder || !EqualRect(&minimapRect, &prevMinimapData->minimapRect) /*minimapRect.left != prevMinimapData->minimapRect.left || minimapRect.top != prevMinimapData->minimapRect.top || minimapRect.right != prevMinimapData->minimapRect.right || minimapRect.bottom != prevMinimapData->minimapRect.bottom*/))
+	if (prevMinimapData == nullptr || (folderName != prevMinimapData->trackFolder || !EqualRect(&minimapRect, &prevMinimapData->minimapRect) ))
 	{ 
 		CDrivelineSource drivelineSource;
 
@@ -715,16 +803,6 @@ void CNGPCarMenu::RBRRX_DrawMinimap(const std::string& folderName, int screenID)
 			prevMinimapData = newMinimap.get();
 			m_cacheRBRRXMinimapData.push_front(std::move(newMinimap));
 
-			// Calculate new minimap data and add it to RBRRX minimap cache
-			//prevMinimapData->trackFolder = folderName;
-			//prevMinimapData->minimapRect = minimapRect;
-		
-			// Note. Disabled the gray background because minimap is drawn on top of the map (code commented out)
-			//if (screenID == 0)
-			//	D3D9CreateRectangleVertexBuffer(g_pRBRIDirect3DDevice9, (float)minimapRect.left, (float)minimapRect.top, (float)(minimapRect.right - minimapRect.left), (float)(minimapRect.bottom - minimapRect.top), &m_minimapVertexBuffer, D3DCOLOR_ARGB(100, 40, 40, 40));
-			//else
-			//	SAFE_RELEASE(m_minimapVertexBuffer);
-
 			// TODO: Cache the final minimap binary data in a disk file per track to speed up new loadings of minimap (rx_content\track\mytrack\minimap_cache1.dat and minimap_cache2.dat)
 			// Read driveline data from BTB track data and take X,Y coordinates (minimap doesn't need the Z coordinate).
 			// Scale down drive line coordinates to fit in minimap rect size and drop duplicate coordinate (because of down scaling some coordinates are likely to overlap)
@@ -737,11 +815,12 @@ void CNGPCarMenu::RBRRX_DrawMinimap(const std::string& folderName, int screenID)
 	{
 		int centerPosX = max(((prevMinimapData->minimapRect.right - prevMinimapData->minimapRect.left) / 2) - (prevMinimapData->minimapSize.x / 2), 0);
 
-		m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
+		CD3D9RenderStateCache renderStateCache(pOutputD3DDevice, true);
+		renderStateCache.EnableTransparentAlphaBlending();
 
 		// Note. Disabled the gray background because minimap is drawn on top of the map (code commented out)
 		//if(m_minimapVertexBuffer != nullptr)
-		//	D3D9DrawVertex2D(g_pRBRIDirect3DDevice9, m_minimapVertexBuffer);
+		//	D3D9DrawVertex2D(pOutputD3DDevice, m_minimapVertexBuffer);
 
 		// Draw the minimap driveline
 		for (auto& item : prevMinimapData->vectMinimapPoint)
@@ -754,7 +833,7 @@ void CNGPCarMenu::RBRRX_DrawMinimap(const std::string& folderName, int screenID)
 				//default: dwColor = D3DCOLOR_ARGB(180, 0xC0, 0xC0, 0xC0); break; // Color for start->split1 and split2->finish (gray)
 			}
 
-			D3D9DrawPrimitiveCircle(g_pRBRIDirect3DDevice9, 
+			D3D9DrawPrimitiveCircle(pOutputD3DDevice,
 				(float)(centerPosX + prevMinimapData->minimapRect.left + item.drivelineCoord.x), 
 				(float)(prevMinimapData->minimapRect.top + item.drivelineCoord.y), 
 				2.0f, dwColor
@@ -762,18 +841,16 @@ void CNGPCarMenu::RBRRX_DrawMinimap(const std::string& folderName, int screenID)
 		}
 
 		// Draw the finish line as bigger red circle
-		D3D9DrawPrimitiveCircle(g_pRBRIDirect3DDevice9,
+		D3D9DrawPrimitiveCircle(pOutputD3DDevice,
 			(float)(centerPosX + prevMinimapData->minimapRect.left + prevMinimapData->vectMinimapPoint.back().drivelineCoord.x),
 			(float)(prevMinimapData->minimapRect.top + prevMinimapData->vectMinimapPoint.back().drivelineCoord.y),
 			5.0f, D3DCOLOR_ARGB(255, 0xC0, 0x10, 0x10) );
 
 		// Draw the start line as bigger green circle
-		D3D9DrawPrimitiveCircle(g_pRBRIDirect3DDevice9, 
+		D3D9DrawPrimitiveCircle(pOutputD3DDevice,
 				(float)(centerPosX + prevMinimapData->minimapRect.left + prevMinimapData->vectMinimapPoint.front().drivelineCoord.x), 
 				(float)(prevMinimapData->minimapRect.top + prevMinimapData->vectMinimapPoint.front().drivelineCoord.y), 
 				5.0f, D3DCOLOR_ARGB(255, 0x20, 0xF0, 0x20) );
-
-		m_pD3D9RenderStateCache->RestoreState();
 	}
 }
 
@@ -809,10 +886,6 @@ void CNGPCarMenu::RBRRX_EndScene()
 				{
 					// RBR_RX main menu
 
-					// RBR_RX has a bug where the focus line in the RBRRX main menu is sometimes beyond the first two Race and Replay menu lines. Fix the bug.
-					//if (m_pRBRRXPlugin->pMenuData->selectedItemIdx >= 2)
-					//	m_pRBRRXPlugin->pMenuData->selectedItemIdx = 0;
-					
 					// Move the focus line always to Race menu line because the Replay menu line really doesn't do anything in RBRRX.
 					// NGPCarMenu supports replaying of RBRRX/BTB replay files, but it goes through the normal RBR replay menu screen and not via RBRRX replay menu screen.
 					m_pRBRRXPlugin->pMenuData->selectedItemIdx = 0;
@@ -829,7 +902,6 @@ void CNGPCarMenu::RBRRX_EndScene()
 						}
 					}
 
-					//if (m_pRBRRXPluginFirstTimeInitialization)
 					if (!m_bRBRRXReplayActive)
 					{
 						if (m_dwAutoLogonEventStartTick == 0)
@@ -851,7 +923,13 @@ void CNGPCarMenu::RBRRX_EndScene()
 
 					if (m_pCustomMapMenuRBRRX == nullptr)
 					{
-						int numOfRecentMaps = RBRRX_CalculateNumOfValidMapsInRecentList(m_pOrigMapMenuItemsRBRRX, m_origNumOfItemsMenuItemsRBRRX);
+						int numOfRecentMaps;
+						
+						// Show shortcuts only when the number of original BTB stages is at least 17 (if the num of BTB stages is less then no need to do any scrolling, so no need to show any shortcuts either)
+						if (m_origNumOfItemsMenuItemsRBRRX >= 8 + 1 + 8)
+							numOfRecentMaps = RBRRX_CalculateNumOfValidMapsInRecentList(m_pOrigMapMenuItemsRBRRX, m_origNumOfItemsMenuItemsRBRRX);
+						else
+							numOfRecentMaps = 0;
 
 						// Initialization of custom RBRTM stages menu list in Shakedown menu (Nth recent stages on top of the menu and then the original RBRTM stage list).
 						// Use the custom list if there are recent mapIDs in the list and the feature is enabled (recent items max count > 0)
@@ -871,14 +949,17 @@ void CNGPCarMenu::RBRRX_EndScene()
 						if (m_numOfItemsCustomMapMenuRBRRX > 8 + 1 + 8)
 							m_pRBRRXPlugin->numOfItems = 8 + 1 + 8;
 
-						numOfRecentMaps = 0;
-						for (auto& item : m_recentMapsRBRRX)
+						if (m_origNumOfItemsMenuItemsRBRRX >= 8 + 1 + 8)
 						{
-							// At this point there are only max number of valid maps in the recent list (CalculateNumOfValidMapsInRecentList removed invalid and extra items)
-							strncpy_s(m_pCustomMapMenuRBRRX[numOfRecentMaps].szTrackName, item->name.c_str(), COUNT_OF_ITEMS(m_pCustomMapMenuRBRRX[numOfRecentMaps].szTrackName));
-							strncpy_s(m_pCustomMapMenuRBRRX[numOfRecentMaps].szTrackFolder, item->folderName.c_str(), COUNT_OF_ITEMS(m_pCustomMapMenuRBRRX[numOfRecentMaps].szTrackFolder));
-							m_pCustomMapMenuRBRRX[numOfRecentMaps].physicsID = item->physicsID;
-							numOfRecentMaps++;
+							numOfRecentMaps = 0;
+							for (auto& item : m_recentMapsRBRRX)
+							{
+								// At this point there are only max number of valid maps in the recent list (CalculateNumOfValidMapsInRecentList removed invalid and extra items)
+								strncpy_s(m_pCustomMapMenuRBRRX[numOfRecentMaps].szTrackName, item->name.c_str(), COUNT_OF_ITEMS(m_pCustomMapMenuRBRRX[numOfRecentMaps].szTrackName));
+								strncpy_s(m_pCustomMapMenuRBRRX[numOfRecentMaps].szTrackFolder, item->folderName.c_str(), COUNT_OF_ITEMS(m_pCustomMapMenuRBRRX[numOfRecentMaps].szTrackFolder));
+								m_pCustomMapMenuRBRRX[numOfRecentMaps].physicsID = item->physicsID;
+								numOfRecentMaps++;
+							}
 						}
 
 						// Activate the latest map menu row automatically
@@ -899,6 +980,9 @@ void CNGPCarMenu::RBRRX_EndScene()
 
 						// Stages menu is open, save recentMaps INI options when a stage is chosen for racing and the recent list is modified
 						m_bRecentMapsRBRRXModified = TRUE;
+						
+						// Initialize "LoadTrack" custom screen (new BTB track)
+						m_bRBRRXLoadingNewTrack = TRUE;
 					}
 
 					if (m_pCustomMapMenuRBRRX != nullptr)
@@ -972,6 +1056,14 @@ void CNGPCarMenu::RBRRX_EndScene()
 							D3D9DrawVertex2D(g_pRBRIDirect3DDevice9, g_mapRBRRXRightBlackBarVertexBuffer);
 					}
 
+					// Draw RBRRX map preview img
+					if (m_latestMapRBRRX.imageTexture.pTexture != nullptr)
+					{
+						m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
+						D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, m_latestMapRBRRX.imageTexture.pTexture, m_latestMapRBRRX.imageTexture.vertexes2D, m_pD3D9RenderStateCache);
+						m_pD3D9RenderStateCache->RestoreState();
+					}
+
 					// Show details of the current stage (name, length, surface, previewImage, author, version, date)
 					// TODO: Personal track records per track per car
 					iFontHeight = g_pFontCarSpecCustom->GetTextHeight();
@@ -996,12 +1088,6 @@ void CNGPCarMenu::RBRRX_EndScene()
 					if (!m_latestMapRBRRX.comment.empty())
 						g_pFontCarSpecCustom->DrawText(posX, posY + (iMapInfoPrintRow++ * iFontHeight), C_CARSPECTEXT_COLOR, m_latestMapRBRRX.comment.c_str(), 0);
 
-					if (m_latestMapRBRRX.imageTexture.pTexture != nullptr)
-					{
-						m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
-						D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, m_latestMapRBRRX.imageTexture.pTexture, m_latestMapRBRRX.imageTexture.vertexes2D, m_pD3D9RenderStateCache);
-						m_pD3D9RenderStateCache->RestoreState();
-					}
 
 					// Author, version, date printed on bottom of the screen and map preview image
 					iMapInfoPrintRow = 0;

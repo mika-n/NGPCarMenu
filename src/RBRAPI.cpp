@@ -83,6 +83,17 @@ PRBRStatusText		 g_pRBRStatusText = nullptr;
 // Helper functions to modify RBR memory locations on the fly
 //
 
+// Get a base address of a specified module (if it is already loaded)
+LPVOID GetModuleBaseAddr(const char* szModuleName)
+{
+	HMODULE hModule = nullptr;
+	if (::GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, szModuleName, &hModule))
+		return (LPVOID)hModule;
+	else
+		return nullptr;
+}
+
+
 // Convert hex char to int value
 int char2int(const char input)
 {
@@ -213,6 +224,29 @@ BOOL WriteOpCodeByte(const LPVOID writeAddr, const BYTE byteValue)
 BOOL ReadOpCodeByte(const LPVOID readAddr, BYTE byteValue)
 {
 	return ReadOpCodeBuffer(readAddr, &byteValue, sizeof(BYTE));
+}
+
+BOOL WriteOpCodeNearCallCmd(const LPVOID writeAddr, const LPVOID callTargetAddr)
+{
+	// TODO: Rel16 vs Rel32 logic based on the call distance?
+	BYTE buffer[5];
+	DWORD callOffset = ((DWORD)callTargetAddr) - (((DWORD)writeAddr) + 5);
+	buffer[0] = 0xE8;
+	buffer[1] = (BYTE)((callOffset & 0x000000FF));
+	buffer[2] = (BYTE)((callOffset & 0x0000FF00) >> 8);
+	buffer[3] = (BYTE)((callOffset & 0x00FF0000) >> 16);
+	buffer[4] = (BYTE)((callOffset & 0xFF000000) >> 24);
+	return WriteOpCodeBuffer(writeAddr, buffer, 5);
+}
+
+BOOL WriteOpCodeNearJmpCmd(const LPVOID writeAddr, const LPVOID jmpTargetAddr)
+{
+	// TODO: Rel8 vs Rel16 vs Rel32 logic based on the call distance?
+	BYTE buffer[2];
+	DWORD callOffset = ((DWORD)jmpTargetAddr) - (((DWORD)writeAddr) + 2);
+	buffer[0] = 0xEB;
+	buffer[1] = (BYTE)((callOffset & 0x000000FF));
+	return WriteOpCodeBuffer(writeAddr, buffer, 2);
 }
 
 
@@ -397,6 +431,17 @@ BOOL RBRAPI_MapRBRColorToRGBA(IRBRGame::EMenuColors colorType, int* outRed, int*
 	}
 
 	return bRetValue;
+}
+
+
+// Map RBR menuObj to menu ID identifier
+int RBRAPI_MapRBRMenuObjToID(PRBRMenuObj pMenuObj)
+{
+	for (int idx = 0; idx < RBRMENUSYSTEM_NUM_OF_MENUS; idx++)
+		if (g_pRBRMenuSystem->menuObj[idx] == g_pRBRMenuSystem->currentMenuObj)
+			return idx;
+
+	return -1;
 }
 
 

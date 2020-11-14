@@ -235,20 +235,24 @@ typedef struct {
 	PRBRRXMenuItem pMenuItems;	// 0x608E4
 	__int32 numOfItems;			// 0x608E8
 
-	BYTE pad4[0x60914 - 0x608E8 - sizeof(__int32)];
+	BYTE pad4[0x60904 - 0x608E8 - sizeof(__int32)];
+
+	LPDIRECT3DDEVICE9 pRBRRXIDirect3DDevice9; // 0x60904
+	
+	BYTE pad5[0x60914 - 0x60904 - sizeof(LPDIRECT3DDEVICE9)];
 
 	__int32 keyCode;			// 0x60914  The keycode of the last pressed key (key down) (37=Left arrowkey, 39=Right arrowkey, 36=Home, 35=End)
 	__int32 menuID;				// 0x60918  0=main, 1=stages, 2=replay
-	BYTE pad41[0x609A0 - 0x60918 - sizeof(__int32)];
+	BYTE pad6[0x609A0 - 0x60918 - sizeof(__int32)];
 
 								// 0x60958  Ptr to struct of BTB track definition (file names to various INI files of the loaded BTB track)?
 
 	__int32 currentPhysicsID;	// 0x609A0  The current physicsID while loading a BTB track (0..2)
 	__int32 loadTrackStatusA4;  // 0x609A4  LoadTrack status (0x01 = Loading track, 0x00 = Not loading)
-	BYTE pad5[0x66528 - 0x609A4 - sizeof(__int32)];
+	BYTE pad7[0x66528 - 0x609A4 - sizeof(__int32)];
 
 	WCHAR wszTrackName[60];		// 0x66528  The name of the last selected track (multibyteToWideChar converted)
-	BYTE pad6[0x665F4 - 0x66528 - sizeof(WCHAR)*60];
+	BYTE pad8[0x665F4 - 0x66528 - sizeof(WCHAR)*60];
 	PRBRRXMenuData pMenuData;	// 0x665F4  Ptr to selectedItemIdx struct
 #pragma pack(pop)
 } RBRRXPlugin;
@@ -271,6 +275,7 @@ struct RBRRX_MapInfo {
 
 	std::wstring  previewImageFile;
 	IMAGE_TEXTURE imageTexture;
+	IMAGE_TEXTURE imageTextureLoadTrack;
 	BOOL          trackOptionsFirstTimeSetup;  // Map selection shows a map preview. The track options screen after the map selection shows also a map preview image. When this is TRUE then the option image is re-initialized.
 
 	RBRRX_MapInfo()
@@ -287,11 +292,13 @@ struct RBRRX_MapInfo {
 		trackOptionsFirstTimeSetup = TRUE;
 
 		ZeroMemory(&imageTexture, sizeof(IMAGE_TEXTURE));
+		ZeroMemory(&imageTextureLoadTrack, sizeof(IMAGE_TEXTURE));
 	}
 
 	~RBRRX_MapInfo()
 	{
 		SAFE_RELEASE(imageTexture.pTexture);
+		SAFE_RELEASE(imageTextureLoadTrack.pTexture);
 	}
 
 	void Clear()
@@ -404,6 +411,9 @@ extern CD3DFont* g_pFontDebug;
 #endif
 extern CD3DFont* g_pFontCarSpecCustom;	// Custom car spec text font style
 extern CD3DFont* g_pFontCarSpecModel;	// Custom model spec font style (author of car and map model, a bit smaller than SpecCustom font style)
+
+extern CD3DFont* g_pFontRBRRXLoadTrack;	    // Custom RBRRX LoadingTrack font style
+extern CD3DFont* g_pFontRBRRXLoadTrackSpec; //
 
 extern PRBRPluginMenuSystem g_pRBRPluginMenuSystem;
 
@@ -562,6 +572,7 @@ protected:
 	void RBRRX_EndScene();
 	void RBRTM_EndScene();
 
+	void RBRRX_OverrideLoadTrackScreen();
 	BOOL RBRRX_PrepareReplayTrack(const std::string& mapName);
 	void RBRRX_LoadTrack(int mapMenuIdx);
 
@@ -571,7 +582,7 @@ protected:
 
 	BOOL RBRRX_ReadStartSplitsFinishPacenoteDistances(const std::string& folderName, float* startDistance, float* split1Distance, float* split2Distance, float* finishDistance);
 	int  RBRRX_ReadDriveline(const std::string& folderName, CDrivelineSource& drivelineSource );
-	void RBRRX_DrawMinimap(const std::string& folderName, int screenID);
+	void RBRRX_DrawMinimap(const std::string& folderName, int screenID, LPDIRECT3DDEVICE9 pOutputD3DDevice = nullptr);
 
 	BOOL RBRTM_ReadStartSplitsFinishPacenoteDistances(const std::wstring& trackFileName, float* startDistance, float* split1Distance, float* split2Distance, float* finishDistance);
 	int  RBRTM_ReadDriveline(int mapID, CDrivelineSource& drivelineSource);
@@ -645,12 +656,13 @@ public:
 	PRBRTMMenuItem m_pCustomMapMenuRBRTM;		// Custom "list of stages" menu in RBRTM Shakedown menu (contains X recent shortcuts and the original list of stages)
 	int m_numOfItemsCustomMapMenuRBRTM;			// Num of items in m_pCustomMapMenuRBRTM (dynamic) array
 
+	bool m_bShowCustomLoadTrackScreenRBRRX;     // Show custom LoadTrack RBRRX screen (TRUE) or the original grey RBRRX debug msg screen (FALSE)
 	LPDIRECT3DVERTEXBUFFER9 g_mapRBRRXRightBlackBarVertexBuffer;
 	std::wstring m_screenshotPathMapRBRRX;		// Custom map preview image path
 	RBRRX_MapInfo m_latestMapRBRRX;				// The latest selected stage in RBRRX menu (if the current mapID is still the same then no need to re-load the same stage preview image)
 
-	RECT m_mapRBRRXPictureRect[2];		// Output rect of RBRRX map preview image (re-scaled pic area) (idx 0=stages menu list, 1=weath
-	RECT m_minimapRBRRXPictureRect[2];	// Location of the minimap in RBRRX stages list (screenID=0 and screenID=1)
+	RECT m_mapRBRRXPictureRect[3];		// Output rect of RBRRX map preview image (re-scaled pic area) (idx 0=stages menu list, 1=stage options, 2=stage loading screen)
+	RECT m_minimapRBRRXPictureRect[3];	// Location of the minimap in RBRRX stages list
 
 	int m_recentMapsMaxCountRBRRX;				// Max num of recent stages/maps added to recentMaps vector (default 5 if not set in INI file. 0 disabled the custom Shakedown menu feature)
 	std::list<std::unique_ptr<RBRRX_MapInfo>> m_recentMapsRBRRX; // Recent maps shown on top of the RBR_RX stage list
@@ -673,6 +685,7 @@ public:
 	//bool   m_pRBRRXPluginFirstTimeInitialization; // First time to open RBRRX plugin after RBR launch. Go automatically to Race screen and skip the race/replay menu
 	bool   m_bRBRRXReplayActive;				// TRUE=Replay is playing RBRRX BTB track, FALSE = standard RBR replay file and track
 	bool   m_bRBRRXReplayEnding;
+	bool   m_bRBRRXLoadingNewTrack;				// TRUE=Loading RBRRX track and first-time custom LoadTrack screen initialization
 
 	int    m_latestCarID;						// The latest carID in racing mode
 	int    m_latestMapID;						// The latest mapID in racing mode
@@ -751,12 +764,13 @@ public:
 		if(szResult != nullptr) AddLangStr(szStrKey, _ToWString(szResult).c_str());
 	}
 
-
 	void /*HRESULT*/ CustomRBRDirectXBeginScene( /*void* objPointer*/ );
 	HRESULT CustomRBRDirectXEndScene(void* objPointer);
 
 	BOOL CustomRBRReplay(const char* szReplayFileName);
 	void CompleteSaveReplayProcess(const std::list<std::wstring>& replayFileQueue);
+
+	void RBRRX_CustomLoadTrackScreen();
 
 	//------------------------------------------------------------------------------------------------
 	virtual const char* GetName(void);

@@ -53,9 +53,8 @@
 #define D3DX_PI 3.14159265f
 #endif
 
-//#if USE_DEBUG == 1
-//#include "NGPCarMenu.h"
-//#endif
+#define C_LOGMESSAGEBUFFER_SIZE 2048
+BYTE g_LogMessageBuffer[C_LOGMESSAGEBUFFER_SIZE+2] = {0}; // Buffer for LogPrint and DebugPrint (char and wchar) message line (used within a log critical section, so only one msg at any time)
 
 namespace fs = std::filesystem;
 
@@ -332,7 +331,7 @@ inline std::wstring _ToUTF8WString(const char* szTextBuf, int iLen)
 	int iChars = ::MultiByteToWideChar(CP_UTF8, 0, szTextBuf, -1, nullptr, 0);
 	if (iChars > 0)
 	{
-		sResult.resize(iChars);
+		sResult.resize(iChars+1);
 		::MultiByteToWideChar(CP_UTF8, 0, szTextBuf, -1, const_cast<WCHAR*>(sResult.c_str()), iChars);
 	}
 	return sResult;
@@ -872,7 +871,7 @@ void DebugPrintFunc_CHAR_or_WCHAR(LPCSTR szTxtBuf, LPCWSTR wszTxtBuf, int iMaxCh
 
 			try
 			{
-				EnterCriticalSection(&g_hLogCriticalSection);
+				//EnterCriticalSection(&g_hLogCriticalSection);
 
 				*g_fpLogFile << szTxtTimeStampBuf;
 				if (szTxtBuf != nullptr)  *g_fpLogFile << szTxtBuf;
@@ -880,11 +879,11 @@ void DebugPrintFunc_CHAR_or_WCHAR(LPCSTR szTxtBuf, LPCWSTR wszTxtBuf, int iMaxCh
 				*g_fpLogFile << std::endl;
 				//DebugCloseFile();
 
-				LeaveCriticalSection(&g_hLogCriticalSection);
+				//LeaveCriticalSection(&g_hLogCriticalSection);
 			}
 			catch (...)
 			{
-				LeaveCriticalSection(&g_hLogCriticalSection);
+				//LeaveCriticalSection(&g_hLogCriticalSection);
 			}
 		}
 	}
@@ -903,11 +902,22 @@ void DebugPrintFunc(LPCSTR lpszFormat, ...)
 	va_list args;
 	va_start(args, lpszFormat);
 
-	CHAR szTxtBuf[1024];
-	if (_vsnprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, lpszFormat, args) <= 0)
-		szTxtBuf[0] = '\0';
+	try
+	{
+		EnterCriticalSection(&g_hLogCriticalSection);
 
-	DebugPrintFunc_CHAR_or_WCHAR(szTxtBuf, nullptr, COUNT_OF_ITEMS(szTxtBuf)-1);
+		//CHAR szTxtBuf[2048];
+		if (_vsnprintf_s((char*)g_LogMessageBuffer, C_LOGMESSAGEBUFFER_SIZE, _TRUNCATE, lpszFormat, args) <= 0)
+			g_LogMessageBuffer[0] = 0;
+
+		DebugPrintFunc_CHAR_or_WCHAR((char*)g_LogMessageBuffer, nullptr, C_LOGMESSAGEBUFFER_SIZE - 1);
+
+		LeaveCriticalSection(&g_hLogCriticalSection);
+	}
+	catch (...)
+	{
+		LeaveCriticalSection(&g_hLogCriticalSection);
+	}
 
 	va_end(args);
 }
@@ -921,11 +931,22 @@ void DebugPrintFunc(LPCWSTR lpszFormat, ...)
 	va_list args;
 	va_start(args, lpszFormat);
 
-	WCHAR wszTxtBuf[1024];
-	if (_vsnwprintf_s(wszTxtBuf, COUNT_OF_ITEMS(wszTxtBuf) - 1, lpszFormat, args) <= 0)
-		wszTxtBuf[0] = L'\0';
+	try
+	{
+		EnterCriticalSection(&g_hLogCriticalSection);
 
-	DebugPrintFunc_CHAR_or_WCHAR(nullptr, wszTxtBuf, COUNT_OF_ITEMS(wszTxtBuf)-1);
+		//WCHAR wszTxtBuf[2048];
+		if (_vsnwprintf_s((WCHAR*)g_LogMessageBuffer, C_LOGMESSAGEBUFFER_SIZE / sizeof(WCHAR), _TRUNCATE, lpszFormat, args) <= 0)
+			((WCHAR*)g_LogMessageBuffer)[0] = L'\0';
+
+		DebugPrintFunc_CHAR_or_WCHAR(nullptr, (WCHAR*)g_LogMessageBuffer, (C_LOGMESSAGEBUFFER_SIZE - 1) / sizeof(WCHAR));
+		
+		LeaveCriticalSection(&g_hLogCriticalSection);
+	}
+	catch (...)
+	{
+		LeaveCriticalSection(&g_hLogCriticalSection);
+	}
 
 	va_end(args);
 }

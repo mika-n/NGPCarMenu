@@ -64,6 +64,9 @@ CD3DFont* g_pFontDebug = nullptr;
 CD3DFont* g_pFontCarSpecCustom = nullptr;
 CD3DFont* g_pFontCarSpecModel  = nullptr;
 
+CD3DFont* g_pFontRBRRXLoadTrack = nullptr;
+CD3DFont* g_pFontRBRRXLoadTrackSpec = nullptr;
+
 CNGPCarMenu*         g_pRBRPlugin = nullptr;			// The one and only RBRPlugin instance
 PRBRPluginMenuSystem g_pRBRPluginMenuSystem = nullptr;  // Pointer to RBR plugin menu system (for some reason Plugins menu is not part of the std menu arrays)
 
@@ -220,7 +223,7 @@ std::vector<LPCSTR> g_NGPCarMenu_AutoLogonOptions;
 #if USE_DEBUG == 1
 void DebugDumpBufferToScreen(byte* pBuffer, int iPreOffset = 0, int iBytesToDump = 64, int posX = 850, int posY = 1)
 {
-	WCHAR txtBuffer[64];
+	WCHAR txtBuffer[64] = { L'\0' } ;
 
 	D3DRECT rec = { posX, posY, posX + 440, posY + ((iBytesToDump / 8) * 20) };
 	g_pRBRIDirect3DDevice9->Clear(1, &rec, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 50, 50, 50), 0, 0);
@@ -729,8 +732,11 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_bRBRRXPluginActive = false;
 	m_bRBRRXReplayActive = false;
 	m_bRBRRXReplayEnding = false;
-	//m_pRBRRXPluginFirstTimeInitialization = TRUE;
+	m_bRBRRXLoadingNewTrack = true;
+
 	g_mapRBRRXRightBlackBarVertexBuffer = nullptr;
+
+	m_bShowCustomLoadTrackScreenRBRRX = true;
 
 	m_bRenameDriverNameActive = FALSE;
 	m_iProfileMenuPrevSelectedIdx = 0;
@@ -773,6 +779,9 @@ CNGPCarMenu::~CNGPCarMenu(void)
 #endif
 		SAFE_DELETE(g_pFontCarSpecCustom);
 		SAFE_DELETE(g_pFontCarSpecModel);
+
+		SAFE_DELETE(g_pFontRBRRXLoadTrack);
+		SAFE_DELETE(g_pFontRBRRXLoadTrackSpec);
 
 		SAFE_RELEASE(m_minimapVertexBuffer);
 		SAFE_RELEASE(m_screenshotCroppingRectVertexBuffer);
@@ -1000,6 +1009,8 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		//
 		// RBRTM integration properties
 		//
+		DebugPrint("Reading RBRTM_Integration settings");
+
 		try
 		{
 			m_iMenuRBRTMOption = (pluginINIFile.GetValueEx(L"Default", L"", L"RBRTM_Integration", 1) >= 1 ? 1 : 0);
@@ -1182,6 +1193,9 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 			m_iMenuRBRRXOption = 0;
 		}
 
+
+		DebugPrint("Reading RBRRX_Integration settings");
+
 		if (m_iMenuRBRRXOption)
 		{
 			try
@@ -1232,6 +1246,16 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 				LogPrint("RBRRX_MapPictureRectOpt value is empty. Using the default value RBRRX_MapPictureRectOpt=%d %d %d %d", m_mapRBRRXPictureRect[1].left, m_mapRBRRXPictureRect[1].top, m_mapRBRRXPictureRect[1].right, m_mapRBRRXPictureRect[1].bottom);
 			}
 
+			pluginINIFile.GetValueEx(szResolutionText, L"Default", L"RBRRX_MapPictureRectLoadTrack", L"", &this->m_mapRBRRXPictureRect[2]);
+			if (_IsRectZero(m_mapRBRRXPictureRect[2]))
+			{
+				// Default rectangle area of RBRRX loadTrack preview picture if the option is not set in INI file
+				RBRAPI_MapRBRPointToScreenPoint(0.0f, 0.0f, (int*)&m_mapRBRRXPictureRect[2].left, (int*)&m_mapRBRRXPictureRect[2].top);
+				RBRAPI_MapRBRPointToScreenPoint(640.0f, 370.0f, (int*)&m_mapRBRRXPictureRect[2].right, (int*)&m_mapRBRRXPictureRect[2].bottom);
+
+				LogPrint("RBRRX_MapPictureRectLoadTrack value is empty. Using the default value RBRRX_MapPictureRectLoadTrack=%d %d %d %d", m_mapRBRRXPictureRect[2].left, m_mapRBRRXPictureRect[2].top, m_mapRBRRXPictureRect[2].right, m_mapRBRRXPictureRect[2].bottom);
+			}
+
 
 			// RBRRX_MinimapPictureRect
 			pluginINIFile.GetValueEx(szResolutionText, L"Default", L"RBRRX_MinimapPictureRect", L"", &this->m_minimapRBRRXPictureRect[0]);
@@ -1265,8 +1289,21 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 
 				LogPrint("RBRRX_MinimapPictureRectOpt value is empty. Using the default value RBRRX_MinimapPictureRectOpt=%d %d %d %d", m_minimapRBRRXPictureRect[1].left, m_minimapRBRRXPictureRect[1].top, m_minimapRBRRXPictureRect[1].right, m_minimapRBRRXPictureRect[1].bottom);
 			}
+
+			pluginINIFile.GetValueEx(szResolutionText, L"Default", L"RBRRX_MinimapPictureRectLoadTrack", L"", &this->m_minimapRBRRXPictureRect[2]);
+			if (_IsRectZero(m_minimapRBRRXPictureRect[2]))
+			{
+				// Default rectangle area of RBRRX minimap preview picture on LoadTrack screen if the map itself is disabled (ie. coordinates not set)
+				RBRAPI_MapRBRPointToScreenPoint(5.0f, 5.0f, (int*)&m_minimapRBRRXPictureRect[2].left, (int*)&m_minimapRBRRXPictureRect[2].top);
+				RBRAPI_MapRBRPointToScreenPoint(635.0f, 375.0f, (int*)&m_minimapRBRRXPictureRect[2].right, (int*)&m_minimapRBRRXPictureRect[2].bottom);
+
+				LogPrint("RBRRX_MinimapPictureRectLoadTrack value is empty. Using the default value RBRRX_MinimapPictureRectLoadTrack=%d %d %d %d", m_minimapRBRRXPictureRect[2].left, m_minimapRBRRXPictureRect[2].top, m_minimapRBRRXPictureRect[2].right, m_minimapRBRRXPictureRect[2].bottom);
+			}
+
+			m_bShowCustomLoadTrackScreenRBRRX = (pluginINIFile.GetValueEx(L"Default", L"", L"RBRRX_CustomLoadTrackScreen", 1) >= 1 ? true : false);
 		}
 
+		DebugPrint("Reading inverted pedal settings input.ini");
 
 		m_bGenerateReplayMetadataFile = (pluginINIFile.GetValueEx(L"Default", L"", L"GenerateReplayMetadataFile", 1) != 0);
 
@@ -1298,6 +1335,8 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		//
 		if (iFileFormat < 2)
 		{
+			DebugPrint("Upgrading NGPCarMenu.ini file format");
+
 			pluginINIFile.SetValue(L"Default", L"FileFormat", L"2");
 			pluginINIFile.SaveFile(sIniFileName.c_str());
 		}
@@ -1316,6 +1355,8 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		//
 		if (m_iAutoLogonMenuState < 0)
 		{
+			DebugPrint("Reading AutoLogon settings");
+
 			// RBR bootup autoLogon option is read only at first time when this method is called (ie RBR launch time).
 			// Check cmdline option first and then INI file value.
 			m_sAutoLogon = GetCmdLineArgValue("-autologon");
@@ -1363,7 +1404,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 			}
 			else
 			{
-				m_iAutoLogonMenuState = 0;			// Autologon disable
+				m_iAutoLogonMenuState = 0;			// Autologon disabled
 				m_autoLogonSequenceSteps.clear();
 			}
 		}
@@ -1386,6 +1427,8 @@ void CNGPCarMenu::SaveSettingsToPluginINIFile()
 	std::wstring wsOptionValue;
 	CSimpleIniW  pluginINIFile;
 
+	DebugPrint("Enter SaveSettingsToPluginINIFile");
+
 	try
 	{
 		sIniFileName = CNGPCarMenu::m_sRBRRootDir + "\\Plugins\\" VS_PROJECT_NAME ".ini";
@@ -1407,6 +1450,8 @@ void CNGPCarMenu::SaveSettingsToPluginINIFile()
 		LogPrint("ERROR CNGPCarMenu.SaveSettingsToPluginINIFile. %s INI writing failed", sIniFileName.c_str());
 		m_sMenuStatusText1 = sIniFileName + " INI writing failed";
 	}
+
+	DebugPrint("Exit SaveSettingsToPluginINIFile");
 }
 
 void CNGPCarMenu::SaveSettingsToRBRTMRecentMaps()
@@ -1623,15 +1668,11 @@ int CNGPCarMenu::InitAllNewCustomPluginIntegrations()
 
 				if (m_iRBRRXPluginMenuIdx > 0)
 				{
-					HMODULE hModule = nullptr;
-
 					try
 					{
-						if(::GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, /*(m_sRBRRootDir + "\\Plugins\\rbr_rx.dll").c_str()*/ "RBR_RX.DLL", &hModule))
+						m_pRBRRXPlugin = (PRBRRXPlugin)::GetModuleBaseAddr("RBR_RX.DLL");
+						if(m_pRBRRXPlugin != nullptr)
 						{
-							// Get the RBR_RX base offset and check that the DLL was already loaded by RBR executable (don't accept the DLL if this LoadLibrary call was the first one)
-							m_pRBRRXPlugin = (PRBRRXPlugin)hModule;
-
 							m_pOrigMapMenuItemsRBRRX = m_pRBRRXPlugin->pMenuItems;
 							m_origNumOfItemsMenuItemsRBRRX = m_pRBRRXPlugin->numOfItems;
 
@@ -1642,17 +1683,13 @@ int CNGPCarMenu::InitAllNewCustomPluginIntegrations()
 							dwValue = 0x41800000;
 							WriteOpCodeBuffer(&m_pRBRRXPlugin->menuPosX, (const BYTE*)&dwValue, sizeof(DWORD));
 						}
-						else
-							hModule = nullptr;
 					}
 					catch (...)
 					{
-						hModule = nullptr;
 					}					
 
-					if (hModule == nullptr)
+					if (m_pRBRRXPlugin == nullptr)
 					{
-						m_pRBRRXPlugin = nullptr;
 						m_iRBRRXPluginMenuIdx = -1;
 						LogPrint("ERROR. Failed to read the base address of RBR_RX plugin. For some reason RBR_RX.DLL library is unavailable");
 					}
@@ -1893,7 +1930,7 @@ void CNGPCarMenu::DoAutoLogonSequence()
 //
 void CNGPCarMenu::InitCarSpecData_RBRCIT()
 {
-	//DebugPrint("Enter CNGPCarMenu.InitCarSpecData_RBRCIT");
+	DebugPrint("Enter CNGPCarMenu.InitCarSpecData_RBRCIT");
 
 	CSimpleIniW ngpCarListINIFile;
 	CSimpleIniW customCarSpecsINIFile;
@@ -1909,8 +1946,6 @@ void CNGPCarMenu::InitCarSpecData_RBRCIT()
 	try
 	{
 		int iNumOfGears;
-
-		DebugPrint(L"InitCarSpecData_RBRCIT. RbrCITCarListFilePath=%s", m_rbrCITCarListFilePath.c_str());
 
 		if (fs::exists(m_rbrCITCarListFilePath))
 		{
@@ -1972,7 +2007,7 @@ void CNGPCarMenu::InitCarSpecData_RBRCIT()
 		LogPrint("ERROR CNGPCarMenu.InitCarSpecData_RBRCIT. %s reading failed", m_rbrCITCarListFilePath.c_str());
 	}
 
-	//DebugPrint("Exit CNGPCarMenu.InitCarSpecData_RBRCIT");
+	DebugPrint("Exit CNGPCarMenu.InitCarSpecData_RBRCIT");
 }
 
 
@@ -2266,18 +2301,16 @@ std::wstring CNGPCarMenu::InitCarModelNameFromCarsFile(CSimpleIniW* stockCarList
 //
 bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, PRBRCarSelectionMenuEntry pRBRCarSelectionMenuEntry, int* outNumOfGears)
 {
-	//DebugPrint("Enter CNGPCarMenu.InitCarSpecDataFromPhysicsFile");
-
 	const fs::path fsFolderName(folderName);
 
 	//std::wstring wfsFileName;
 	std::string  fsFileName;
-	fsFileName.reserve(128);
+	fsFileName.reserve(256);
 	
 	std::string  sTextLine;
 	std::wstring wsTextLine;
-	sTextLine.reserve(128);
-	wsTextLine.reserve(128);
+	sTextLine.reserve(256);
+	wsTextLine.reserve(256);
 
 	int iReadRowCount;
 	bool bResult = FALSE;
@@ -2412,9 +2445,11 @@ bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, 
 
 		if (!bResult)
 		{
+			LogPrint("Missing NGP model description file in %s folder. It is recommended to use RBRCIT or EasyRBR tool to setup custom NGP cars", folderName.c_str());
+
 			std::wstring wFolderName = _ToWString(folderName);
 			// Show warning that RBRCIT/NGP carModel file is missing
-			wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel, (wFolderName + L"\\<carModelName> NGP model description file missing").c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel));
+			wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel, (wFolderName + L" NGP model description missing").substr(0, COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel)-1).c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarPhysics3DModel));
 		}
 
 		//DebugPrint("DEBUG InitCarSpecDataFromPhysicsFile. bResult=%d folderName=%s CarModel=%s", bResult, folderName.c_str(), _ToString(pRBRCarSelectionMenuEntry->wszCarModel).c_str());
@@ -2430,8 +2465,6 @@ bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, 
 		bResult = FALSE;
 	}
 
-	//DebugPrint("Exit CNGPCarMenu.InitCarSpecDataFromPhysicsFile");
-
 	return bResult;
 }
 
@@ -2443,8 +2476,6 @@ bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, 
 bool CNGPCarMenu::InitCarSpecDataFromNGPFile(CSimpleIniW* ngpCarListINIFile, PRBRCarSelectionMenuEntry pRBRCarSelectionMenuEntry, int numOfGears)
 {
 	bool bResult = FALSE;
-
-	//DebugPrint("Enter CNGPCarMenu.InitCarSpecDataFromNGPFile");
 
 	if (ngpCarListINIFile == nullptr || pRBRCarSelectionMenuEntry->wszCarModel[0] == '\0')
 		return bResult;
@@ -2500,8 +2531,6 @@ bool CNGPCarMenu::InitCarSpecDataFromNGPFile(CSimpleIniW* ngpCarListINIFile, PRB
 		LogPrint("ERROR CNGPCarMenu.InitCarSpecDataFromNGPFile. carList.ini INI file reading error");
 		bResult = FALSE;
 	}
-
-	//DebugPrint("Exit CNGPCarMenu.InitCarSpecDataFromNGPFile");
 
 	return bResult;;
 }
@@ -2640,20 +2669,25 @@ bool CNGPCarMenu::PrepareScreenshotReplayFile(int carID)
 		// (2) rbr\Plugins\NGPCarMenu\Replays\NGPCarName_<FIACategoryName>.rpl (fex "NGPCarMenu_Group R1.rpl")
 		// (3) rbr\Plugins\NGPCarMenu\Replays\NGPCarName.rpl (this file should always exists as a fallback rpl template)
 
+		LogPrint(L"Preparing a car preview image creation for a car %s (%s) (car#=%d menu#=%d)", carModelName.c_str(), carCategoryName.c_str(), carID, carMenuIdx);
+
 		inputReplayFileName = inputReplayFilePath + L"\\" + screenshotReplayFileNameWithoutExt + L"_" + carModelName + L".rpl";
+		LogPrint(L"  Checking existence of template file %s", inputReplayFileName.c_str());
 		if (!fs::exists(inputReplayFileName))
 		{
 			inputReplayFileName = inputReplayFilePath + L"\\" + screenshotReplayFileNameWithoutExt + L"_" + carCategoryName + L".rpl";
+			LogPrint(L"  Checking existence of template file %s", inputReplayFileName.c_str());
 			if (!fs::exists(inputReplayFileName))
 			{
 				// No carModel or carCategory specific replay template file (fex "NGPCarMenu_Group R1.rpl" file is used with GroupR1 cars). Use the default generic replay file (NGPCarMenu.rpl by default, but INI file can re-define this filename).
 				inputReplayFileName = inputReplayFilePath + L"\\" + g_pRBRPlugin->m_screenshotReplayFileName;
+				LogPrint(L"  Checking existence of template file %s", inputReplayFileName.c_str());
 				if (!fs::exists(inputReplayFileName))
 					inputReplayFileName = g_pRBRPlugin->m_sRBRRootDirW + L"\\Replays\\" + g_pRBRPlugin->m_screenshotReplayFileName;
 			}
 		}
 
-		LogPrint(L"Preparing a car preview image creation. Using template file %s for a car %s (%s) (car#=%d menu#=%d)", inputReplayFileName.c_str(), carModelName.c_str(), carCategoryName.c_str(), carID, carMenuIdx);
+		LogPrint(L"  Using template file %s to generate the car preview image", inputReplayFileName.c_str());
 
 		// Open input replay template file, modify car model ID on the fly and write out the temporary replay file (stored in RBR Replays folder)
 
@@ -2832,7 +2866,7 @@ BOOL CNGPCarMenu::ReadStartSplitsFinishPacenoteDistances(const std::wstring& sPa
 //
 int CNGPCarMenu::ReadDriveline(const std::wstring& sDrivelineFileName, CDrivelineSource& drivelineSource)
 {
-	__int32 numOfDrivelineRecords;
+	__int32 numOfDrivelineRecords = 0;
 
 	try
 	{
@@ -2991,10 +3025,10 @@ int CNGPCarMenu::RescaleDrivelineToFitOutputRect(CDrivelineSource& drivelineSour
 
 	BOOL bFlipMinimap = FALSE;		// If TRUE then flips X and Y axis because the minimap graph takes more vertical than horizontal space (draw area has more room vertically)
 
-	POINT_float sourceSize;
+	POINT_float sourceSize = { 0,0 };
 	float sourceAspectRatio;
 
-	POINT_float  outputSize;
+	POINT_float  outputSize = { 0,0 };
 	float outputAspectRatio;
 
 	POINT_float outputRange;
@@ -3258,9 +3292,13 @@ const char* CNGPCarMenu::GetName(void)
 		else InitCarSpecData_EASYRBR();
 		CalculateMaxLenCarMenuName();
 
+		DebugPrint("GetName. Reading FMOD audio settings");
+
 		InitCarSpecAudio();		// FMOD bank names per car
 
 #if USE_DEBUG == 1
+		DebugPrint("GetName. Creating debug font");
+
 		g_pFontDebug = new CD3DFont(L"Courier New", 11, 0);
 		g_pFontDebug->InitDeviceObjects(g_pRBRIDirect3DDevice9);
 		g_pFontDebug->RestoreDeviceObjects();
@@ -3270,6 +3308,8 @@ const char* CNGPCarMenu::GetName(void)
 		int idx;
 		for (idx = 0; idx < 8; idx++)
 		{
+			//DebugPrint("GetName. Updating RBR car menu names. %d=%s", idx, g_RBRCarSelectionMenuEntry[idx].szCarMenuName);
+
 			// Use custom car menu selection name and car description (taken from the current NGP config files)
 			WriteOpCodePtr((LPVOID)g_RBRCarSelectionMenuEntry[idx].ptrCarMenuName, &g_RBRCarSelectionMenuEntry[idx].szCarMenuName[0]);
 			WriteOpCodePtr((LPVOID)g_RBRCarSelectionMenuEntry[idx].ptrCarDescription, &g_RBRCarSelectionMenuEntry[idx].szCarMenuName[0]); // the default car description is CHAR and not WCHAR string
@@ -3283,6 +3323,8 @@ const char* CNGPCarMenu::GetName(void)
 
 			for (idx = 0; idx < 8; idx++)
 			{
+				//DebugPrint("GetName. Tweaking RBR menu line %d position", idx);
+
 				g_pRBRMenuSystem->menuObj[RBRMENUIDX_QUICKRALLY_CARS]->pItemPosition[g_pRBRMenuSystem->menuObj[RBRMENUIDX_QUICKRALLY_CARS]->firstSelectableItemIdx + idx].x = menuXPos;
 				g_pRBRMenuSystem->menuObj[RBRMENUIDX_MULTIPLAYER_CARS_P1]->pItemPosition[g_pRBRMenuSystem->menuObj[RBRMENUIDX_MULTIPLAYER_CARS_P1]->firstSelectableItemIdx + idx].x = menuXPos;
 				g_pRBRMenuSystem->menuObj[RBRMENUIDX_MULTIPLAYER_CARS_P2]->pItemPosition[g_pRBRMenuSystem->menuObj[RBRMENUIDX_MULTIPLAYER_CARS_P2]->firstSelectableItemIdx + idx].x = menuXPos;
@@ -3292,6 +3334,7 @@ const char* CNGPCarMenu::GetName(void)
 			}
 		}
 
+		DebugPrint("GetName. Preparing RBR DX handlers");
 
 		//
 		// Ready to rock! Re-route and store the original function address for later use. At this point all variables used in custom Dx0 functions should be initialized already
@@ -3308,9 +3351,15 @@ const char* CNGPCarMenu::GetName(void)
 
 		if (g_iInvertedPedalsStartupFixFlag != 0)
 		{
+			DebugPrint("GetName. Preparing RBR inverted pedal fix");
+
 			gtcRBRControllerAxisData = new DetourXS((LPVOID)0x4C2610, ::CustomRBRControllerAxisData, TRUE);
 			Func_OrigRBRControllerAxisData = (tRBRControllerAxisData)gtcRBRControllerAxisData->GetTrampoline();
 		}
+
+		// Override the gray RBRRX "loading track debug msg screen" with a real map preview img. Do this only one time when this plugin was initialized for the first time
+		if (m_iMenuRBRRXOption && m_bShowCustomLoadTrackScreenRBRRX)
+			RBRRX_OverrideLoadTrackScreen();
 
 		// RBR memory and DX9 function hooks in place. Ready to do customized RBR logic
 		g_bRBRHooksInitialized = TRUE;
@@ -3318,6 +3367,8 @@ const char* CNGPCarMenu::GetName(void)
 
 		//for (int idx = 0; idx < 8; idx++)
 		//	DebugPrint(ReplacePathVariables(L"Resolution=%resolution% CarModelName=%carModelName% CarFolder=%carFolder% CarSlotNum=%carSlotNum% CarMenuNum=%carMenuNum% Cat=%FIACategory% FileType=%fileType% Plugin=%plugin%", idx, false).c_str());
+
+		LogPrint("Completed the plugin initialization");
 	}
 
 	//DebugPrint("Exit CNGPCarMenu.GetName");
@@ -4621,28 +4672,6 @@ HRESULT __fastcall CustomRBRDirectXBeginScene(void* objPointer)
 	if (!g_bRBRHooksInitialized) 
 		return S_OK;
 
-/*
-	if (g_iInvertedPedalsStartupFixFlag != 0)
-	{
-		// Fix the inverted throttle pedal 
-		if (g_iInvertedPedalsStartupFixFlag & 0x01 && g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[3].controllerAxisData != nullptr)
-			g_pRBRGameConfig->controllerBaseObj->controllerObj->throttleInverted = (g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[3].controllerAxisData->dinputStatus == 0);
-
-		// Fix the inverted brake pedal
-		if (g_iInvertedPedalsStartupFixFlag & 0x02 && g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[5].controllerAxisData != nullptr)
-			g_pRBRGameConfig->controllerBaseObj->controllerObj->brakeInverted = (g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[5].controllerAxisData->dinputStatus == 0);
-
-		// Fix the inverted clutch pedal
-		if (g_iInvertedPedalsStartupFixFlag & 0x04 && g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[11].controllerAxisData != nullptr)
-			g_pRBRGameConfig->controllerBaseObj->controllerObj->clutchInverted = (g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[11].controllerAxisData->dinputStatus == 0);
-
-		// Fix the inverted handbrake
-		if (g_iInvertedPedalsStartupFixFlag & 0x08 && g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[6].controllerAxisData != nullptr)
-			g_pRBRGameConfig->controllerBaseObj->controllerObj->handbrakeInverted = (g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[6].controllerAxisData->dinputStatus == 0);
-	}
-
-*/
-
 	// Call the origial RBR BeginScene and let it to initialize the new D3D scene
 	HRESULT hResult = ::Func_OrigRBRDirectXBeginScene(objPointer);
 
@@ -4678,11 +4707,13 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 	if (!g_bRBRHooksInitialized)
 		return S_OK;
 
+	/*
 #if USE_DEBUG == 1
 	wchar_t szTxtBuf[32];
-	swprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, L"%d / %d", g_pRBRGameMode->gameMode, rand());
+	swprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, L"%d / %d / %d", g_pRBRGameMode->gameMode, RBRAPI_MapRBRMenuObjToID(g_pRBRMenuSystem->currentMenuObj), rand());
 	g_pFontDebug->DrawText(5, 5, C_DEBUGTEXT_COLOR, szTxtBuf);
 #endif
+*/
 
 	// Do RBRTM/RBRRX/RBR/RallySimFans menu and replay things only when racing is not active
 	if (g_pRBRPlugin->m_iCustomReplayState > 0 
