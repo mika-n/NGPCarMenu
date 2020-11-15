@@ -17,14 +17,16 @@
 #define RAND_MAX_MIN(max, min) (rand() % (max - min + 1) + min)
 
 #define C_CMD_STAGESTART	0
-#define C_CMD_MAP			1
-#define C_CMD_DECORATION	2
-#define C_CMD_TEXTNOTICE	3
+#define C_CMD_STAGEBTBSTART	1
+#define C_CMD_MAP			2
+#define C_CMD_DECORATION	3
+#define C_CMD_TEXTNOTICE	4
 
 #define NUM_SELECTIONS	(sizeof(g_szMenuSelections) / sizeof(g_szMenuSelections[0]))
 const char* g_szMenuSelections[] =
 {
 	"Start Stage",
+	"Start BTB Stage",
 	"> Map",
 	"> Click here for image decoration",
 	"> Click here for custom text"
@@ -226,6 +228,15 @@ public:
 			{
 				m_pGame->StartGame( m_iMap, 5, IRBRGame::GOOD_WEATHER, IRBRGame::TYRE_GRAVEL_DRY, NULL );
 			}
+			else if (m_iSelection == C_CMD_STAGEBTBSTART)
+			{
+				// rbrAppPath\RX_Content\Tracks\ folder should have the "Vysälä SS1" BTB stage. 
+				// You can download it from https://vileska.blogspot.com/p/vyskala-ss1.html website or use any other BTB stage as an example here.
+				m_pNGPCarMenuAPI->PrepareBTBTrackLoad(m_dwPluginID, "Vyskälä SS1");
+
+				// Remember that BTB tracks are loaded through track #41. Also, the tyre is recommended to match the surface of the track (ie. a snow BTB track with a gravel tyre is probably not a good idea)
+				m_pGame->StartGame(41, 2, IRBRGame::GOOD_WEATHER, IRBRGame::TYRE_GRAVEL_DRY, NULL);
+			}			
 			else if (m_iSelection == C_CMD_DECORATION)
 			{
 				//

@@ -10,3 +10,4 @@ API_GetVersionInfo
 API_InitializeFont
 API_DrawTextA
 API_DrawTextW
+API_PrepareBTBTrackLoad

@@ -163,14 +163,14 @@ IFileWatcherListener* g_watcherNewReplayFileListener;
 
 // Note! This table is in menu order and not in internal RBR car slot order. Values are initialized at plugin launch time from NGP physics and RBRCIT carList config files
 RBRCarSelectionMenuEntry g_RBRCarSelectionMenuEntry[8] = {
-	{ 0x4a0dd9, 0x4a0c59, /* Slot#5 */ "", L"car1", "", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"" },
-	{ 0x4a0dc9, 0x4a0c49, /* Slot#3 */ "", L"car2", "", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"" },
-	{ 0x4a0de1, 0x4a0c61, /* Slot#6 */ "", L"car3",	"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"" },
-	{ 0x4a0db9, 0x4a0c39, /* Slot#1 */ "", L"car4",	"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"" },
-	{ 0x4a0dd1, 0x4a0c51, /* Slot#4 */ "", L"car5",	"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"" },
-	{ 0x4a0de9, 0x4a0c69, /* Slot#7 */ "", L"car6",	"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"" },
-	{ 0x4a0db1, 0x4a0c31, /* Slot#0 */ "", L"car7",	"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"" },
-	{ 0x4a0dc1, 0x4a0c41, /* Slot#2 */ "", L"car8",	"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"" }
+	{ 0x4a0dd9, 0x4a0c59, /* Slot#5 */ "", L"car1", "", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"" },
+	{ 0x4a0dc9, 0x4a0c49, /* Slot#3 */ "", L"car2", "", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"" },
+	{ 0x4a0de1, 0x4a0c61, /* Slot#6 */ "", L"car3",	"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"" },
+	{ 0x4a0db9, 0x4a0c39, /* Slot#1 */ "", L"car4",	"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"" },
+	{ 0x4a0dd1, 0x4a0c51, /* Slot#4 */ "", L"car5",	"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"" },
+	{ 0x4a0de9, 0x4a0c69, /* Slot#7 */ "", L"car6",	"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"" },
+	{ 0x4a0db1, 0x4a0c31, /* Slot#0 */ "", L"car7",	"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"" },
+	{ 0x4a0dc1, 0x4a0c41, /* Slot#2 */ "", L"car8",	"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"", L"" }
 };
 
 
@@ -589,6 +589,26 @@ BOOL APIENTRY API_DrawTextW(DWORD pluginID, int textID, int posX, int posY, cons
 	return API_AddLinkText(pluginID, textID, posX, posY, nullptr, wszText, fontID, color, drawOptions);
 }
 
+// Prepare track ¤41 for a BTB track loading. Custom plugin should call m_pGame->StartGame(...) IRBR method to start a rally after calling this prepare function
+BOOL APIENTRY API_PrepareBTBTrackLoad(DWORD pluginID, LPCSTR szBTBTrackName)
+{
+	CRBRPluginIntegratorLink* pPluginIntegrationLink = nullptr;
+	for (auto& item : *g_pRBRPluginIntegratorLinkList)
+	{
+		if ((DWORD)item.get() == pluginID)
+		{
+			pPluginIntegrationLink = item.get();
+			break;
+		}
+	}
+
+	// Unknown plugin integration. Can't do anything
+	if (pPluginIntegrationLink == nullptr || g_pRBRPlugin == nullptr)
+		return FALSE;
+
+	return g_pRBRPlugin->RBRRX_PrepareLoadTrack(std::string(szBTBTrackName));
+}
+
 
 //-----------------------------------------------------------------------------------------------------------------------------
 //-----------------------------------------------------------------------------------------------------------------------------
@@ -600,9 +620,9 @@ BOOL APIENTRY DllMain( HANDLE hModule,  DWORD  ul_reason_for_call, LPVOID lpRese
 
 IPlugin* RBR_CreatePlugin( IRBRGame* pGame )
 {
-#if USE_DEBUG == 1	
+//#if USE_DEBUG == 1	
 	DebugClearFile();
-#endif
+//#endif
 	DebugPrint("--------------------------------------------\nRBR_CreatePlugin");
 
 	if (g_pRBRPlugin == nullptr) g_pRBRPlugin = new CNGPCarMenu(pGame);
@@ -731,7 +751,8 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_iRBRRXPluginMenuIdx = 0;		// Index (Nth item) to RBRRX plugin in RBR in-game Plugins menu list (0=Not yet initialized, -1=Initialized but not found, >0=Initialized and found)
 	m_bRBRRXPluginActive = false;
 	m_bRBRRXReplayActive = false;
-	m_bRBRRXReplayEnding = false;
+	m_bRBRRXRacingActive = false;
+	m_bRBRRXReplayOrRacingEnding = false;
 	m_bRBRRXLoadingNewTrack = true;
 
 	g_mapRBRRXRightBlackBarVertexBuffer = nullptr;
@@ -1295,7 +1316,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 			{
 				// Default rectangle area of RBRRX minimap preview picture on LoadTrack screen if the map itself is disabled (ie. coordinates not set)
 				RBRAPI_MapRBRPointToScreenPoint(5.0f, 5.0f, (int*)&m_minimapRBRRXPictureRect[2].left, (int*)&m_minimapRBRRXPictureRect[2].top);
-				RBRAPI_MapRBRPointToScreenPoint(635.0f, 375.0f, (int*)&m_minimapRBRRXPictureRect[2].right, (int*)&m_minimapRBRRXPictureRect[2].bottom);
+				RBRAPI_MapRBRPointToScreenPoint(635.0f, 372.0f, (int*)&m_minimapRBRRXPictureRect[2].right, (int*)&m_minimapRBRRXPictureRect[2].bottom);
 
 				LogPrint("RBRRX_MinimapPictureRectLoadTrack value is empty. Using the default value RBRRX_MinimapPictureRectLoadTrack=%d %d %d %d", m_minimapRBRRXPictureRect[2].left, m_minimapRBRRXPictureRect[2].top, m_minimapRBRRXPictureRect[2].right, m_minimapRBRRXPictureRect[2].bottom);
 			}
@@ -2208,6 +2229,10 @@ void CNGPCarMenu::InitCarSpecAudio()
 
 	CSimpleIniW audioFMODINIFile;
 	std::string sPath;
+	std::string sPathReadme;
+	std::wstring sTextLine;
+	sTextLine.reserve(128);
+
 	sPath = m_sRBRRootDir + "\\AudioFMOD\\AudioFMOD.ini";
 
 	try
@@ -2230,8 +2255,27 @@ void CNGPCarMenu::InitCarSpecAudio()
 					sTextValue = audioFMODINIFile.GetValue(wszCarINISection, L"bankName", L"");
 					_Trim(sTextValue);
 					if (!sTextValue.empty())
+					{
 						wcsncpy_s(g_RBRCarSelectionMenuEntry[idx].wszCarFMODBank, (std::wstring(g_pRBRPlugin->GetLangStr(L"FMOD")) + L" " + sTextValue).c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[idx].wszCarFMODBank));
-						
+
+						// Read the name of FMOD authors (readme.fmodBankName.txt and Authors line there)
+						sPathReadme = m_sRBRRootDir + "\\AudioFMOD\\readme." + _ToString(sTextValue) + ".txt";
+						if (fs::exists(sPathReadme))
+						{
+							std::wifstream fmodReadmeFile(sPathReadme);
+							while (std::getline(fmodReadmeFile, sTextLine))
+							{
+								_Trim(sTextLine);
+								if (_iStarts_With(sTextLine, L"authors", true))
+								{
+									sTextLine.erase(0, 7);
+									_Trim(sTextLine);
+									wcsncpy_s(g_RBRCarSelectionMenuEntry[idx].wszCarFMODBankAuthors, sTextLine.c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[idx].wszCarFMODBankAuthors));
+									break;
+								}
+							}
+						}
+					}						
 				}
 			}
 		}
@@ -3394,7 +3438,7 @@ void CNGPCarMenu::CompleteProfileRenaming()
 		{
 			sNewProfileFileNameWithoutPostfix = m_sRBRRootDir + "\\SavedGames\\pf" + g_pRBRProfile->szProfileName;
 
-			// If the new profile file exists the backup the previous profile before removing it (RBR uses profileName as a savedGames file name).
+			// If the new profile file exists then backup the previous profile before removing it (RBR uses profileName as a savedGames file name).
 			// If the new file does NOT exist then restore the previous profile name.
 			if (fs::exists(sNewProfileFileNameWithoutPostfix + ".rbr") /*&& fs::exists(sNewProfileFileNameWithoutPostfix + ".acm")*/)
 			{
@@ -3410,6 +3454,8 @@ void CNGPCarMenu::CompleteProfileRenaming()
 						break;
 					idx++;
 				}
+
+				LogPrint("Old profile stored in %s backup file", (sPrevProfileFileName + ".rbr.bak").c_str());
 
 				// The new profile filename exists (the new profile name must be valid and creation succeeded). Backup the previous profile file just-in-case
 				fs::rename(m_sRBRRootDir + "\\SavedGames\\pf" + m_sMenuPrevDriverName + ".rbr", sPrevProfileFileName + ".rbr.bak");
@@ -3692,6 +3738,17 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 				m_sMenuStatusText2 = "Use UP/DOWN ARROW keys to choose characters not supported by the original RBR profile name editor.";
 				m_sMenuStatusText3 = "The profile name can have only valid WinOS filename characters.";
 			}
+			else if (m_iMenuSelection == C_MENUCMD_RBRRXOPTION)
+			{
+				//RBRRX_PrepareLoadTrack("tracks\\[Finland] SS Rimmila");
+				//if(RBRRX_PrepareLoadTrack("tracks\\[Finland] SS Rimmila"))
+				//	m_pGame->StartGame(41, 0, IRBRGame::ERBRWeatherType::GOOD_WEATHER, IRBRGame::ERBRTyreTypes::TYRE_GRAVEL_DRY, nullptr);
+				m_pGame->StartGame(41, 0, IRBRGame::ERBRWeatherType::GOOD_WEATHER, IRBRGame::ERBRTyreTypes::TYRE_GRAVEL_DRY, nullptr);
+			}
+			else if (m_iMenuSelection == C_MENUCMD_RBRTMOPTION)
+			{
+				RBRRX_PrepareLoadTrack("SS Rimmila");
+			}
 		}
 
 
@@ -3767,6 +3824,36 @@ void CNGPCarMenu::CheckPoint(float fCheckPointTime, int iCheckPointID, const cha
 void CNGPCarMenu::StageStarted(int iMap, const char* ptxtPlayerName, bool bWasFalseStart)
 {
 	// Do nothing
+}
+
+
+//----------------------------------------------------------------------------------------------------
+// Draw red progress bar to visualize some waiting logic (fex in RBR LoadTrack screen)
+//
+void CNGPCarMenu::DrawProgressBar(D3DRECT rec, float progressValue, LPDIRECT3DDEVICE9 pOutputD3DDevice)
+{
+	int iBarWidth;
+	int iCompletedIdx;
+
+	if (pOutputD3DDevice == nullptr)
+		pOutputD3DDevice = g_pRBRIDirect3DDevice9;
+
+	iCompletedIdx = static_cast<int>(progressValue * 20.0f);
+	iBarWidth = (rec.x2 - rec.x1) / 20;	
+
+	//DebugPrint("DrawProgressBar. progressValue=%f iCompletedIdx=%d", progressValue, iCompletedIdx);
+
+	for (int idx = 0; idx < 20; idx++)
+	{
+		rec.x2 = rec.x1 + 1;
+		pOutputD3DDevice->Clear(1, &rec, D3DCLEAR_TARGET, C_DARKGREYBACKGROUND_COLOR, 0, 0);
+		
+		rec.x1 = rec.x2;
+		rec.x2 = rec.x1 + (iBarWidth - 1);
+		pOutputD3DDevice->Clear(1, &rec, D3DCLEAR_TARGET, (idx < iCompletedIdx ? C_REDSEPARATORLINE_COLOR : C_LIGHTGREYBACKGROUND_COLOR), 0, 0);
+
+		rec.x1 += (iBarWidth - 2);
+	}
 }
 
 
@@ -4245,7 +4332,10 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 					g_pFontCarSpecCustom->DrawText(posX, (iCarSpecPrintRow++) * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsCustomTxt, 0);
 
 				if (pCarSelectionMenuEntry->wszCarFMODBank[0] != L'\0')
-					g_pFontCarSpecCustom->DrawText(posX, (iCarSpecPrintRow++) * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarFMODBank, 0);
+					if(pCarSelectionMenuEntry->wszCarFMODBankAuthors[0] != L'\0')
+						g_pFontCarSpecCustom->DrawText(posX, (iCarSpecPrintRow++) * iFontHeight + posY, C_CARSPECTEXT_COLOR, (std::wstring(pCarSelectionMenuEntry->wszCarFMODBank) + L" by " + pCarSelectionMenuEntry->wszCarFMODBankAuthors).c_str(), 0);
+					else
+						g_pFontCarSpecCustom->DrawText(posX, (iCarSpecPrintRow++) * iFontHeight + posY, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarFMODBank, 0);
 			}
 		}
 		else

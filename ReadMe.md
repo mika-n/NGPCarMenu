@@ -97,6 +97,9 @@ rbr\Plugins\NGPCarMenu.ini options (see the NGPCarMenu.ini.sample file for more 
 | RBRRX_MinimapPictureRect | Location of the minimap in stage selecton menu screen. 0=Disables the minimap feature. By default the minimap is drawn on top of the map preview image |
 | RBRRX_MapPictureRectOpt | The same as above, but for the options screen following the stages menu list (ie. when a stage has been already selected) |
 | RBRRX_MinimapPictureRectOpt | (see the comment above) |
+| RBRRX_MapPictureRectLoadTrack | The same as above, but for the custom BTB "loading a track" screen. |
+| RBRRX_MinimapPictureRectLoadTrack | (see the comment above) |
+| RBRRX_CustomLoadTrackScreen | 0 or 1. 0=Custom BTB "loading a track" screen disabled. 1=Custom BTB "loading a track" screen enabled (default). |
 | RBRRX_RecentMapsMaxCount | Maximum number of recent driven maps shown on top of the RBR_RX stages menu list (shortcuts to a map) |
 | GenerateReplayMetadataFile | 0 or 1. Generates a replay metadata INI file when a new RBR, RBRTM or RBRRX replay is saved in Replays folder. BTB replay in NGPCarMenu needs this metadata file, so don't disable this if you want to replay BTB recordings afterwards. |
 

@@ -57,6 +57,10 @@
 #define C_CARSPECTEXT_COLOR			D3DCOLOR_ARGB(255, 0xE0,0xE0,0xE0)   // Grey-White
 #define C_CARMODELTITLETEXT_COLOR	D3DCOLOR_ARGB(255, 0x7F,0x7F,0xFE)   // Light-blue
 
+#define C_DARKGREYBACKGROUND_COLOR  D3DCOLOR_ARGB(255, 0x3D, 0x3D, 0x3D) // Dark grey
+#define C_LIGHTGREYBACKGROUND_COLOR D3DCOLOR_ARGB(255, 0x7E, 0x7E, 0x7E) // Light grey
+#define C_REDSEPARATORLINE_COLOR    D3DCOLOR_ARGB(255, 0xB2, 0x2B, 0x2B) // Dark red
+
 #define C_REPLAYFILENAME_SCREENSHOT   "_NGPCarMenu.rpl"  // Name of the temporary RBR replay file (char and wchar version)
 #define C_REPLAYFILENAME_SCREENSHOTW L"_NGPCarMenu.rpl"
 
@@ -101,6 +105,7 @@ typedef struct {
 	WCHAR wszCarPhysicsCustomTxt[128]; // If physics/CARNAME file has a 5th text line, otherwise blank text. The 5th line in car model file can be used to show any custom text
 
 	WCHAR wszCarFMODBank[128];		   // Custom FMOD sound bank
+	WCHAR wszCarFMODBankAuthors[128];  // Custom FMOD sound bank
 } RBRCarSelectionMenuEntry;
 typedef RBRCarSelectionMenuEntry* PRBRCarSelectionMenuEntry;
 
@@ -406,6 +411,10 @@ extern float   __fastcall CustomRBRControllerAxisData(void* objPointer, DWORD du
 
 extern RBRCarSelectionMenuEntry g_RBRCarSelectionMenuEntry[];
 
+extern wchar_t* g_pOrigLoadReplayStatusText;
+extern wchar_t  g_wszCustomLoadReplayStatusText[];
+
+
 #if USE_DEBUG == 1
 extern CD3DFont* g_pFontDebug;
 #endif
@@ -569,12 +578,14 @@ protected:
 	int  CalculateMaxLenCarMenuName();
 	void ClearCachedCarPreviewImages();
 
+	void DrawProgressBar(D3DRECT rec, float progressValue, LPDIRECT3DDEVICE9 pOutputD3DDevice = nullptr);
+
 	void RBRRX_EndScene();
 	void RBRTM_EndScene();
 
 	void RBRRX_OverrideLoadTrackScreen();
 	BOOL RBRRX_PrepareReplayTrack(const std::string& mapName);
-	void RBRRX_LoadTrack(int mapMenuIdx);
+	BOOL RBRRX_PrepareLoadTrack(int mapMenuIdx);
 
 	void   FocusRBRRXNthMenuIdxRow(int menuIdx);
 	void   UpdateRBRRXMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo);
@@ -684,7 +695,8 @@ public:
 	bool   m_bRBRRXPluginActive;				// TRUE/FALSE if the current active custom plugin is RBR_RX (active = The RBRTM plugin handler is running in foreground)
 	//bool   m_pRBRRXPluginFirstTimeInitialization; // First time to open RBRRX plugin after RBR launch. Go automatically to Race screen and skip the race/replay menu
 	bool   m_bRBRRXReplayActive;				// TRUE=Replay is playing RBRRX BTB track, FALSE = standard RBR replay file and track
-	bool   m_bRBRRXReplayEnding;
+	bool   m_bRBRRXRacingActive;				// TRUE=Racing on track #41 is RBRX BTB track
+	bool   m_bRBRRXReplayOrRacingEnding;
 	bool   m_bRBRRXLoadingNewTrack;				// TRUE=Loading RBRRX track and first-time custom LoadTrack screen initialization
 
 	int    m_latestCarID;						// The latest carID in racing mode
@@ -771,6 +783,7 @@ public:
 	void CompleteSaveReplayProcess(const std::list<std::wstring>& replayFileQueue);
 
 	void RBRRX_CustomLoadTrackScreen();
+	BOOL RBRRX_PrepareLoadTrack(const std::string& mapName);
 
 	//------------------------------------------------------------------------------------------------
 	virtual const char* GetName(void);

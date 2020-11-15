@@ -218,10 +218,30 @@ void CNGPCarMenu::FocusRBRRXNthMenuIdxRow(int menuIdx)
 
 void CNGPCarMenu::UpdateRBRRXMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo)
 {
-	if (pRBRRXMapInfo == nullptr) 
+	int numOfItems;
+	PRBRRXMenuItem pMenuItems;
+	PRBRRXPlugin pTmpRBRRXPlugin = m_pRBRRXPlugin;
+
+	if (pTmpRBRRXPlugin == nullptr)
+		pTmpRBRRXPlugin = (PRBRRXPlugin)GetModuleBaseAddr("RBR_RX.DLL");
+
+	if (pRBRRXMapInfo == nullptr || pTmpRBRRXPlugin == nullptr)
 		return;
 
-	if (menuIdx < 0 || menuIdx >= m_numOfItemsCustomMapMenuRBRRX)
+	if (m_pCustomMapMenuRBRRX != nullptr)
+	{
+		// Custom menu in RBRRX
+		pMenuItems = m_pCustomMapMenuRBRRX;
+		numOfItems = m_numOfItemsCustomMapMenuRBRRX;
+	}
+	else
+	{
+		// The original menu in RBRRX
+		pMenuItems = pTmpRBRRXPlugin->pMenuItems;
+		numOfItems = pTmpRBRRXPlugin->numOfItems;
+	}
+
+	if (menuIdx < 0 || menuIdx >= numOfItems)
 	{
 		pRBRRXMapInfo->mapIDMenuIdx = -1;
 		pRBRRXMapInfo->folderName.clear();
@@ -229,13 +249,13 @@ void CNGPCarMenu::UpdateRBRRXMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo)
 	}
 
 	pRBRRXMapInfo->mapIDMenuIdx = menuIdx;
-	pRBRRXMapInfo->folderName = m_pCustomMapMenuRBRRX[menuIdx].szTrackFolder;
+	pRBRRXMapInfo->folderName = pMenuItems[menuIdx].szTrackFolder;
 	_ToLowerCase(pRBRRXMapInfo->folderName);
 
-	pRBRRXMapInfo->name = m_pCustomMapMenuRBRRX[menuIdx].szTrackName;
+	pRBRRXMapInfo->name = pMenuItems[menuIdx].szTrackName;
 
 	// RecentMaps shortcuts are shown in the menu only when the num of orig BTB tracks is >=17
-	if (m_origNumOfItemsMenuItemsRBRRX >= 8 + 1 + 8)
+	if (m_origNumOfItemsMenuItemsRBRRX >= 8 + 1 + 8 && m_pCustomMapMenuRBRRX != nullptr)
 	{
 		if (menuIdx < min((int)m_recentMapsRBRRX.size(), m_recentMapsMaxCountRBRRX))
 		{
@@ -270,7 +290,7 @@ void CNGPCarMenu::UpdateRBRRXMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo)
 		ReadAndSetDefaultINIValue("INFO", "comment", pRBRRXMapInfo->comment, "");
 
 		// Skip map image initializations if the map preview img feature is disabled (RBRRX_MapPictureRect=0)
-		if (m_mapRBRRXPictureRect[0].bottom != -1 || m_mapRBRRXPictureRect[1].bottom != -1)
+		if (m_mapRBRRXPictureRect[0].bottom != -1 || m_mapRBRRXPictureRect[1].bottom != -1 || m_mapRBRRXPictureRect[2].bottom != -1)
 		{
 			std::wstring sTrackName = _ToWString(pRBRRXMapInfo->name);
 
@@ -423,17 +443,26 @@ void __fastcall RBRRX_CustomLoadTrackScreen()
 
 void CNGPCarMenu::RBRRX_CustomLoadTrackScreen()
 {
-	if (m_pRBRRXPlugin != nullptr && m_pRBRRXPlugin->pRBRRXIDirect3DDevice9 != nullptr)
+	static float progressValue = 0.0f;
+
+	PRBRRXPlugin pTmpRBRRXPlugin = m_pRBRRXPlugin;
+	if(pTmpRBRRXPlugin == nullptr)
+		pTmpRBRRXPlugin = (PRBRRXPlugin)GetModuleBaseAddr("RBR_RX.DLL");
+
+	LPDIRECT3DDEVICE9 pOutputD3DDevice = (pTmpRBRRXPlugin != nullptr ? pTmpRBRRXPlugin->pRBRRXIDirect3DDevice9 : nullptr);
+	if (pOutputD3DDevice != nullptr)
 	{				
 		int posx = 0, posy = 0;
 		int iFontHeight;
 		int iPrintRow = 0;
 
+		//DebugPrint(L"ProgressValue=%f  Loading=%s", progressValue, (!m_bRBRRXReplayActive ? _ToWString(m_latestMapRBRRX.name).c_str() : g_wszCustomLoadReplayStatusText));
+
 		if (g_pFontRBRRXLoadTrack == nullptr)
 		{
 			// Font to draw RBRRX "Loading: stageName" text
 			g_pFontRBRRXLoadTrack = new CD3DFont(L"Trebuchet MS", 14, 0 /*D3DFONT_BOLD*/);
-			g_pFontRBRRXLoadTrack->InitDeviceObjects(m_pRBRRXPlugin->pRBRRXIDirect3DDevice9);
+			g_pFontRBRRXLoadTrack->InitDeviceObjects(pOutputD3DDevice);
 			g_pFontRBRRXLoadTrack->RestoreDeviceObjects();
 		}
 
@@ -441,24 +470,25 @@ void CNGPCarMenu::RBRRX_CustomLoadTrackScreen()
 		{
 			// Font to draw track details in RBRRX LoadTrack screen
 			g_pFontRBRRXLoadTrackSpec = new CD3DFont(L"Trebuchet MS", 12, 0 /*D3DFONT_BOLD*/);
-			g_pFontRBRRXLoadTrackSpec->InitDeviceObjects(m_pRBRRXPlugin->pRBRRXIDirect3DDevice9);
+			g_pFontRBRRXLoadTrackSpec->InitDeviceObjects(pOutputD3DDevice);
 			g_pFontRBRRXLoadTrackSpec->RestoreDeviceObjects();
 		}
 
 		iFontHeight = g_pFontRBRRXLoadTrack->GetTextHeight();
 
 		D3DRECT rec = { 0, 0, g_rectRBRWndClient.right, g_rectRBRWndClient.bottom };
-		m_pRBRRXPlugin->pRBRRXIDirect3DDevice9->Clear(1, &rec, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 0, 0, 0), 0, 0);
+		pOutputD3DDevice->Clear(1, &rec, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 0, 0, 0), 0, 0);
 
 		if (m_bRBRRXLoadingNewTrack)
 		{
-			// New BTB track loading. Initialize the custom LoadTrack screen
+			// New BTB track loading. Initialize the custom LoadTrack screen and show the map and minimap (except if this track loading is for replaying then don't show those preview images)
 			m_bRBRRXLoadingNewTrack = false;
+			progressValue = 0.0f;
 
 			SAFE_RELEASE(m_latestMapRBRRX.imageTextureLoadTrack.pTexture);
-			if (!m_latestMapRBRRX.previewImageFile.empty() && fs::exists(m_latestMapRBRRX.previewImageFile) && m_mapRBRRXPictureRect[2].bottom != -1)
+			if (!m_bRBRRXReplayActive && !m_latestMapRBRRX.previewImageFile.empty() && fs::exists(m_latestMapRBRRX.previewImageFile) && m_mapRBRRXPictureRect[2].bottom != -1)
 			{
-				HRESULT hResult = D3D9CreateRectangleVertexTexBufferFromFile(m_pRBRRXPlugin->pRBRRXIDirect3DDevice9,
+				HRESULT hResult = D3D9CreateRectangleVertexTexBufferFromFile(pOutputD3DDevice,
 					m_latestMapRBRRX.previewImageFile,
 					(float)m_mapRBRRXPictureRect[2].left, (float)m_mapRBRRXPictureRect[2].top, (float)(m_mapRBRRXPictureRect[2].right - m_mapRBRRXPictureRect[2].left), (float)(m_mapRBRRXPictureRect[2].bottom - m_mapRBRRXPictureRect[2].top),
 					&m_latestMapRBRRX.imageTextureLoadTrack,
@@ -470,49 +500,68 @@ void CNGPCarMenu::RBRRX_CustomLoadTrackScreen()
 			}
 		}
 
+		RBRAPI_MapRBRPointToScreenPoint(50, 400, &posx, &posy);
+
+		// Draw "loading progess bar"
+		rec.x1 = posx - 10;
+		rec.y1 = posy - (iFontHeight-2);
+		rec.x2 = rec.x1 + (20 * 10);
+		rec.y2 = rec.y1 + (iFontHeight-2);
+		DrawProgressBar(rec, max(progressValue, 0.05f), pOutputD3DDevice);
+		progressValue += 0.05f;
+
 		// Draw RBRRX map preview img on LoadTrack screen
 		if (m_latestMapRBRRX.imageTextureLoadTrack.pTexture != nullptr)
-			D3D9DrawVertexTex2D(m_pRBRRXPlugin->pRBRRXIDirect3DDevice9, m_latestMapRBRRX.imageTextureLoadTrack.pTexture, m_latestMapRBRRX.imageTextureLoadTrack.vertexes2D);
+			D3D9DrawVertexTex2D(pOutputD3DDevice, m_latestMapRBRRX.imageTextureLoadTrack.pTexture, m_latestMapRBRRX.imageTextureLoadTrack.vertexes2D);
 
 		// Vertical red bar and "Loading <trackName>" txt
-		RBRAPI_MapRBRPointToScreenPoint(50, 400, &posx, &posy);
 		rec.x1 = posx - 10;
 		rec.y1 = posy;
 		rec.x2 = rec.x1 + 5;
 		rec.y2 = rec.y1 + (iFontHeight * 2);
-		g_pRBRPlugin->m_pRBRRXPlugin->pRBRRXIDirect3DDevice9->Clear(1, &rec, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 0xB2, 0x2B, 0x2B), 0, 0);
+		pOutputD3DDevice->Clear(1, &rec, D3DCLEAR_TARGET, C_REDSEPARATORLINE_COLOR, 0, 0);
 
-		g_pFontRBRRXLoadTrack->DrawText(posx, posy + (iFontHeight * iPrintRow++), C_CARSPECTEXT_COLOR, (std::wstring(L"Loading: ") + _ToWString(m_latestMapRBRRX.name)).c_str(), 0);
+		// Show track details and preview images if this track is not loaded for a replay
+		if (!m_bRBRRXReplayActive)
+		{
+			g_pFontRBRRXLoadTrack->DrawText(posx, posy + (iFontHeight * iPrintRow++), C_CARSPECTEXT_COLOR, _ToWString(m_latestMapRBRRX.name).c_str(), 0);
 
-		// Track details
-		std::wstringstream sStrStream;
-		sStrStream << std::fixed << std::setprecision(1);
-		if (m_latestMapRBRRX.length > 0)
-			// TODO: KM to Miles miles=km*0.621371192 config option support
-			sStrStream << m_latestMapRBRRX.length << L" km";
+			// Track details
+			std::wstringstream sStrStream;
+			sStrStream << std::fixed << std::setprecision(1);
+			if (m_latestMapRBRRX.length > 0)
+				// TODO: KM to Miles miles=km*0.621371192 config option support
+				sStrStream << m_latestMapRBRRX.length << L" km";
 
-		if (!m_latestMapRBRRX.surface.empty())
-			sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << GetLangStr(m_latestMapRBRRX.surface.c_str());
+			if (!m_latestMapRBRRX.surface.empty())
+				sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << GetLangStr(m_latestMapRBRRX.surface.c_str());
 
-		if (m_latestMapRBRRX.numOfPacenotes >= 15)
-			sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << GetLangStr(L"pacenotes");
+			if (m_latestMapRBRRX.numOfPacenotes >= 15)
+				sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << GetLangStr(L"pacenotes");
 
-		//if (!m_latestMapRBRRX.comment.empty())
-		//	sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << _ToWString(m_latestMapRBRRX.comment);
+			//if (!m_latestMapRBRRX.comment.empty())
+			//	sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << _ToWString(m_latestMapRBRRX.comment);
 
-		g_pFontRBRRXLoadTrackSpec->DrawText(posx, posy + (iFontHeight * iPrintRow++), C_CARMODELTITLETEXT_COLOR, sStrStream.str().c_str(), 0);
-		g_pFontRBRRXLoadTrackSpec->DrawText(posx, posy + (iFontHeight * iPrintRow++), C_CARMODELTITLETEXT_COLOR, m_latestMapRBRRX.author.c_str(), 0);
+			g_pFontRBRRXLoadTrackSpec->DrawText(posx, posy + (iFontHeight * iPrintRow++), C_CARMODELTITLETEXT_COLOR, sStrStream.str().c_str(), 0);
+			g_pFontRBRRXLoadTrackSpec->DrawText(posx, posy + (iFontHeight * iPrintRow++), C_CARMODELTITLETEXT_COLOR, m_latestMapRBRRX.author.c_str(), 0);
 
-		// Draw RBRRX minimap on LoadTrack screen
-		RBRRX_DrawMinimap(m_latestMapRBRRX.folderName, 2, m_pRBRRXPlugin->pRBRRXIDirect3DDevice9);
+			// Draw RBRRX minimap on LoadTrack screen
+			RBRRX_DrawMinimap(m_latestMapRBRRX.folderName, 2, pOutputD3DDevice);
+		}
+		else
+		{
+			// Replay file loading BTB track. Show just "Replay fileName" text
+			g_pFontRBRRXLoadTrack->DrawText(posx, posy + (iFontHeight * iPrintRow++), C_CARSPECTEXT_COLOR, g_wszCustomLoadReplayStatusText, 0);
+		}
 
-		g_pRBRPlugin->m_pRBRRXPlugin->pRBRRXIDirect3DDevice9->EndScene();
-		g_pRBRPlugin->m_pRBRRXPlugin->pRBRRXIDirect3DDevice9->Present(0, 0, 0, 0);
+		pOutputD3DDevice->EndScene();
+		pOutputD3DDevice->Present(0, 0, 0, 0);
 	}
 }
 
 
 //----------------------------------------------------------------------------------------------------
+// Link RBRRX to the custom LoadTrack handler in NGPCarMenu (see NGPCarMenu.ini RBRRX_CustomLoadTrackScreen option)
 //
 void CNGPCarMenu::RBRRX_OverrideLoadTrackScreen()
 {
@@ -556,7 +605,7 @@ BOOL CNGPCarMenu::RBRRX_PrepareReplayTrack(const std::string& mapName)
 
 	pTmpRBRRXPlugin->loadTrackID = mapMenuIdx;
 	pTmpRBRRXPlugin->loadTrackStatusD8 = 0x01;
-	//pTmpRBRRXPlugin->loadTrackStatusD0 = 0x01;
+	pTmpRBRRXPlugin->loadTrackStatusD0 = 0x01; //??
 
 	// Overrides CoreDArbox menu name in rbr menu (this is shown as a replay map name in RBR)
 	std::wstring swTrackName = _ToWString(std::string(pTmpRBRRXPlugin->pMenuItems[mapMenuIdx].szTrackName));
@@ -564,13 +613,15 @@ BOOL CNGPCarMenu::RBRRX_PrepareReplayTrack(const std::string& mapName)
 	WriteOpCodePtr((LPVOID)0x4A1123, (LPVOID)pTmpRBRRXPlugin->wszTrackName);
 
 	pTmpRBRRXPlugin->currentPhysicsID = pTmpRBRRXPlugin->pMenuItems[mapMenuIdx].physicsID;
-	//pTmpRBRRXPlugin->loadTrackStatusA4 = 0x01;
+	pTmpRBRRXPlugin->loadTrackStatusA4 = 0x01; //??
 
 	// TrackID used for BTB tracks
 	WriteOpCodeInt32((LPVOID)0x1660804, 41);
 
+	m_bRBRRXLoadingNewTrack = TRUE;
 	m_bRBRRXReplayActive = TRUE;
-	m_bRBRRXReplayEnding = FALSE; 
+	m_bRBRRXRacingActive = FALSE;
+	m_bRBRRXReplayOrRacingEnding = FALSE; 
 
 	return TRUE;
 }
@@ -579,43 +630,81 @@ BOOL CNGPCarMenu::RBRRX_PrepareReplayTrack(const std::string& mapName)
 //----------------------------------------------------------------------------------------------------
 // Load BTB track
 //
-void CNGPCarMenu::RBRRX_LoadTrack(int mapMenuIdx)
+BOOL CNGPCarMenu::RBRRX_PrepareLoadTrack(const std::string& mapName)
 {
-	if (m_pRBRRXPlugin == nullptr || m_pRBRRXPlugin->pMenuItems == nullptr || m_pRBRRXPlugin->numOfItems <= 0 || m_pRBRRXPlugin->numOfItems <= mapMenuIdx)
-		return;
+	int mapMenuIdx = -1;
+	PRBRRXPlugin pTmpRBRRXPlugin;
 
-	LogPrint("Loading BTB track %s", m_pRBRRXPlugin->pMenuItems[mapMenuIdx].szTrackName);
+	pTmpRBRRXPlugin = m_pRBRRXPlugin;
+	if (pTmpRBRRXPlugin == nullptr)
+		pTmpRBRRXPlugin = (PRBRRXPlugin)GetModuleBaseAddr("RBR_RX.DLL");
+
+	if(pTmpRBRRXPlugin != nullptr)
+		mapMenuIdx = RBRRX_FindMenuItemIdxByMapName(pTmpRBRRXPlugin->pMenuItems, pTmpRBRRXPlugin->numOfItems, mapName);
+
+	if (mapMenuIdx < 0)
+	{
+		LogPrint("WARNING. RBRRX PrepareLoadTrack tried to load '%s' BTB track, but it is missing. BTB track loading failed", mapName.c_str());
+		return FALSE;
+	}
+
+	return RBRRX_PrepareLoadTrack(mapMenuIdx);
+}
+
+BOOL CNGPCarMenu::RBRRX_PrepareLoadTrack(int mapMenuIdx)
+{
+	PRBRRXPlugin pTmpRBRRXPlugin;
+
+	m_bRBRRXLoadingNewTrack = TRUE;
+
+	pTmpRBRRXPlugin = m_pRBRRXPlugin;
+	if (pTmpRBRRXPlugin == nullptr)
+		pTmpRBRRXPlugin = (PRBRRXPlugin)GetModuleBaseAddr("RBR_RX.DLL");
+
+	// Exit if RBRRX plugin is missing or no BTB tracks then exit
+	if (pTmpRBRRXPlugin == nullptr || pTmpRBRRXPlugin->pMenuItems == nullptr || pTmpRBRRXPlugin->numOfItems <= 0 || pTmpRBRRXPlugin->numOfItems <= mapMenuIdx)
+		return FALSE;
+
+	m_bRBRRXRacingActive = TRUE;
+
+	DebugPrint("Loading BTB track %s", pTmpRBRRXPlugin->pMenuItems[mapMenuIdx].szTrackName);
 
 	DebugPrint("Set load status D8 and D0");
-	m_pRBRRXPlugin->loadTrackID = mapMenuIdx;
-	m_pRBRRXPlugin->loadTrackStatusD8 = 0x01;
-	m_pRBRRXPlugin->loadTrackStatusD0 = 0x01;
+	pTmpRBRRXPlugin->loadTrackID = mapMenuIdx;
+	pTmpRBRRXPlugin->loadTrackStatusD8 = 0x01;
+	pTmpRBRRXPlugin->loadTrackStatusD0 = 0x01;
 
 	DebugPrint("Calling RBRRXLoadTrackSetup1");
-	tRBRRXLoadTrackSetup1 func_RBRRXLoadTrackSetup1 = (tRBRRXLoadTrackSetup1)((DWORD)m_pRBRRXPlugin + 0x33A80);
-	func_RBRRXLoadTrackSetup1(&m_pRBRRXPlugin->pMenuItems[mapMenuIdx]);
+	tRBRRXLoadTrackSetup1 func_RBRRXLoadTrackSetup1 = (tRBRRXLoadTrackSetup1)((DWORD)pTmpRBRRXPlugin + 0x33A80);
+	func_RBRRXLoadTrackSetup1(&pTmpRBRRXPlugin->pMenuItems[mapMenuIdx]);
 
 	// Overrides CoreDArbox menu name in rbr menu (this is shown as a "Loading" map name in RBR)
-	std::wstring swTrackName = _ToWString(std::string(m_pRBRRXPlugin->pMenuItems[mapMenuIdx].szTrackName));
-	wcsncpy_s(m_pRBRRXPlugin->wszTrackName, min(swTrackName.length() + 1, COUNT_OF_ITEMS(m_pRBRRXPlugin->wszTrackName)), swTrackName.c_str(), COUNT_OF_ITEMS(m_pRBRRXPlugin->wszTrackName));
-	WriteOpCodePtr((LPVOID)0x4A1123, (LPVOID)m_pRBRRXPlugin->wszTrackName);
+	std::wstring swTrackName = _ToWString(std::string(pTmpRBRRXPlugin->pMenuItems[mapMenuIdx].szTrackName));
+	wcsncpy_s(pTmpRBRRXPlugin->wszTrackName, min(swTrackName.length() + 1, COUNT_OF_ITEMS(pTmpRBRRXPlugin->wszTrackName)), swTrackName.c_str(), COUNT_OF_ITEMS(pTmpRBRRXPlugin->wszTrackName));
+	WriteOpCodePtr((LPVOID)0x4A1123, (LPVOID)pTmpRBRRXPlugin->wszTrackName);
 
 	DebugPrint("Set physticsID and load status A4");
-	m_pRBRRXPlugin->currentPhysicsID = m_pRBRRXPlugin->pMenuItems[mapMenuIdx].physicsID;
-	m_pRBRRXPlugin->loadTrackStatusA4  = 0x01;
+	pTmpRBRRXPlugin->currentPhysicsID = pTmpRBRRXPlugin->pMenuItems[mapMenuIdx].physicsID;
+	pTmpRBRRXPlugin->loadTrackStatusA4  = 0x01;
 
-	DebugPrint("Calling RBRRXLoadTrackSetup2");
-	tRBRRXLoadTrackSetup2 func_RBRRXLoadTrackSetup2 = (tRBRRXLoadTrackSetup2)((DWORD)m_pRBRRXPlugin + 0x13e90);
-	func_RBRRXLoadTrackSetup2(0x0A, 0x00, 0x04, -1, 0, 0, 0, 0, 0x01);
+	//DebugPrint("Calling RBRRXLoadTrackSetup2");
+	//tRBRRXLoadTrackSetup2 func_RBRRXLoadTrackSetup2 = (tRBRRXLoadTrackSetup2)((DWORD)pTmpRBRRXPlugin + 0x13e90);
+	//func_RBRRXLoadTrackSetup2(0x0A, 0x00, 0x04, -1, 0, 0, 0, 0, 0x01);
 
-	DebugPrint("Calling RBRRXLoadTrackSetup3");
-	tRBRRXLoadTrackSetup3 func_RBRRXLoadTrackSetup3 = (tRBRRXLoadTrackSetup3)((DWORD)m_pRBRRXPlugin + 0x146A0);
-	func_RBRRXLoadTrackSetup3(0x01, 0x04);
+	//DebugPrint("Calling RBRRXLoadTrackSetup3");
+	//tRBRRXLoadTrackSetup3 func_RBRRXLoadTrackSetup3 = (tRBRRXLoadTrackSetup3)((DWORD)pTmpRBRRXPlugin + 0x146A0);
+	//func_RBRRXLoadTrackSetup3(0x01, 0x04);
 
 	DebugPrint("Writing trackID 41 to RBR memory");
 	WriteOpCodeInt32((LPVOID)0x1660804, 41);
 
+	// RBR_RX has a bug where shorter track name is not null-terminated, so the remaining of the previous track name may be shown as a left over if the new track name is shorter.
+	UpdateRBRRXMapInfo(mapMenuIdx, &m_latestMapRBRRX);
+	wcsncpy_s(pTmpRBRRXPlugin->wszTrackName, min(m_latestMapRBRRX.name.length() + 1, COUNT_OF_ITEMS(pTmpRBRRXPlugin->wszTrackName)), _ToWString(m_latestMapRBRRX.name).c_str(), COUNT_OF_ITEMS(pTmpRBRRXPlugin->wszTrackName));
+
 	//m_pGame->StartGame(41, 0, IRBRGame::ERBRWeatherType::GOOD_WEATHER, IRBRGame::ERBRTyreTypes::TYRE_GRAVEL_DRY, nullptr);
+
+	return TRUE;
 }
 
 
@@ -1209,24 +1298,25 @@ void CNGPCarMenu::RBRRX_EndScene()
 			}
 		}		
 		
-		else if (m_bRBRRXReplayActive && m_bRBRRXReplayEnding)
+		else if (m_bRBRRXReplayOrRacingEnding && (m_bRBRRXRacingActive || m_bRBRRXReplayActive))
 		{
-			if(g_pRBRMenuSystem->currentMenuObj == nullptr || (g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->customPluginMenuObj))
+			if(g_pRBRMenuSystem->currentMenuObj == nullptr || (m_bRBRRXReplayActive && g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->customPluginMenuObj))
 			{
 				//
-				// RBRRX replay was active, but now menu is back to mainmenu or a custom RBRX plugin menu or blank menu (RBRRX bug). 
+				// RBRRX replay was active, but now menu is back to mainmenu or a custom plugin menu or blank menu (RBRRX bug). 
 				// Complete the BTB replaying and jump back to RBR main menu if RBRRX bug left the game in blank menu (default behavior of RBR replaying)
 				//
-				m_bRBRRXReplayActive = m_bRBRRXReplayEnding = FALSE;
 				g_pRBRMenuSystem->currentMenuObj = g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN];
 				g_pRBRMenuSystem->currentMenuObj2 = g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN];
+
+				m_bRBRRXReplayActive = m_bRBRRXRacingActive = m_bRBRRXReplayOrRacingEnding = FALSE;
 			}
 		}
 	}
 
-	else if (g_pRBRGameMode->gameMode == 0x0C && m_bRBRRXReplayActive)
+	else if (g_pRBRGameMode->gameMode == 0x0C && (m_bRBRRXRacingActive || m_bRBRRXReplayActive))
 	{
-		m_bRBRRXReplayEnding = TRUE;
+		m_bRBRRXReplayOrRacingEnding = TRUE;
 	}
 
 	else if (g_pRBRGameMode->gameMode == 0x0D /*10*/)

@@ -645,7 +645,12 @@ void CNGPCarMenu::RBRTM_EndScene()
 						if (m_carRBRTMPictureUseTransparent)
 							m_pD3D9RenderStateCache->RestoreState();
 
-						// 3D model and custom livery text is drawn on top of the car preview image (bottom left corner)
+						// 3D model and custom livery and FMOD authors text is drawn on top of the car preview image (bottom left corner)
+						if (pCarSelectionMenuEntry->wszCarFMODBank[0] != L'\0' && pCarSelectionMenuEntry->wszCarFMODBankAuthors[0] != L'\0')
+							g_pFontCarSpecModel->DrawText(m_carRBRTMPictureRect.left + 2, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, 
+								C_CARSPECTEXT_COLOR, 
+								(std::wstring(pCarSelectionMenuEntry->wszCarFMODBank) + L" by " + pCarSelectionMenuEntry->wszCarFMODBankAuthors).c_str(), 0);
+
 						if (pCarSelectionMenuEntry->wszCarPhysicsLivery[0] != L'\0')
 							g_pFontCarSpecModel->DrawText(m_carRBRTMPictureRect.left + 2, m_carRBRTMPictureRect.bottom - ((++iCarSpecPrintRow) * iFontHeight) - 4, C_CARSPECTEXT_COLOR, pCarSelectionMenuEntry->wszCarPhysicsLivery, 0);
 

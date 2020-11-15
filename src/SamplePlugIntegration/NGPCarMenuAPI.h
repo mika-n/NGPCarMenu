@@ -41,6 +41,8 @@ typedef DWORD (APIENTRY *tAPI_InitializeFont)(const char* fontName, DWORD fontSi
 typedef BOOL  (APIENTRY *tAPI_DrawTextA)(DWORD pluginID, int textID, int posX, int posY, const char* szText, DWORD fontID, DWORD color, DWORD drawOptions);
 typedef BOOL  (APIENTRY* tAPI_DrawTextW)(DWORD pluginID, int textID, int posX, int posY, const wchar_t* wszText, DWORD fontID, DWORD color, DWORD drawOptions);
 
+typedef BOOL  (APIENTRY* tAPI_PrepareBTBTrackLoad)(DWORD pluginID, LPCSTR szBTBTrackName); // Prepare track #41 (CortezArbroz) for a BTB track loading. Custom plugin should call m_pGame->StartGame(...) IRBR method to start a rally after calling this prepare function
+
 #define C_NGPCARMENU_DLL_FILENAME "\\Plugins\\NGPCarMenu.dll"
 
 // Image flags to finetune how the image is scaled and positioned
@@ -97,6 +99,8 @@ protected:
 	tAPI_DrawTextA fp_API_DrawTextA;
 	tAPI_DrawTextW fp_API_DrawTextW;
 
+	tAPI_PrepareBTBTrackLoad fp_API_PrepareBTBTrackLoad;
+
 	void Cleanup()
 	{
 		fp_API_InitializePluginIntegration = nullptr;
@@ -108,6 +112,7 @@ protected:
 		fp_API_InitializeFont = nullptr;
 		fp_API_DrawTextA = nullptr;
 		fp_API_DrawTextW = nullptr;
+		fp_API_PrepareBTBTrackLoad = nullptr;
 
 		if (hDLLModule) ::FreeLibrary(hDLLModule);
 		hDLLModule = nullptr;
@@ -162,6 +167,7 @@ public:
 				fp_API_InitializeFont = (tAPI_InitializeFont)GetProcAddress(hDLLModule, "API_InitializeFont");
 				fp_API_DrawTextA = (tAPI_DrawTextA)GetProcAddress(hDLLModule, "API_DrawTextA");
 				fp_API_DrawTextW = (tAPI_DrawTextW)GetProcAddress(hDLLModule, "API_DrawTextW");
+				fp_API_PrepareBTBTrackLoad = (tAPI_PrepareBTBTrackLoad)GetProcAddress(hDLLModule, "API_PrepareBTBTrackLoad");
 			}
 		}
 
@@ -270,6 +276,15 @@ public:
 	{
 		if (fp_API_DrawTextW != nullptr)
 			return fp_API_DrawTextW(pluginID, textID, posX, posY, wszText, fontID, color, drawOptions);
+		else
+			return FALSE;
+	}
+
+	// Prepare RBR track #41 (CortezArbroz) for BTB track loading. szBTBTrackName param should be the name of the BTB track (ie. the value of rx_content\tracks\someBTBTrack\track.ini NAME option and as shown in RBRRX stages menu list)
+	BOOL PrepareBTBTrackLoad(DWORD pluginID, LPCSTR szBTBTrackName)
+	{
+		if (fp_API_PrepareBTBTrackLoad != nullptr)
+			return fp_API_PrepareBTBTrackLoad(pluginID, szBTBTrackName);
 		else
 			return FALSE;
 	}

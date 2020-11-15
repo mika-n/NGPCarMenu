@@ -51,8 +51,8 @@ END
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,0,15,2
- PRODUCTVERSION 1,0,15,2
+ FILEVERSION 1,0,15,3
+ PRODUCTVERSION 1,0,15,3
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -69,12 +69,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "MIKA-N"
             VALUE "FileDescription", "NGPCarMenu - Customized ""Select Car"" and ""Select Stage"" game menus with RBRTM and RBR_RX integration for Richard Burns Rally (RBR) 1.02 SSE. https://github.com/mika-n/NGPCarMenu"
-            VALUE "FileVersion", "1.0.15.2"
+            VALUE "FileVersion", "1.0.15.3"
             VALUE "InternalName", "NGPCarMe.dll"
             VALUE "LegalCopyright", "Copyright (C) 2020 by mika-n. All rights reserved. See LicenseText.txt for more information. This tool is distributed free of charge. Use at your own risk. https://github.com/mika-n/NGPCarMenu"
             VALUE "OriginalFilename", "NGPCarMenu.dll"
             VALUE "ProductName", "NGPCarMenu"
-            VALUE "ProductVersion", "1.0.15.2"
+            VALUE "ProductVersion", "1.0.15.3"
         END
     END
     BLOCK "VarFileInfo"
