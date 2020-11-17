@@ -2014,8 +2014,19 @@ void CNGPCarMenu::InitCarSpecData_RBRCIT()
 
 			// NGP car model or stock car model lookup to RBCIT/carList/carList.ini file. If the car specs are missing then try to use NGPCarMenu custom carspec INI file
 			if (!InitCarSpecDataFromNGPFile(&ngpCarListINIFile, &g_RBRCarSelectionMenuEntry[idx], iNumOfGears))
+			{
 				if (InitCarSpecDataFromNGPFile(&customCarSpecsINIFile, &g_RBRCarSelectionMenuEntry[idx], iNumOfGears))
+				{
 					g_RBRCarSelectionMenuEntry[idx].wszCarPhysics3DModel[0] = L'\0'; // Clear warning about missing NGP car desc file
+				}
+				else
+				{
+					LogPrint(L"Warning. Car model %s not found from NGP carList.ini or %s file. Car details are missing",
+						g_RBRCarSelectionMenuEntry[idx].wszCarModel,
+						(m_sRBRRootDirW + L"\\Plugins\\" L"" VS_PROJECT_NAME L"\\CustomCarSpecs.ini").c_str()
+					);
+				}
+			}
 		}
 	}
 	catch (const fs::filesystem_error& ex)
@@ -2319,7 +2330,7 @@ std::wstring CNGPCarMenu::InitCarModelNameFromCarsFile(CSimpleIniW* stockCarList
 			}
 
 			// If the car name has "xxx (2)" type of trailing tag (original car names set by RBRCIT in Cars.ini has the slot number) then remove that unnecessary tag
-			if (sStockCarModelName[sStockCarModelName.length() - 3] == L'(' && sStockCarModelName[sStockCarModelName.length() - 1] == L')')
+			if (sStockCarModelName[sStockCarModelName.length() - 3] == L'(' && sStockCarModelName[sStockCarModelName.length() - 1] == L')' && iswdigit(sStockCarModelName[sStockCarModelName.length() - 2]) )
 			{
 				sStockCarModelName.erase(sStockCarModelName.length() - 3);
 				_Trim(sStockCarModelName);
