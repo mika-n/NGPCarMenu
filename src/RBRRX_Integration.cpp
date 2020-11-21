@@ -161,7 +161,7 @@ void CNGPCarMenu::RBRRX_AddMapToRecentList(std::string folderName)
 //------------------------------------------------------------------------------------------------
 // Focus Nth RBRRX menu row (scroll the menu if necessary, ie. change the first visible stage entry in the menu list)
 //
-void CNGPCarMenu::FocusRBRRXNthMenuIdxRow(int menuIdx)
+void CNGPCarMenu::RBRRX_FocusNthMenuIdxRow(int menuIdx)
 {
 	//if (m_currentCustomMapSelectedItemIdxRBRRX == menuIdx)
 	//	return;
@@ -216,7 +216,7 @@ void CNGPCarMenu::FocusRBRRXNthMenuIdxRow(int menuIdx)
    if (pszValue == nullptr) { str.clear(); btbTrackINIFile.SetValue(section, key, defaultValue); btbTrackIniModified = TRUE; } \
    else str = pszValue; }
 
-void CNGPCarMenu::UpdateRBRRXMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo)
+void CNGPCarMenu::RBRRX_UpdateMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo)
 {
 	int numOfItems;
 	PRBRRXMenuItem pMenuItems;
@@ -362,7 +362,7 @@ void CNGPCarMenu::UpdateRBRRXMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo)
 //------------------------------------------------------------------------------------------------
 // Update rbrrx track.ini length= option value
 //
-double CNGPCarMenu::UpdateRBRRXINILengthOption(const std::string& folderName, double newLengthKm)
+double CNGPCarMenu::RBRRX_UpdateINILengthOption(const std::string& folderName, double newLengthKm)
 {
 	std::string sIniFileName;
 
@@ -524,6 +524,8 @@ void CNGPCarMenu::RBRRX_CustomLoadTrackScreen()
 		// Show track details and preview images if this track is not loaded for a replay
 		if (!m_bRBRRXReplayActive)
 		{
+			m_bRBRRXRacingActive = TRUE;
+
 			g_pFontRBRRXLoadTrack->DrawText(posx, posy + (iFontHeight * iPrintRow++), C_CARSPECTEXT_COLOR, _ToWString(m_latestMapRBRRX.name).c_str(), 0);
 
 			// Track details
@@ -619,9 +621,9 @@ BOOL CNGPCarMenu::RBRRX_PrepareReplayTrack(const std::string& mapName)
 	WriteOpCodeInt32((LPVOID)0x1660804, 41);
 
 	m_bRBRRXLoadingNewTrack = TRUE;
-	m_bRBRRXReplayActive = TRUE;
 	m_bRBRRXRacingActive = FALSE;
-	m_bRBRRXReplayOrRacingEnding = FALSE; 
+	m_bRBRRXReplayActive = TRUE;
+	//m_bRBRRXReplayOrRacingEnding = FALSE; 
 
 	return TRUE;
 }
@@ -655,8 +657,6 @@ BOOL CNGPCarMenu::RBRRX_PrepareLoadTrack(int mapMenuIdx)
 {
 	PRBRRXPlugin pTmpRBRRXPlugin;
 
-	m_bRBRRXLoadingNewTrack = TRUE;
-
 	pTmpRBRRXPlugin = m_pRBRRXPlugin;
 	if (pTmpRBRRXPlugin == nullptr)
 		pTmpRBRRXPlugin = (PRBRRXPlugin)GetModuleBaseAddr("RBR_RX.DLL");
@@ -664,8 +664,6 @@ BOOL CNGPCarMenu::RBRRX_PrepareLoadTrack(int mapMenuIdx)
 	// Exit if RBRRX plugin is missing or no BTB tracks then exit
 	if (pTmpRBRRXPlugin == nullptr || pTmpRBRRXPlugin->pMenuItems == nullptr || pTmpRBRRXPlugin->numOfItems <= 0 || pTmpRBRRXPlugin->numOfItems <= mapMenuIdx)
 		return FALSE;
-
-	m_bRBRRXRacingActive = TRUE;
 
 	DebugPrint("Loading BTB track %s", pTmpRBRRXPlugin->pMenuItems[mapMenuIdx].szTrackName);
 
@@ -699,10 +697,15 @@ BOOL CNGPCarMenu::RBRRX_PrepareLoadTrack(int mapMenuIdx)
 	WriteOpCodeInt32((LPVOID)0x1660804, 41);
 
 	// RBR_RX has a bug where shorter track name is not null-terminated, so the remaining of the previous track name may be shown as a left over if the new track name is shorter.
-	UpdateRBRRXMapInfo(mapMenuIdx, &m_latestMapRBRRX);
+	RBRRX_UpdateMapInfo(mapMenuIdx, &m_latestMapRBRRX);
 	wcsncpy_s(pTmpRBRRXPlugin->wszTrackName, min(m_latestMapRBRRX.name.length() + 1, COUNT_OF_ITEMS(pTmpRBRRXPlugin->wszTrackName)), _ToWString(m_latestMapRBRRX.name).c_str(), COUNT_OF_ITEMS(pTmpRBRRXPlugin->wszTrackName));
 
 	//m_pGame->StartGame(41, 0, IRBRGame::ERBRWeatherType::GOOD_WEATHER, IRBRGame::ERBRTyreTypes::TYRE_GRAVEL_DRY, nullptr);
+
+	m_bRBRRXLoadingNewTrack = TRUE;
+	m_bRBRRXRacingActive = TRUE;
+	m_bRBRRXReplayActive = FALSE;
+	//m_bRBRRXReplayOrRacingEnding = FALSE;
 
 	return TRUE;
 }
@@ -945,6 +948,41 @@ void CNGPCarMenu::RBRRX_DrawMinimap(const std::string& folderName, int screenID,
 
 
 //----------------------------------------------------------------------------------------------------
+// BTB map loading completed
+//
+void CNGPCarMenu::RBRRX_OnMapLoaded()
+{
+	// If RBRRX custom plugin is active then add the current map to "recent RBRRX maps" shortcut list
+	if (m_bRecentMapsRBRRXModified)
+	{
+		if (!m_latestMapRBRRX.name.empty())
+		{
+			if (m_latestMapRBRRX.length < 0)
+			{
+				// BTB track track.ini file doesn't have the Length attribute yet. Store it now when the BTB track was loaded for the first time. Round meters down to one decimal km value
+				m_latestMapRBRRX.length = floor((g_pRBRCarInfo != nullptr ? g_pRBRCarInfo->distanceToFinish : 0) / 100.0f) / 10.0f;
+				if (m_latestMapRBRRX.length < 1.0f)
+					// For some reason the BTB track data doesn't have a valid length (some very short tracks have this issue). Use dummy value and let UpdateRBRRXINILengthOption method to decide if it can use pacenotes.ini to estimate the length
+					m_latestMapRBRRX.length = -1;
+
+				RBRRX_UpdateINILengthOption(m_latestMapRBRRX.folderName, m_latestMapRBRRX.length);
+			}
+
+			// Stage loaded while RBRRX plugin is active. Add the latest map (=stage) to the top of the recent list and update RX_CONTENt\Tracks\myMap\track.ini Length parameter if it is missing
+			if (m_recentMapsMaxCountRBRRX > 0)
+			{
+				m_bRecentMapsRBRRXModified = FALSE;
+				RBRRX_AddMapToRecentList(m_latestMapRBRRX.folderName);
+				if (m_bRecentMapsRBRRXModified) SaveSettingsToRBRRXRecentMaps();
+			}
+		}
+
+		m_bRecentMapsRBRRXModified = FALSE;
+	}
+}
+
+
+//----------------------------------------------------------------------------------------------------
 // RBR_RX integration handler (DX9 EndScene)
 //
 void CNGPCarMenu::RBRRX_EndScene()
@@ -1064,7 +1102,7 @@ void CNGPCarMenu::RBRRX_EndScene()
 							else
 								menuIdx = RBRRX_FindMenuItemIdxByFolderName(m_pCustomMapMenuRBRRX, m_numOfItemsCustomMapMenuRBRRX, m_latestMapRBRRX.folderName);
 
-							FocusRBRRXNthMenuIdxRow(menuIdx);
+							RBRRX_FocusNthMenuIdxRow(menuIdx);
 						}
 
 						// Stages menu is open, save recentMaps INI options when a stage is chosen for racing and the recent list is modified
@@ -1081,14 +1119,14 @@ void CNGPCarMenu::RBRRX_EndScene()
 						{
 							if (m_prevCustomMapSelectedItemIdxRBRRX == 0 && m_pRBRRXPlugin->pMenuData->selectedItemIdx + 1 == min(m_numOfItemsCustomMapMenuRBRRX, 8 + 1 + 8))
 								// Wrap to the last menu item
-								FocusRBRRXNthMenuIdxRow(m_numOfItemsCustomMapMenuRBRRX - 1);
+								RBRRX_FocusNthMenuIdxRow(m_numOfItemsCustomMapMenuRBRRX - 1);
 							else if (m_prevCustomMapSelectedItemIdxRBRRX + 1 == min(m_numOfItemsCustomMapMenuRBRRX, 8 + 1 + 8) && m_pRBRRXPlugin->pMenuData->selectedItemIdx == 0)
 								// Wrap to the first menu item 
-								FocusRBRRXNthMenuIdxRow(0);
+								RBRRX_FocusNthMenuIdxRow(0);
 							else if (m_prevCustomMapSelectedItemIdxRBRRX < m_pRBRRXPlugin->pMenuData->selectedItemIdx)
-								FocusRBRRXNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX + 1); // Next row (scroll if necessary)
+								RBRRX_FocusNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX + 1); // Next row (scroll if necessary)
 							else if (m_prevCustomMapSelectedItemIdxRBRRX > m_pRBRRXPlugin->pMenuData->selectedItemIdx)
-								FocusRBRRXNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX - 1); // Prev row (scroll if necessary)
+								RBRRX_FocusNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX - 1); // Prev row (scroll if necessary)
 						}
 						else
 						{
@@ -1097,12 +1135,12 @@ void CNGPCarMenu::RBRRX_EndScene()
 							{
 								switch (m_pRBRRXPlugin->keyCode)
 								{
-								case VK_PRIOR: FocusRBRRXNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX - (8 + 1 + 8)); break;	// PageUp key (move 8+1+8 rows up)
-								case VK_NEXT:  FocusRBRRXNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX + (8 + 1 + 8)); break;	// PageDown key (move 8+1+8 rows down)
-								case VK_END:   FocusRBRRXNthMenuIdxRow(m_numOfItemsCustomMapMenuRBRRX - 1); break;	// End key
-								case VK_HOME:  FocusRBRRXNthMenuIdxRow(0); break;									// Home key
-								case VK_LEFT:  FocusRBRRXNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX - 8); break;	// Left arrow key (move 8 rows up)
-								case VK_RIGHT: FocusRBRRXNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX + 8); break;	// Right arrow key (move 8 rows down)
+								case VK_PRIOR: RBRRX_FocusNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX - (8 + 1 + 8)); break;	// PageUp key (move 8+1+8 rows up)
+								case VK_NEXT:  RBRRX_FocusNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX + (8 + 1 + 8)); break;	// PageDown key (move 8+1+8 rows down)
+								case VK_END:   RBRRX_FocusNthMenuIdxRow(m_numOfItemsCustomMapMenuRBRRX - 1); break;	// End key
+								case VK_HOME:  RBRRX_FocusNthMenuIdxRow(0); break;									// Home key
+								case VK_LEFT:  RBRRX_FocusNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX - 8); break;	// Left arrow key (move 8 rows up)
+								case VK_RIGHT: RBRRX_FocusNthMenuIdxRow(m_currentCustomMapSelectedItemIdxRBRRX + 8); break;	// Right arrow key (move 8 rows down)
 								}
 
 								// Don't repeat the same key until the key is released and re-pressed
@@ -1114,7 +1152,7 @@ void CNGPCarMenu::RBRRX_EndScene()
 						if (m_latestMapRBRRX.mapIDMenuIdx != m_currentCustomMapSelectedItemIdxRBRRX || m_latestMapRBRRX.trackOptionsFirstTimeSetup == FALSE)
 						{
 							m_latestMapRBRRX.trackOptionsFirstTimeSetup = TRUE;
-							UpdateRBRRXMapInfo(m_currentCustomMapSelectedItemIdxRBRRX, &m_latestMapRBRRX);
+							RBRRX_UpdateMapInfo(m_currentCustomMapSelectedItemIdxRBRRX, &m_latestMapRBRRX);
 
 							// Release previous map preview texture and read a new image file (if preview path is set and the image file exists and map preview img drawing is not disabled)
 							SAFE_RELEASE(m_latestMapRBRRX.imageTexture.pTexture);
@@ -1297,30 +1335,60 @@ void CNGPCarMenu::RBRRX_EndScene()
 				m_pCustomMapMenuRBRRX = nullptr;
 			}
 		}		
-		
-		else if (m_bRBRRXReplayOrRacingEnding && (m_bRBRRXRacingActive || m_bRBRRXReplayActive))
-		{
-			if(g_pRBRMenuSystem->currentMenuObj == nullptr || (m_bRBRRXReplayActive && g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->customPluginMenuObj))
-			{
-				//
-				// RBRRX replay was active, but now menu is back to mainmenu or a custom plugin menu or blank menu (RBRRX bug). 
-				// Complete the BTB replaying and jump back to RBR main menu if RBRRX bug left the game in blank menu (default behavior of RBR replaying)
-				//
-				g_pRBRMenuSystem->currentMenuObj = g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN];
-				g_pRBRMenuSystem->currentMenuObj2 = g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN];
 
-				m_bRBRRXReplayActive = m_bRBRRXRacingActive = m_bRBRRXReplayOrRacingEnding = FALSE;
+/*
+		if (m_bRBRRXReplayOrRacingEnding)
+		{
+			if (GetActiveReplayType() == 2)
+			{
+				//if (g_pRBRMenuSystem->currentMenuObj == nullptr || (m_bRBRRXReplayActive && g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->customPluginMenuObj))
+				if (g_pRBRMenuSystem->currentMenuObj == nullptr || (g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->customPluginMenuObj))
+				{
+					DebugPrint("RBRRXReplayOrRacingEnding. Replay ended");
+
+					//
+					// RBRRX replay was active, but now menu is back to mainmenu or a custom plugin menu or blank menu (RBRRX bug). 
+					// Complete the BTB replaying and jump back to RBR main menu if RBRRX bug left the game in blank menu
+					//
+					g_pRBRMenuSystem->currentMenuObj = g_pRBRMenuSystem->currentMenuObj2 = g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN];
+
+					m_bRBRRXReplayActive = m_bRBRRXRacingActive = FALSE;
+					m_bRBRRXReplayOrRacingEnding = FALSE;
+				}
+			}
+*/
+
+/*
+			else // if (GetActiveReplayType() == 1 || GetActiveRacingType() > 0)
+			{
+				// Sometimes RBRBRX may end up showing an empty menu. Fix it.
+				if (g_pRBRMenuSystem->currentMenuObj == nullptr)
+				{
+					DebugPrint("RBRRXReplayOrRacingEnding. Racing ended but menu is NULL. Jumping to main menu");
+
+					g_pRBRMenuSystem->currentMenuObj = g_pRBRMenuSystem->currentMenuObj2 = g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN];
+				}
+
+				// BTB racing ended
+				m_bRBRRXReplayActive = m_bRBRRXRacingActive = FALSE;
+				m_bRBRRXReplayOrRacingEnding = FALSE;
 			}
 		}
+*/
 	}
 
-	else if (g_pRBRGameMode->gameMode == 0x0C && (m_bRBRRXRacingActive || m_bRBRRXReplayActive))
+/*
+	else if (g_pRBRGameMode->gameMode == 0x0C && (GetActiveRacingType() == 2 || GetActiveReplayType() == 2) )
 	{
 		m_bRBRRXReplayOrRacingEnding = TRUE;
 	}
+*/
 
-	else if (g_pRBRGameMode->gameMode == 0x0D /*10*/)
+/*
+	else if (g_pRBRGameMode->gameMode == 0x0D)
 	{
+		// TODO. Move to OnMapLoaded handler (0D status is set after 05 map loading step is completed)?
+
 		if (m_bRecentMapsRBRRXModified && m_bRBRRXPluginActive)
 		{
 			if (!m_latestMapRBRRX.name.empty())
@@ -1336,7 +1404,7 @@ void CNGPCarMenu::RBRRX_EndScene()
 						// For some reason the BTB track data doesn't have a valid length (some very short tracks have this issue). Use dummy value and let UpdateRBRRXINILengthOption method to decide if it can use pacenotes.ini to estimate the length
 						m_latestMapRBRRX.length = -1;
 
-					UpdateRBRRXINILengthOption(m_latestMapRBRRX.folderName, m_latestMapRBRRX.length);
+					RBRRX_UpdateINILengthOption(m_latestMapRBRRX.folderName, m_latestMapRBRRX.length);
 				}
 
 				// Stage loading while RBRRX plugin is active. Add the latest map (=stage) to the top of the recent list and update RX_CONTENt\Tracks\myMap\track.ini Length parameter if it is missing
@@ -1351,5 +1419,7 @@ void CNGPCarMenu::RBRRX_EndScene()
 			m_bRecentMapsRBRRXModified = FALSE;
 		}
 	}
+*/
+
 }
 

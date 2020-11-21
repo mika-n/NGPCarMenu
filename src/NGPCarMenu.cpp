@@ -664,6 +664,7 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_dwAutoLogonEventStartTick = 0;
 
 	m_pTracksIniFile = nullptr;
+
 	ZeroMemory(&m_mapRBRTMPictureRect, sizeof(m_mapRBRTMPictureRect));
 	m_latestMapRBRTM.mapID = -1;
 	m_recentMapsMaxCountRBRTM = 5;		// Default num of recent maps/stages on top of the RBRTM Shakedown stages menu list
@@ -750,10 +751,16 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_pRBRRXPlugin = nullptr;		// Pointer to RBRRX plugin object
 	m_iRBRRXPluginMenuIdx = 0;		// Index (Nth item) to RBRRX plugin in RBR in-game Plugins menu list (0=Not yet initialized, -1=Initialized but not found, >0=Initialized and found)
 	m_bRBRRXPluginActive = false;
+
 	m_bRBRRXReplayActive = false;
 	m_bRBRRXRacingActive = false;
-	m_bRBRRXReplayOrRacingEnding = false;
+	//m_bRBRRXReplayOrRacingEnding = false;
+
 	m_bRBRRXLoadingNewTrack = true;
+
+	m_bRBRReplayOrRacingEnding = false;
+	m_bRBRRacingActive = false;
+	m_bRBRReplayActive = false;
 
 	g_mapRBRRXRightBlackBarVertexBuffer = nullptr;
 
@@ -1121,6 +1128,8 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 
 		if (m_iMenuRBRTMOption)
 		{			
+			m_bRBRTMTrackLoadBugFixWhenNotActive = pluginINIFile.GetBoolValue(L"Default", L"RBRTM_TrackLoadBugFixWhenNotActive", true);
+
 			try
 			{
 				std::string sIniFileNameRBRTMRecentMaps = m_sRBRRootDir + "\\Plugins\\" VS_PROJECT_NAME "\\RBRTMRecentMaps.ini";
@@ -1130,8 +1139,6 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 
 				// Read customized RBRTM Shakedown stages menu settings (recent maps)
 				m_recentMapsMaxCountRBRTM = min(pluginINIFile.GetLongValue(L"Default", L"RBRTM_RecentMapsMaxCount", 5), 500);
-
-				//LogPrint("Notice. The list of recent driven RBRTM stages is no longer stored in Plugins\\NGPCarMenu.ini file. RBRTM_RecentMap1..N options are now stored in Plugins\\NGPCarMenu\\RBRTMRecentMaps.ini file");
 
 				for (int idx = m_recentMapsMaxCountRBRTM; idx > 0; idx--)
 					RBRTM_AddMapToRecentList(rbrtmRecentMapsINI.GetLongValue("Default", (std::string("RBRTM_RecentMap").append(std::to_string(idx)).c_str()), -1));
@@ -2019,8 +2026,8 @@ void CNGPCarMenu::InitCarSpecData_RBRCIT()
 				{
 					g_RBRCarSelectionMenuEntry[idx].wszCarPhysics3DModel[0] = L'\0'; // Clear warning about missing NGP car desc file
 				}
-				else
-				{
+				else if (!m_bRallySimFansPluginInstalled) // RSF doesnt use carList ini file
+				{					
 					LogPrint(L"Warning. Car model %s not found from NGP carList.ini or %s file. Car details are missing",
 						g_RBRCarSelectionMenuEntry[idx].wszCarModel,
 						(m_sRBRRootDirW + L"\\Plugins\\" L"" VS_PROJECT_NAME L"\\CustomCarSpecs.ini").c_str()
@@ -2500,7 +2507,8 @@ bool CNGPCarMenu::InitCarSpecDataFromPhysicsFile(const std::string &folderName, 
 
 		if (!bResult)
 		{
-			LogPrint("Missing NGP model description file in %s folder. It is recommended to use RBRCIT or EasyRBR tool to setup custom NGP cars", folderName.c_str());
+			if(!m_bRallySimFansPluginInstalled)
+				LogPrint("Missing NGP model description file in %s folder. It is recommended to use RBRCIT or EasyRBR tool to setup custom NGP cars", folderName.c_str());
 
 			std::wstring wFolderName = _ToWString(folderName);
 			// Show warning that RBRCIT/NGP carModel file is missing
@@ -3838,6 +3846,55 @@ void CNGPCarMenu::StageStarted(int iMap, const char* ptxtPlayerName, bool bWasFa
 }
 
 
+//---------------------------------------------------
+// RBR=Normal RBR (ie. no custom plugin), RBRTM, RBRRX, RSF
+//
+std::string CNGPCarMenu::GetActivePluginName()
+{
+	// Custom plugin not active, so the RBR status must be "RBR" (=normal RBR)
+	if (m_bRBRTMPluginActive)
+		return "RBRTM";
+
+	if (m_bRBRRXPluginActive)
+		return "RBRRX";			// At some point RBRRX may be active even when the custom plugin is not the current menu obj (ie. stage selected in RBRRX stages menu and the RBR stage options menu is open)
+
+	if (g_pRBRPluginIntegratorLinkList != nullptr)
+	{
+		for (auto& item : *g_pRBRPluginIntegratorLinkList)
+			if (item->m_bCustomPluginActive)
+				return item->m_sCustomPluginName;
+	}
+
+	// Check if the game is in standard "RBR" state or unknown custom plugin
+	if ( g_pRBRMenuSystem != nullptr && g_pRBRMenuSystem->currentMenuObj != nullptr && g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->customPluginMenuObj )
+		return "UNK"; // Unknown custom plugin
+	
+	return "RBR";
+}
+
+// 0=no replay, 1=Normal RBR/TM/RSF (classic map), 2=BTB (rbrrx/btb map)
+int CNGPCarMenu::GetActiveReplayType()
+{
+	if (m_bRBRRXReplayActive) 
+		return 2;
+	else if (m_bRBRReplayActive)
+		return 1;
+
+	return 0;
+}
+
+// 0=no racing, 1=Normal RBR/TM/RSF (classic map), 2=BTB (rbrrx/btb map)
+int CNGPCarMenu::GetActiveRacingType()
+{
+	if (m_bRBRRXRacingActive) 
+		return 2;
+	else if (m_bRBRRacingActive)
+		return 1;
+
+	return 0;
+}
+
+
 //----------------------------------------------------------------------------------------------------
 // Draw red progress bar to visualize some waiting logic (fex in RBR LoadTrack screen)
 //
@@ -3865,6 +3922,148 @@ void CNGPCarMenu::DrawProgressBar(D3DRECT rec, float progressValue, LPDIRECT3DDE
 
 		rec.x1 += (iBarWidth - 2);
 	}
+}
+
+
+//----------------------------------------------------------------------------------------------------
+// Plugin activated/deactivated handler
+//
+void CNGPCarMenu::OnPluginActivated(const std::string& pluginName)
+{
+	DebugPrint("OnPluginActivated %s", pluginName.c_str());
+
+	if(pluginName == "RBRTM")
+		m_bRBRTMPluginActive = true;
+	else if (pluginName == "RBRRX")
+		m_bRBRRXPluginActive = true;
+}
+
+void CNGPCarMenu::OnPluginDeactivated(const std::string& pluginName)
+{
+	DebugPrint("OnPluginDeactivated %s", pluginName.c_str());
+
+	if (pluginName == "RBRTM")
+	{
+		m_bRBRTMPluginActive = false;
+
+		// When RBRTM plugin is deactivated then fix a RBRTM bug where QuickRally and RBRRX sometimes crashes or cannot start a stage if the previously driven stage was a RBRTM stage.
+		// The bug is because of RBRTM "hijacking" the stage start routine and expecting QuickRally and BTB rally launch to provide certain RBRTM specific identifiers. Restore temporarly
+		// the default RBR behaviour and re-initialize it when RBRTM launches a new stage the next time.
+		if (m_bRBRTMTrackLoadBugFixWhenNotActive)
+		{
+			BYTE buffer[2] = { 0xC2, 0x04 };
+			WriteOpCodeBuffer((LPVOID)0x57157C, buffer, sizeof(buffer));
+
+			// 0x1597F128->+0x04 is 0x01 (set by RBRTM) when RBRTM track is loaded and 0x00 when the track is something else (RBR QuickRally or BTB)
+			DWORD* pdwRBRTMActiveFlag = (DWORD*)GetModuleOffsetAddr("RBRTM.DLL", 0x4F128);
+			if (pdwRBRTMActiveFlag != nullptr)
+			{
+				pdwRBRTMActiveFlag = (DWORD*)*pdwRBRTMActiveFlag;
+				if (pdwRBRTMActiveFlag != nullptr)
+					*(DWORD*)(((DWORD)pdwRBRTMActiveFlag) + 0x04) = 0x00;
+			}
+		}
+	}
+	else if (pluginName == "RBRRX")
+		m_bRBRRXPluginActive = false;
+}
+
+
+//----------------------------------------------------------------------------------------------------
+// A map for racing or replaying successfully loaded (note! OnRaceStarted/OnReplayStarted called already before this handler)
+//
+void CNGPCarMenu::OnMapLoaded()
+{	
+	static int prevRBRTMMapID = -1;
+
+	// Racing is about to begin. Store the current racing carID and trackID because replay metadata INI file needs this information
+	m_latestCarID = g_pRBRMapSettings->carID;
+	m_latestMapID = g_pRBRMapSettings->trackID;
+
+	if (GetActivePluginName() == "RBRTM")
+	{
+		// RBRTM doesn't update the RBR stage name string value, it alawys uses "Rally HQ" string, so read the stageName option from Tracks.ini file
+		if (prevRBRTMMapID != m_latestMapID)
+		{
+			m_latestMapName = GetMapNameByMapID(m_latestMapID);
+			prevRBRTMMapID = m_latestMapID;
+		}
+
+		RBRTM_OnMapLoaded();
+	}
+	else
+	{
+		m_latestMapName = (g_pRBRMapLocationName != nullptr ? g_pRBRMapLocationName : L"");
+
+		if (GetActivePluginName() == "RBRRX")
+			RBRRX_OnMapLoaded();
+	}
+
+	DebugPrint(L"OnMapLoaded. CarID=%d MapID=%d MapName=%s ActivePlugin=%s", m_latestCarID, m_latestMapID, m_latestMapName.c_str(), _ToWString(GetActivePluginName()).c_str());
+}
+
+
+void CNGPCarMenu::OnRaceStarted()
+{
+	m_bRBRRacingActive = TRUE;
+
+	// If custom BTB PrepareBTBTrack API call was called then RBRRX racing flag is already set, but if RBRRX plugin was used to start a BTB track then check if RBRRX plugin is active to determine if this rally is with BTB track (and not the normal RBR #41 Cortez racing)
+	if (!m_bRBRRXRacingActive)
+		m_bRBRRXRacingActive = (g_pRBRPlugin->GetActivePluginName() == "RBRRX");
+
+	// Racing started. Start a watcher thread to receive notifications of new rbr\Replays\fileName.rpl replay files if NGPCarMenu generated RPL metadata file generation is enabled
+	if (!g_watcherNewReplayFiles.Running() && m_bGenerateReplayMetadataFile)
+	{
+		if (g_watcherNewReplayFileListener == nullptr)
+		{
+			g_watcherNewReplayFiles.SetDir(m_sRBRRootDirW + L"\\Replays");
+			g_watcherNewReplayFileListener = new RBRReplayFileWatcherListener();
+			g_watcherNewReplayFiles.AddFileChangeListener(g_watcherNewReplayFileListener);
+		}
+
+		// Make sure the fileQueue is empty before starting a new watcher thread (usually at this point the queue should be empty)
+		g_watcherNewReplayFileListener->DoCompletion(TRUE);
+		g_watcherNewReplayFiles.Start();
+	}
+
+	DebugPrint("OnRaceStarted. RBRRacingActive=%d  RBRRXRacingActive=%d", m_bRBRRacingActive, m_bRBRRXRacingActive);
+}
+
+void CNGPCarMenu::OnRaceEnded()
+{
+	DebugPrint("OnRaceEnded. RBRRacingActive=%d  RBRRXRacingActive=%d  watcherRPLRunning=%d  Map=%s (%d)", m_bRBRRacingActive, m_bRBRRXRacingActive, g_watcherNewReplayFiles.Running(), _ToString(m_latestMapName).c_str(), m_latestMapID);
+
+	m_bRBRRacingActive = m_bRBRRXRacingActive = m_bRBRReplayOrRacingEnding = FALSE;
+}
+
+void CNGPCarMenu::OnReplayStarted()
+{
+	m_bRBRReplayActive = TRUE;
+
+	DebugPrint("OnReplayStarted. RBRReplayActive=%d  RBRRXReplayActive=%d", m_bRBRReplayActive, m_bRBRRXReplayActive);
+}
+
+void CNGPCarMenu::OnReplayEnded()
+{
+	DebugPrint("OnReplayEnded. RBRReplayActive=%d  RBRRXReplayActive=%d  CurrentMnuIdx=%d", m_bRBRReplayActive, m_bRBRRXReplayActive, RBRAPI_MapRBRMenuObjToID(g_pRBRMenuSystem->currentMenuObj));
+
+	if (GetActiveReplayType() == 2)
+	{
+		// To complete RBRRX replay we need to wait until the current menu is back to customPlugin or if the menu is empty (null, RBRRX bug in certain scenarios)
+		if (g_pRBRMenuSystem->currentMenuObj == nullptr || (g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->customPluginMenuObj))
+		{
+			DebugPrint("OnReplayEnded. RBRRXReplay. currentMenuObj=%08x", (DWORD)g_pRBRMenuSystem->currentMenuObj);
+
+			//
+			// RBRRX replay was active, but now menu is back to mainmenu or a custom plugin menu or a blank menu (RBRRX bug). 
+			// Complete the BTB replaying and jump back to RBR main menu if RBRRX bug left the game in the blank menu and threw back to a custom plugin
+			//
+			g_pRBRMenuSystem->currentMenuObj = g_pRBRMenuSystem->currentMenuObj2 = g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN];
+			m_bRBRReplayActive = m_bRBRRXReplayActive = m_bRBRReplayOrRacingEnding = FALSE;
+		}
+	}
+	else
+		m_bRBRReplayActive = m_bRBRRXReplayActive = m_bRBRReplayOrRacingEnding = FALSE;
 }
 
 
@@ -3981,19 +4180,19 @@ inline void CNGPCarMenu::CustomRBRDirectXBeginScene()
 			if (m_iMenuRBRTMOption == 1)
 			{
 				if (!m_bRBRTMPluginActive && g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->customPluginMenuObj && g_pRBRPluginMenuSystem->pluginsMenuObj->selectedItemIdx == m_iRBRTMPluginMenuIdx)
-					m_bRBRTMPluginActive = true;
+					OnPluginActivated("RBRTM");
 				else if (m_bRBRTMPluginActive && (g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->optionsMenuObj || g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->pluginsMenuObj || g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN]))
 					// Menu is back in RBR Plugins/Options/Main menu, so RBRTM cannot be the foreground plugin anymore
-					m_bRBRTMPluginActive = false;
+					OnPluginDeactivated("RBRTM");
 			}
 
 			// Check if RBRRX plugin is active
 			if (m_iMenuRBRRXOption == 1)
 			{
 				if (!m_bRBRRXPluginActive && g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->customPluginMenuObj && m_iRBRRXPluginMenuIdx == g_pRBRPluginMenuSystem->pluginsMenuObj->selectedItemIdx)
-					m_bRBRRXPluginActive = true;
+					OnPluginActivated("RBRRX");
 				else if (m_bRBRRXPluginActive && (g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->optionsMenuObj || g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->pluginsMenuObj || g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN]))
-					m_bRBRRXPluginActive = false;
+					OnPluginDeactivated("RBRRX");
 			}
 
 			// Check if any of the custom plugins are active
@@ -4154,10 +4353,10 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 */
 #endif
 
-
-	if ((g_pRBRGameMode->gameMode == 0x02 /*&& m_bRBRTMPluginActive*/) || g_pRBRGameMode->gameMode == 0x09)
+/*
+	if (g_pRBRGameMode->gameMode == 0x02 || g_pRBRGameMode->gameMode == 0x09)
 	{
-		// Racing is about to end (but RBRB is still in "Restart/SaveReplay" menu). 
+		// Racing is about to end (but RBR is still in "Restart/SaveReplay" menu). 
 		// Start a watcher thread to receive notifications of new rbr\Replays\fileName.rpl replay files
 		if (!g_watcherNewReplayFiles.Running() && m_bGenerateReplayMetadataFile)
 		{
@@ -4174,8 +4373,14 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 		}
 	}
 
-	else if (/*g_pRBRGameMode->gameMode == 0x0A ||*/ g_pRBRGameMode->gameMode == 0x0D)
+	else
+*/ 
+	
+	if (g_pRBRGameMode->gameMode == 0x0D)
 	{
+		OnMapLoaded();
+
+/*
 		// Racing is about to begin. Store the current racing carID and trackID because replay metadata INI file needs this information
 		m_latestCarID = g_pRBRMapSettings->carID;
 		m_latestMapID = g_pRBRMapSettings->trackID;
@@ -4186,30 +4391,47 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 			RBRTM_EndScene();
 		else if (m_bRBRRXPluginActive || m_bRBRRXReplayActive)
 			RBRRX_EndScene();
-/*		else if (m_bCustomReplayShowCroppingRect && m_iCustomReplayState >= 2 && m_iCustomReplayState != 4)
-			// Draw rectangle to highlight the screenshot capture area (except when state == 4 because then this plugin takes the car preview screenshot and we don't want to see the gray box in a preview image)
-			D3D9DrawVertex2D(g_pRBRIDirect3DDevice9, m_screenshotCroppingRectVertexBuffer);
 */
 	}
 	else if (g_pRBRGameMode->gameMode == 0x0C)
 	{
 		// RBRRX integration and replays need this 0x0C gameMode to prepare for returning to main menu
-		RBRRX_EndScene();
+		//RBRRX_EndScene();
+
+		if (!m_bRBRReplayOrRacingEnding && (GetActiveRacingType() > 0 || GetActiveReplayType() > 0))
+			m_bRBRReplayOrRacingEnding = TRUE;
 	}
 
-	else if (m_iCustomReplayState >= 2 && g_pRBRGameMode->gameMode == 0x0A && m_bCustomReplayShowCroppingRect && m_iCustomReplayState != 4)
-		// Draw rectangle to highlight the screenshot capture area (except when state == 4 because then this plugin takes the car preview screenshot and we don't want to see the gray box in a preview image)
-		D3D9DrawVertex2D(g_pRBRIDirect3DDevice9, m_screenshotCroppingRectVertexBuffer);
+	else if (g_pRBRGameMode->gameMode == 0x0A)
+	{
+		if(m_iCustomReplayState >= 2 && m_bCustomReplayShowCroppingRect && m_iCustomReplayState != 4)
+			// Draw rectangle to highlight the screenshot capture area (except when state == 4 because then this plugin takes the car preview screenshot and we don't want to see the gray box in a preview image)
+			D3D9DrawVertex2D(g_pRBRIDirect3DDevice9, m_screenshotCroppingRectVertexBuffer);
+	}
+	else if (g_pRBRGameMode->gameMode == 0x08)
+	{
+		int iRacingType = GetActiveRacingType();
+		if (iRacingType > 0)
+		{
+			// Racing ended and replay started from the racing menu. Call OnRaceEnded handler and set a replay status
+			OnRaceEnded();
+			if (iRacingType == 2) m_bRBRRXReplayActive = TRUE;
+			OnReplayStarted();
+		}
+	}
 
+/*
 	else if (g_pRBRGameMode->gameMode == 0x06) // && !m_bRBRTMPluginActive)
 	{
 		if (g_watcherNewReplayFiles.Running())
 		{
+			// TODO. Move to ReplayEnded handler?
 			// Racing has ended. Check if there are new replay files and create replayFileName.ini metadata file if necessary
 			g_watcherNewReplayFiles.Stop();
 			g_watcherNewReplayFileListener->DoCompletion();
 		}
 	}
+*/
 
 	else if (g_pRBRGameMode->gameMode == 0x03)
 	{
@@ -4466,8 +4688,35 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 			}
 		}
 
-		// Just-in-case stop the watcher for new replays files if for some reason it was still running when RBR is in the main menu
-		g_watcherNewReplayFiles.Stop();
+		if (m_bRBRReplayOrRacingEnding)
+		{
+			//m_bRBRReplayOrRacingEnding = FALSE;
+
+			// Is this needed if OnReplayEnded handler is called?
+			// Just-in-case stop the watcher for new replays files if for some reason it was still running when RBR is in the main menu
+			//g_watcherNewReplayFiles.Stop();
+			//m_bRBRReplayActive = m_bRBRRacingActive = FALSE;
+			//m_bRBRReplayOrRacingEnding = FALSE;
+
+			if (GetActiveReplayType() == 0)
+				OnRaceEnded();
+			else
+				OnReplayEnded();		
+
+			if (g_watcherNewReplayFiles.Running())
+			{
+				// Racing has ended. Check if there are new replay files and create replayFileName.ini metadata file if necessary
+				g_watcherNewReplayFiles.Stop();
+				g_watcherNewReplayFileListener->DoCompletion();
+			}
+		}
+
+		// Sometimes RBRRX plugin has a bug and it ends up in empty menu. Jump back to main menu if this happens
+		if (g_pRBRMenuSystem->currentMenuObj == nullptr && g_pRBRMenuSystem->currentMenuObj2 == nullptr)
+		{
+			DebugPrint("EndScene. currentMenuObj and currentMenuObj2 null. Jump back to main menu");
+			g_pRBRMenuSystem->currentMenuObj = g_pRBRMenuSystem->currentMenuObj2 = g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN];
+		}
 	}
 
 	
@@ -4603,7 +4852,7 @@ BOOL CNGPCarMenu::CustomRBRReplay(const char* szReplayFileName)
 	BOOL bResult = TRUE;
 	std::wstring sReplayFileName = _ToWString(szReplayFileName);
 
-	if (szReplayFileName == nullptr)
+	if (szReplayFileName == nullptr || !fs::exists(g_pRBRPlugin->m_sRBRRootDir + "\\Replays\\" + szReplayFileName) )
 		return FALSE;
 
 	// Customize the "Loading Replay" label text to include the RPL filename (unless the special "generate preview img" replay state is active)
@@ -4614,14 +4863,11 @@ BOOL CNGPCarMenu::CustomRBRReplay(const char* szReplayFileName)
 	else
 		swprintf_s(g_wszCustomLoadReplayStatusText, COUNT_OF_ITEMS(g_wszCustomLoadReplayStatusText) - 1, L"%s", sReplayFileName.c_str());
 
-	// If RBRRX integration is disabled then no need to do RBRRX replay customization
-	if (m_iMenuRBRRXOption == 0)
-		return TRUE;
-
 	try
 	{
+		// If RBRRX integration is enabled and the replay INI metadata file exists then check if the RPL is for BTB track
 		std::string sReplayINIFile = g_pRBRPlugin->m_sRBRRootDir + "\\Replays\\" + fs::path(szReplayFileName).replace_extension().generic_string() + ".ini";
-		if (fs::exists(sReplayINIFile))
+		if (m_iMenuRBRRXOption && fs::exists(sReplayINIFile))
 		{
 			std::string sTextValue;
 
@@ -4643,6 +4889,8 @@ BOOL CNGPCarMenu::CustomRBRReplay(const char* szReplayFileName)
 				LogPrint("Replay is a standard RBR replay file, not the type of BTB. TYPE option in the INI file was %s", sTextValue.c_str());
 			}
 		}
+
+		OnReplayStarted();
 	}
 	catch (const fs::filesystem_error& ex)
 	{
@@ -4654,6 +4902,9 @@ BOOL CNGPCarMenu::CustomRBRReplay(const char* szReplayFileName)
 		LogPrint("ERROR. Exception in CustomRBRReplay");
 		bResult = FALSE;
 	}
+
+	if (bResult == FALSE)
+		m_bRBRReplayActive = m_bRBRRXReplayActive = FALSE;
 
 	return bResult;
 }
@@ -4689,7 +4940,7 @@ void CNGPCarMenu::CompleteSaveReplayProcess(const std::list<std::wstring>& repla
 			// Re-create the replay metadata INI file in case the old file has some garbage left overs from an old version
 			std::ofstream recreatedFile(sReplayINIFileName, std::ios::out | std::ios::trunc);
 
-			if(m_bRBRRXPluginActive)
+			if(GetActiveRacingType() == 2 || GetActivePluginName() == "RBRRX")
 				recreatedFile << "; RBR replay metadata file generated by NGPCarMenu plugin. TYPE and NAME options are required in BTB replays. Other options are just for informative purposes" << std::endl;
 			else
 				recreatedFile << "; RBR replay metadata file generated by NGPCarMenu plugin. All options are just for informative purposes" << (m_bRBRTMPluginActive ? " in RBRTM replays" : "") << std::endl;
@@ -4698,7 +4949,7 @@ void CNGPCarMenu::CompleteSaveReplayProcess(const std::list<std::wstring>& repla
 			replayINIFile.LoadFile(sReplayINIFileName.c_str());
 			replayINIFile.SetValue("Replay", "Type", (m_bRBRRXPluginActive ? "BTB" : (m_bRBRTMPluginActive ? "TM" : (m_bRallySimFansPluginInstalled ? "RSF" : "RBR"))));
 			
-			if (m_bRBRRXPluginActive)
+			if (GetActiveRacingType() == 2 || GetActivePluginName() == "RBRRX")
 			{
 				replayINIFile.SetValue("Replay", "Name",        m_latestMapRBRRX.name.c_str());
 				replayINIFile.SetValue("Replay", "TrackFolder", m_latestMapRBRRX.folderName.c_str());
@@ -4728,9 +4979,11 @@ void CNGPCarMenu::CompleteSaveReplayProcess(const std::list<std::wstring>& repla
 
 				if (bWriteMapName)
 				{
-					WCHAR wszMapINISection[16];
+					/*WCHAR wszMapINISection[16];
 					swprintf_s(wszMapINISection, COUNT_OF_ITEMS(wszMapINISection), L"Map%02d", m_latestMapID);
 					std::wstring wsStageName = _RemoveEnclosingChar(m_pTracksIniFile->GetValue(wszMapINISection, L"StageName", L""), L'"', false);
+					*/
+					std::wstring wsStageName = GetMapNameByMapID(m_latestMapID);
 					if (!wsStageName.empty()) replayINIFile.SetValue("Replay", "Name", _ToString(wsStageName).c_str());
 				}
 
@@ -4776,15 +5029,17 @@ HRESULT __fastcall CustomRBRDirectXBeginScene(void* objPointer)
 	// Call the origial RBR BeginScene and let it to initialize the new D3D scene
 	HRESULT hResult = ::Func_OrigRBRDirectXBeginScene(objPointer);
 
-	// Do custom dx scene only if RBR is not in racing state
-	//if (g_pRBRGameMode->gameMode != 01 && !(g_pRBRPlugin->m_bRBRTMPluginActive && g_pRBRGameMode->gameMode == 0x0A)) //|| g_pRBRPlugin->m_iCustomReplayState > 0)
 	if (g_pRBRGameMode->gameMode == 0x03 || g_pRBRPlugin->m_iCustomReplayState > 0)
 	{
 		g_pRBRPlugin->CustomRBRDirectXBeginScene();
 	}
 	else if (g_pRBRGameMode->gameMode == 0x05)
 	{
-		if (g_pOrigLoadReplayStatusText == nullptr && g_pRBRStatusText->wszLoadReplayTitleName != nullptr)
+		// If status is 0x05 (loading a track) and "RacingActive" status is not set already and a replay is not active then the track is loaded for racing. Call OnRaceStarted handler
+		if (!g_pRBRPlugin->m_bRBRRacingActive && g_pRBRPlugin->GetActiveReplayType() == 0)
+			g_pRBRPlugin->OnRaceStarted();
+
+		else if (g_pOrigLoadReplayStatusText == nullptr && g_pRBRStatusText->wszLoadReplayTitleName != nullptr && g_pRBRPlugin->GetActiveReplayType() > 0)
 		{
 			std::wstring sTmpText = g_wszCustomLoadReplayStatusText;
 
@@ -4808,13 +5063,22 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 	if (!g_bRBRHooksInitialized)
 		return S_OK;
 
-	/*
 #if USE_DEBUG == 1
-	wchar_t szTxtBuf[32];
-	swprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, L"%d / %d / %d", g_pRBRGameMode->gameMode, RBRAPI_MapRBRMenuObjToID(g_pRBRMenuSystem->currentMenuObj), rand());
-	g_pFontDebug->DrawText(5, 5, C_DEBUGTEXT_COLOR, szTxtBuf);
+	static int iPrevMode = -1;
+	wchar_t szTxtBuf[512];
+	//swprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, L"%d / %d / %d", g_pRBRGameMode->gameMode, RBRAPI_MapRBRMenuObjToID(g_pRBRMenuSystem->currentMenuObj), rand());
+	swprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, L"Mode=%d RaceType=%d RplType=%d Time=%f", g_pRBRGameMode->gameMode, g_pRBRPlugin->GetActiveRacingType(), g_pRBRPlugin->GetActiveReplayType(), (g_pRBRCarInfo != nullptr ? g_pRBRCarInfo->stageStartCountdown : 0.0f) );
+	g_pFontDebug->DrawText(5, 0 * 15, C_DEBUGTEXT_COLOR, szTxtBuf, D3DFONT_CLEARTARGET);
+
+	if (iPrevMode != g_pRBRGameMode->gameMode)
+	{
+		iPrevMode = g_pRBRGameMode->gameMode;
+		DebugPrint(szTxtBuf);
+	}
+
+	swprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, L"CurMenu=%08x  CustPlugin=%08x", (DWORD)g_pRBRMenuSystem->currentMenuObj, (DWORD)g_pRBRPluginMenuSystem->customPluginMenuObj );
+	g_pFontDebug->DrawText(5, 1 * 15, C_DEBUGTEXT_COLOR, szTxtBuf, D3DFONT_CLEARTARGET);
 #endif
-*/
 
 	// Do RBRTM/RBRRX/RBR/RallySimFans menu and replay things only when racing is not active
 	if (g_pRBRPlugin->m_iCustomReplayState > 0 

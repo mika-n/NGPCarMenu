@@ -89,6 +89,7 @@ extern RECT g_rectRBRWndMapped;		// RBR client area re-mapped to screen points (
 //--------------------------------------------------------------------------------------------------
 
 extern LPVOID GetModuleBaseAddr(const char* szModuleName);
+extern LPVOID GetModuleOffsetAddr(const char* szModuleName, DWORD offset);
 
 inline float DWordBufferToFloat(DWORD dwValue) { BYTEBUFFER_FLOAT byteFloat; byteFloat.dwordBuffer = dwValue; return byteFloat.fValue; }
 
@@ -169,13 +170,13 @@ typedef struct {
 	float turbo;			 // 0x18. (pressure, in Pascals?)
 	__int32 unknown2;		 // 0x1C
 	float distanceFromStartControl; // 0x20
-	float distanceTravelled; // 0x24
+	float distanceTravelled; // 0x24   ??? hmmmm.. maybe not because this keeps on counting up even when the car is stopped. What is it?
 	float distanceToFinish;  // 0x28   >0 Meters left to finish line, <0 Crossed the finish line (meters after finish line)
 
 	BYTE  pad1[0x13C - 0x28 - sizeof(float)];
 	float stageProgress;	 // 0x13C  (meters, hundred meters, some map unit?. See RBRMapInfo.stageLength also)
-	float raceTime;			 // 0x140
-	__int32 raceFinished;    // 0x144  (0=Racing after GO! command, 1=Race not yet started (GO! not yet shouted), race stopped or retired or completed)
+	float raceTime;			 // 0x140  Total race time (includes time penalties)  (or if gameMode=8 then the time is taken from replay video)
+	__int32 raceFinished;    // 0x144  (0=Racing after GO! command, 1=Racing completed/retired or not yet started
 	__int32 unknown4;        // 0x148
 	__int32 unknown5;        // 0x14C
 	__int32 drivingDirection;// 0x150. 0=Correct direction, 1=Car driving to wrong direction
@@ -189,8 +190,8 @@ typedef struct {
 
 	BYTE pad5[0x254 - 0x244 - sizeof(float)];
 	__int32 splitReachedNo;  // 0x254 0=Start line passed if race is on, 1=Split#1 passed, 2=Split#2 passed
-	float split1Time;        // 0x258
-	float split2Time;        // 0x25C
+	float split1Time;        // 0x258 Total elapsed time in secs up to split1
+	float split2Time;        // 0x25C Total elapsed time in secs up to split2  (split2-split1 would be the time between split1 and split2)
 	float unknown6;			 // 0x260
 
 	BYTE pad6[0x2C4 - 0x260 - sizeof(float)];

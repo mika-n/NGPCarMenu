@@ -575,26 +575,65 @@ protected:
 	bool InitCarSpecDataFromPhysicsFile(const std::string& folderName, PRBRCarSelectionMenuEntry pRBRCarSelectionMenuEntry, int* outNumOfGears);
 	bool InitCarSpecDataFromNGPFile(CSimpleIniW* ngpCarListINIFile, PRBRCarSelectionMenuEntry pRBRCarSelectionMenuEntry, int numOfGears);
 
+	void RefreshSettingsFromPluginINIFile(bool addMissingSections = false);
+	void SaveSettingsToPluginINIFile();
+	void SaveSettingsToRBRTMRecentMaps();
+	void SaveSettingsToRBRRXRecentMaps();
+
 	int  CalculateMaxLenCarMenuName();
 	void ClearCachedCarPreviewImages();
+
+	int InitPluginIntegration(const std::string& customPluginName, bool bInitRBRTM);
+	int InitAllNewCustomPluginIntegrations();
+
+	int GetNextScreenshotCarID(int currentCarID);
+	static bool PrepareScreenshotReplayFile(int carID);
+
+	std::wstring ReplacePathVariables(const std::wstring& sPath, int selectedCarIdx = -1, bool rbrtmplugin = false, int mapID = -1, const WCHAR* mapName = nullptr, const std::string& folderName = "");
+	bool ReadCarPreviewImageFromFile(int selectedCarIdx, float x, float y, float cx, float cy, IMAGE_TEXTURE* pOutImageTexture, DWORD dwFlags = 0, bool isRBRTMPlugin = false);
+
+	std::wstring GetMapNameByMapID(int mapID)
+	{
+		std::wstring sResult;
+		if (m_pTracksIniFile != nullptr)
+		{
+			WCHAR wszMapINISection[16];
+			swprintf_s(wszMapINISection, COUNT_OF_ITEMS(wszMapINISection), L"Map%02d", mapID);
+			sResult = m_pTracksIniFile->GetValueEx(wszMapINISection, L"", L"StageName", L"");
+		}
+
+		return sResult;
+	}
 
 	void DrawProgressBar(D3DRECT rec, float progressValue, LPDIRECT3DDEVICE9 pOutputD3DDevice = nullptr);
 
 	void RBRRX_EndScene();
 	void RBRTM_EndScene();
 
+	void RBRRX_OnMapLoaded();
 	void RBRRX_OverrideLoadTrackScreen();
 	BOOL RBRRX_PrepareReplayTrack(const std::string& mapName);
 	BOOL RBRRX_PrepareLoadTrack(int mapMenuIdx);
 
-	void   FocusRBRRXNthMenuIdxRow(int menuIdx);
-	void   UpdateRBRRXMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo);
-	double UpdateRBRRXINILengthOption(const std::string& sFolderName, double newLength);
+	void   RBRRX_FocusNthMenuIdxRow(int menuIdx);
+	void   RBRRX_UpdateMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo);
+	double RBRRX_UpdateINILengthOption(const std::string& sFolderName, double newLength);
+
+	int  RBRRX_FindMenuItemIdxByFolderName(PRBRRXMenuItem pMapMenuItemsRBRRX, int numOfItemsMenuItemsRBRRX, const std::string& folderName);
+	int  RBRRX_FindMenuItemIdxByMapName(PRBRRXMenuItem pMapMenuItemsRBRRX, int numOfItemsMenuItemsRBRRX, std::string mapName);
+	int  RBRRX_CalculateNumOfValidMapsInRecentList(PRBRRXMenuItem pMapMenuItemsRBRRX = nullptr, int numOfItemsMenuItemsRBRRX = 0);
+	void RBRRX_AddMapToRecentList(std::string folderName);
 
 	BOOL RBRRX_ReadStartSplitsFinishPacenoteDistances(const std::string& folderName, float* startDistance, float* split1Distance, float* split2Distance, float* finishDistance);
 	int  RBRRX_ReadDriveline(const std::string& folderName, CDrivelineSource& drivelineSource );
 	void RBRRX_DrawMinimap(const std::string& folderName, int screenID, LPDIRECT3DDEVICE9 pOutputD3DDevice = nullptr);
 
+
+	void RBRTM_OnMapLoaded();
+	int  RBRTM_FindMenuItemIdxByMapID(PRBRTMMenuItem pMenuItems, int numOfItems, int mapID);
+	int  RBRTM_FindMenuItemIdxByMapID(PRBRTMMenuData pMenuData, int mapID);
+	int  RBRTM_CalculateNumOfValidMapsInRecentList(PRBRTMMenuData pMenuData = nullptr);
+	void RBRTM_AddMapToRecentList(int mapID);
 	BOOL RBRTM_ReadStartSplitsFinishPacenoteDistances(const std::wstring& trackFileName, float* startDistance, float* split1Distance, float* split2Distance, float* finishDistance);
 	int  RBRTM_ReadDriveline(int mapID, CDrivelineSource& drivelineSource);
 	void RBRTM_DrawMinimap(int mapID, int screenID);
@@ -685,22 +724,29 @@ public:
 	int m_numOfItemsCustomMapMenuRBRRX;			// Num of items in m_pCustomMapMenuRBRRX (dynamic) array
 	int m_currentCustomMapSelectedItemIdxRBRRX;	// "Virtual" selected row running from 0..m_numOfItemsCustomMapMenuRBRRX-1 (the real row number. m_pRBRRXPlugin->pMenuData->selectedItemIdx is always between 0..16)
 	int m_prevCustomMapSelectedItemIdxRBRRX;
-	
+
+
 	std::string m_sRBRTMPluginTitle;			// "RBR Tournament" is the RBRTM plugin name by default, but in theory it is possible that this str is translated in RBRTM language files. The plugin name in use is stored here because the RBRTM integration routine needs this name.
 	int    m_iRBRTMPluginMenuIdx;				// Index of the RBRTM plugin in the RBR Plugins menu list (this way we know when RBRTM custom plugin in Nth index position is activated)
 	bool   m_bRBRTMPluginActive;				// TRUE/FALSE if the current active custom plugin is RBRTM (active = The RBRTM plugin handler is running in foreground)
 	int    m_iRBRTMCarSelectionType;			// 0=No car selection menu shown, 1=Online Tournament selection, 2=Shakedown car selection
+	bool   m_bRBRTMTrackLoadBugFixWhenNotActive;// TRUE=When RBRTM is no longer active then fix RBRTM bug where non-RBRTM (quickRally or RBRRX/BTB) track loading doesn't work anymore once RBRTM tracks were loaded, FALSE=Don't do the fix (other tracks won't work after using RBRTM unless RBR is restarted)
 
 	int    m_iRBRRXPluginMenuIdx;				// Index of the RBR_RX plugin in the RBR Plugins menu list (this way we know when RBRRX custom plugin in Nth index position is activated)
 	bool   m_bRBRRXPluginActive;				// TRUE/FALSE if the current active custom plugin is RBR_RX (active = The RBRTM plugin handler is running in foreground)
-	//bool   m_pRBRRXPluginFirstTimeInitialization; // First time to open RBRRX plugin after RBR launch. Go automatically to Race screen and skip the race/replay menu
 	bool   m_bRBRRXReplayActive;				// TRUE=Replay is playing RBRRX BTB track, FALSE = standard RBR replay file and track
 	bool   m_bRBRRXRacingActive;				// TRUE=Racing on track #41 is RBRX BTB track
-	bool   m_bRBRRXReplayOrRacingEnding;
 	bool   m_bRBRRXLoadingNewTrack;				// TRUE=Loading RBRRX track and first-time custom LoadTrack screen initialization
+
+
+	bool   m_bRBRReplayOrRacingEnding;
+	bool   m_bRBRRacingActive;					// TRUE=Racing active (if m_bRBRRXRacingActive is TRUE also then it is BTB racing and not standard RBR classic track racing)
+	bool   m_bRBRReplayActive;					// TRUE=Track loading for the replay purposes (if m_bRBRRXReplayActive is TRUE also then it is BTB replay and not standard track replay), FALSE=No active replay
+
 
 	int    m_latestCarID;						// The latest carID in racing mode
 	int    m_latestMapID;						// The latest mapID in racing mode
+	std::wstring m_latestMapName;				// The latest map (if the map is BTB then the value is NAME value from btb track.ini file, otherwise the classic map Tracks.ini name)
 
 	bool   m_bGenerateReplayMetadataFile;		// Generate replayFileName.ini metadata files
 
@@ -716,34 +762,23 @@ public:
 	CNGPCarMenu(IRBRGame* pGame);
 	virtual ~CNGPCarMenu(void);
 
-	int GetNextScreenshotCarID(int currentCarID);
-	static bool PrepareScreenshotReplayFile(int carID);
-
 	BOOL ReadStartSplitsFinishPacenoteDistances(const std::wstring& sPacenoteFileName, float* startDistance, float* split1Distance, float* split2Distance, float* finishDistance);
 	int  ReadDriveline(const std::wstring& sDrivelineFileName, CDrivelineSource& drivelineSource);
 	int  RescaleDrivelineToFitOutputRect(CDrivelineSource& drivelineSource, CMinimapData& minimapData);
 
-	std::wstring ReplacePathVariables(const std::wstring& sPath, int selectedCarIdx = -1, bool rbrtmplugin = false, int mapID = -1, const WCHAR* mapName = nullptr, const std::string& folderName = "");
-	bool ReadCarPreviewImageFromFile(int selectedCarIdx, float x, float y, float cx, float cy, IMAGE_TEXTURE* pOutImageTexture, DWORD dwFlags = 0, bool isRBRTMPlugin = false);
-
-	int InitPluginIntegration(const std::string& customPluginName, bool bInitRBRTM);
-	int InitAllNewCustomPluginIntegrations();
-
-	void RefreshSettingsFromPluginINIFile(bool addMissingSections = false);
-	void SaveSettingsToPluginINIFile();
-	void SaveSettingsToRBRTMRecentMaps();
-	void SaveSettingsToRBRRXRecentMaps();
-
-	int  RBRTM_FindMenuItemIdxByMapID(PRBRTMMenuItem pMenuItems, int numOfItems, int mapID);
-	int  RBRTM_FindMenuItemIdxByMapID(PRBRTMMenuData pMenuData, int mapID);
-	int  RBRTM_CalculateNumOfValidMapsInRecentList(PRBRTMMenuData pMenuData = nullptr);
-	void RBRTM_AddMapToRecentList(int mapID);
-
-	int  RBRRX_FindMenuItemIdxByFolderName(PRBRRXMenuItem pMapMenuItemsRBRRX, int numOfItemsMenuItemsRBRRX, const std::string& folderName);
-	int  RBRRX_FindMenuItemIdxByMapName(PRBRRXMenuItem pMapMenuItemsRBRRX, int numOfItemsMenuItemsRBRRX, std::string mapName);
-	int  RBRRX_CalculateNumOfValidMapsInRecentList(PRBRRXMenuItem pMapMenuItemsRBRRX = nullptr, int numOfItemsMenuItemsRBRRX = 0);
-	void RBRRX_AddMapToRecentList(std::string folderName);
+	std::string GetActivePluginName();	// RBR=Normal RBR (ie. no custom plugin), RBRTM, RBRRX, RSF
+	int GetActiveReplayType();			// 0=no replay, 1=Normal RBR/TM/RSF (classic map), 2=BTB (rbrrx/btb map)
+	int GetActiveRacingType();			// 0=no racing, 1=Normal RBR/TM/RSF (classic map), 2=BTB (rbrrx/btb map)
 	
+	void OnPluginActivated(const std::string& pluginName);
+	void OnPluginDeactivated(const std::string& pluginName);
+
+	void OnMapLoaded();			// Map (replay or racing) loading completed and countdown to zero starts soon
+	void OnRaceStarted();		// Race started
+	void OnRaceEnded();			// Race ended
+	void OnReplayStarted();		// Replay started
+	void OnReplayEnded();		// Replay ended
+
 	inline const WCHAR* GetLangStr(const WCHAR* szStrKey) 
 	{ 
 		// Return localized version of the strKey string value (or the original value if no localization available)

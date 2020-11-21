@@ -93,6 +93,14 @@ LPVOID GetModuleBaseAddr(const char* szModuleName)
 		return nullptr;
 }
 
+LPVOID GetModuleOffsetAddr(const char* szModuleName, DWORD offset)
+{
+	LPVOID pBaseAddr = ::GetModuleBaseAddr(szModuleName);
+	if (pBaseAddr != nullptr)
+		pBaseAddr = (LPVOID) (((DWORD)pBaseAddr) + offset);
+	return pBaseAddr;
+}
+
 
 // Convert hex char to int value
 int char2int(const char input)
@@ -122,6 +130,9 @@ BOOL WriteOpCodeBuffer(const LPVOID writeAddr, const BYTE* buffer, const int iBu
 	HANDLE hProcess;
 	DWORD  dwOldProtectValue;
 	BOOL bResult;
+
+	if (writeAddr == nullptr)
+		return FALSE;
 
 	hProcess = OpenProcess(C_PROCESS_READ_WRITE_QUERY, FALSE, GetCurrentProcessId());
 	bResult = VirtualProtectEx(hProcess, writeAddr, iBufLen, PAGE_READWRITE, &dwOldProtectValue);

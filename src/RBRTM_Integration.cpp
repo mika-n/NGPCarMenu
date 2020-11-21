@@ -535,6 +535,26 @@ void CNGPCarMenu::RBRTM_DrawMinimap(int mapID, int screenID)
 
 
 //----------------------------------------------------------------------------------------------------
+// RBRTM map loading completed
+//
+void CNGPCarMenu::RBRTM_OnMapLoaded()
+{
+	if (m_bRecentMapsRBRTMModified)
+	{
+		// Stage loaded in RBRTM plugin using Shakedown mode (SelectionType==2). Add the latest mapID (=stage) to the top of the recent list
+		if (m_iRBRTMCarSelectionType == 2 && m_recentMapsMaxCountRBRTM > 0)
+		{
+			m_bRecentMapsRBRTMModified = FALSE;
+			RBRTM_AddMapToRecentList(m_latestMapRBRTM.mapID);
+			if (m_bRecentMapsRBRTMModified) SaveSettingsToRBRTMRecentMaps();
+		}
+
+		m_bRecentMapsRBRTMModified = FALSE;
+	}
+}
+
+
+//----------------------------------------------------------------------------------------------------
 // RBRTM integration handler (DX9 EndScene)
 //
 void CNGPCarMenu::RBRTM_EndScene()
@@ -772,8 +792,9 @@ void CNGPCarMenu::RBRTM_EndScene()
 
 							swprintf_s(wszMapINISection, COUNT_OF_ITEMS(wszMapINISection), L"Map%02d", m_latestMapRBRTM.mapID);
 
-							// At first lookup the stage name from maps\Tracks.ini file. If the name is not set there then re-use the stage name used in RBRTM menus
-							m_latestMapRBRTM.name = _RemoveEnclosingChar(m_pTracksIniFile->GetValue(wszMapINISection, L"StageName", L""), L'"', false);
+							// At first lookup the stage name from maps\Tracks.ini file. If the name is not set there then re-use the stage name used in RBRTM menus							
+							//m_latestMapRBRTM.name = _RemoveEnclosingChar(m_pTracksIniFile->GetValue(wszMapINISection, L"StageName", L""), L'"', false);
+							m_latestMapRBRTM.name = GetMapNameByMapID(m_latestMapRBRTM.mapID);
 							if (m_latestMapRBRTM.name.empty())
 								m_latestMapRBRTM.name = m_pRBRTMPlugin->pCurrentRBRTMMenuObj->pMenuData->pMenuItems[m_pRBRTMPlugin->selectedItemIdx].wszMenuItemName;
 
@@ -952,7 +973,8 @@ void CNGPCarMenu::RBRTM_EndScene()
 
 	}
 
-	else if (g_pRBRGameMode->gameMode == 0x0D /*10*/)
+/*
+	else if (g_pRBRGameMode->gameMode == 0x0D)
 	{
 		if (m_bRecentMapsRBRTMModified && m_bRBRTMPluginActive && m_iRBRTMCarSelectionType == 2)
 		{
@@ -967,5 +989,6 @@ void CNGPCarMenu::RBRTM_EndScene()
 			m_bRecentMapsRBRTMModified = FALSE;
 		}
 	}
+*/
 }
 
