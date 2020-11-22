@@ -159,7 +159,7 @@ typedef RBRTMMenuObj* PRBRTMMenuObj;
 typedef struct {
 #pragma pack(push,1)
 	__int32 unknown1;				// 0x00
-	__int32 unknown2;				// 0x04
+	__int32 activeStatus;			// 0x04   0=The loaded track is not RBRTM track, 1=RBRTM plugin active and the loaded track is RBRTM track
 	__int32 unknown3;				// 0x08
 	PRBRTMMenuObj pCurrentRBRTMMenuObj;	// 0x0C - Pointer to the current RBRTM menu object
 	__int32 selectedItemIdx;		// 0x10 - Currently selected menu item line

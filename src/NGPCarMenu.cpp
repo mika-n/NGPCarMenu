@@ -3949,19 +3949,12 @@ void CNGPCarMenu::OnPluginDeactivated(const std::string& pluginName)
 		// When RBRTM plugin is deactivated then fix a RBRTM bug where QuickRally and RBRRX sometimes crashes or cannot start a stage if the previously driven stage was a RBRTM stage.
 		// The bug is because of RBRTM "hijacking" the stage start routine and expecting QuickRally and BTB rally launch to provide certain RBRTM specific identifiers. Restore temporarly
 		// the default RBR behaviour and re-initialize it when RBRTM launches a new stage the next time.
-		if (m_bRBRTMTrackLoadBugFixWhenNotActive)
+		if (m_bRBRTMTrackLoadBugFixWhenNotActive && m_pRBRTMPlugin != nullptr)
 		{
+			// Set back the default RBR behavior in this RBR func handler
 			BYTE buffer[2] = { 0xC2, 0x04 };
 			WriteOpCodeBuffer((LPVOID)0x57157C, buffer, sizeof(buffer));
-
-			// 0x1597F128->+0x04 is 0x01 (set by RBRTM) when RBRTM track is loaded and 0x00 when the track is something else (RBR QuickRally or BTB)
-			DWORD* pdwRBRTMActiveFlag = (DWORD*)GetModuleOffsetAddr("RBRTM.DLL", 0x4F128);
-			if (pdwRBRTMActiveFlag != nullptr)
-			{
-				pdwRBRTMActiveFlag = (DWORD*)*pdwRBRTMActiveFlag;
-				if (pdwRBRTMActiveFlag != nullptr)
-					*(DWORD*)(((DWORD)pdwRBRTMActiveFlag) + 0x04) = 0x00;
-			}
+			m_pRBRTMPlugin->activeStatus = 0x00;
 		}
 	}
 	else if (pluginName == "RBRRX")
