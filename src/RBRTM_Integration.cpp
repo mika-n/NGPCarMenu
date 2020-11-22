@@ -629,7 +629,7 @@ void CNGPCarMenu::RBRTM_EndScene()
 					}
 				}
 
-				if (bRBRTMCarSelectionMenu && (m_iRBRTMCarSelectionType == 2 || (m_iRBRTMCarSelectionType == 1 && m_pRBRTMPlugin->selectedItemIdx == 1)))
+				if (bRBRTMCarSelectionMenu && (m_iRBRTMCarSelectionType == 2 || m_iRBRTMCarSelectionType == 1 /*&& m_pRBRTMPlugin->selectedItemIdx == 1)*/))
 				{
 					//
 					// RBRTM car selection in Shakedown or OnlineTournament menu
@@ -650,8 +650,12 @@ void CNGPCarMenu::RBRTM_EndScene()
 							true);
 					}
 
-					// If the car preview image is successfully initialized (imgSize.cx >= 0) and texture (=image) is prepared then draw it on the screen
-					if (m_carRBRTMPreviewTexture[selectedCarIdx].imgSize.cx >= 0 && m_carRBRTMPreviewTexture[selectedCarIdx].pTexture != nullptr)
+					// If the car preview image is successfully initialized (imgSize.cx >= 0) and texture (=image) is prepared then draw it on the screen.
+					// Shakedown (m_iRBRTMCarSelectionType==2) shows the car image all the time, but online rally shows the img only when focused menuline is the car selection line.
+					if (m_carRBRTMPreviewTexture[selectedCarIdx].imgSize.cx >= 0 
+						&& m_carRBRTMPreviewTexture[selectedCarIdx].pTexture != nullptr
+						&& (m_iRBRTMCarSelectionType == 2 || (m_iRBRTMCarSelectionType == 1 && m_pRBRTMPlugin->selectedItemIdx == 1))
+					)
 					{
 						iCarSpecPrintRow = 0;
 
