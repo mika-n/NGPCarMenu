@@ -159,147 +159,21 @@ BOOL CNGPCarMenu::RBRTM_ReadStartSplitsFinishPacenoteDistances(const std::wstrin
 	*split2Distance = -1;
 	*finishDistance = -1;
 
-	//try
-	//{
-		//__int32 numOfPacenotesOffset;
-		//__int32 offsetFingerPrint[3];
-		//__int32 fingerPrintType;
-
-		//DebugPrint(L"RBRTM_ReadStartSplitsFinishPacenoteDistances. Reading start, splits and finish line distance from %s", trackFileName.c_str());
-
-		// Get the pacenote DLS data filename (fex c:\games\rbr\Maps\Track-71_O.dls)
-		for (int idx = 0; idx < COUNT_OF_ITEMS(wszPacenoteFilePostfix); idx++)
-		{
-			sPacenoteFileName = m_sRBRRootDirW + L"\\" + trackFileName + wszPacenoteFilePostfix[idx];
-			if (fs::exists(sPacenoteFileName)) break;
-			sPacenoteFileName.clear();
-		}
-
-		if (sPacenoteFileName.empty())
-		{
-			DebugPrint(L"RBRTM_ReadStartSplitsFinishPacenoteDistances. The map %s doesn't have pacenote file. Cannot read pacenote data", trackFileName.c_str());
-			return FALSE;
-		}
-
-		return ReadStartSplitsFinishPacenoteDistances(sPacenoteFileName, startDistance, split1Distance, split2Distance, finishDistance);
-
-/*
-		// Read pacenote data from the DLS file into vector buffer
-		std::ifstream srcFile(sPacenoteFileName, std::ifstream::binary | std::ios::in);
-		if (!srcFile) return FALSE;
-
-		//srcFile.seekg(0x5C);
-		//srcFile.read((char*)&numOfPacenoteRecords, sizeof(__int32));
-		//if (srcFile.fail()) numOfPacenoteRecords = 0;
-
-		// Find the "Num of pacenote records" offset. 
-		// FIXME: Usually this is at 0x5C offset, but not always. Don't know yet the exact logic, so this code tries to identify certain "fingerprints" (not foolproof and definetly not the correct way to do it)
-		//  If @0x38 == 01 then numOfPacenote offset is always 0x5C
-		//  otherwise try to find nonZeroValue-0x00-0x1C fingerprint record (where the nonZeroValue is the num of pacenotes)
-		//
-
-		srcFile.seekg(0x38);
-		srcFile.read((char*)&offsetFingerPrint, sizeof(__int32));
-		fingerPrintType = (offsetFingerPrint[0] == 0x01 ? 0 : 1);
-
-		numOfPacenotesOffset = 0x5C;
-		while (numOfPacenotesOffset < 0x200)
-		{
-			srcFile.seekg(numOfPacenotesOffset);
-			srcFile.read((char*)&offsetFingerPrint, sizeof(offsetFingerPrint));
-			if (srcFile.fail())
-			{
-				numOfPacenoteRecords = 0;
-				break;
-			}
-
-			if(fingerPrintType == 0 || (offsetFingerPrint[0] != 0x00 && offsetFingerPrint[1] == 0x00 && offsetFingerPrint[2] == 0x1C))
-			{
-				numOfPacenoteRecords = offsetFingerPrint[0];
-				break;
-			}
-
-			numOfPacenotesOffset += sizeof(__int32);
-		}
-
-		//DebugPrint("RBRTM_ReadStartSplitsFinishPacenoteDistances. NumOfPacenoteRecords=%d", numOfPacenoteRecords);
-		if (numOfPacenoteRecords <= 0 || numOfPacenoteRecords >= 50000)
-		{
-			LogPrint("ERROR CNGPCarMenu::RBRTM_ReadStartSplitsFinishPacenoteDistances. Invalid number of records %d", numOfPacenoteRecords);
-			numOfPacenoteRecords = 0;
-		}
-		else
-		{
-			// Offset to pacenote records (always +0x20 to the offset of num of pacenote)
-			__int32 dataOffset = numOfPacenotesOffset + 0x20;
-			//srcFile.seekg(0x7C);
-			srcFile.seekg(dataOffset);
-			srcFile.read((char*)&dataOffset, sizeof(__int32));
-			if (srcFile.fail() || dataOffset <= 0)
-			{
-				LogPrint("ERROR CNGPCarMenu::RBRTM_ReadStartSplitsFinishPacenoteDistances. Invalid pacenote data offset %d", dataOffset);
-				numOfPacenoteRecords = 0;
-			}
-
-			if (numOfPacenoteRecords > 0)
-			{
-				std::vector<RBRPacenote> vectPacenoteData(numOfPacenoteRecords);
-
-				srcFile.seekg(dataOffset);
-				srcFile.read(reinterpret_cast<char*>(&vectPacenoteData[0]), (static_cast<std::streamsize>(numOfPacenoteRecords) * sizeof(RBRPacenote)));
-				if (srcFile.fail())
-				{
-					LogPrint("ERROR CNGPCarMenu::RBRTM_ReadStartSplitsFinishPacenoteDistances. Failed to read %d pacenote data records", numOfPacenoteRecords);
-					numOfPacenoteRecords = 0;
-				}
-
-				// Read "type and distance" values of pacenote records
-				for (int idx = 0; idx < numOfPacenoteRecords; idx++)
-				{
-					if (vectPacenoteData[idx].type == 21 && *startDistance < 0)
-					{
-						*startDistance = vectPacenoteData[idx].distance;
-						if (*startDistance >= 0 && *split1Distance >= 0 && *split2Distance >= 0 && *finishDistance >= 0) break;
-					}
-					else if (vectPacenoteData[idx].type == 23)
-					{
-						if (*split1Distance < 0) 
-							*split1Distance = vectPacenoteData[idx].distance;
-						else
-						{
-							// Sometimes DLS file may have splits in "wrong order", so make sure the distance of split1 < split2
-							if(vectPacenoteData[idx].distance > *split1Distance)
-								*split2Distance = vectPacenoteData[idx].distance;
-							else
-							{
-								*split2Distance = *split1Distance;
-								*split1Distance = vectPacenoteData[idx].distance;
-							}
-						}
-						if (*startDistance >= 0 && *split1Distance >= 0 && *split2Distance >= 0 && *finishDistance >= 0) break;
-					}
-					else if (vectPacenoteData[idx].type == 22 && *finishDistance < 0)
-					{
-						*finishDistance = vectPacenoteData[idx].distance;
-						if (*startDistance >= 0 && *split1Distance >= 0 && *split2Distance >= 0 && *finishDistance >= 0) break;
-					}
-				}
-			}
-		}
-		srcFile.close();
-
-		if (*startDistance < 0) *startDistance = 0.0f;
-	}
-	catch (...)
+	// Get the pacenote DLS data filename (fex c:\games\rbr\Maps\Track-71_O.dls)
+	for (int idx = 0; idx < COUNT_OF_ITEMS(wszPacenoteFilePostfix); idx++)
 	{
-		*startDistance = -1;
-		LogPrint(L"ERROR CNGPCarMenu::RBRTM_ReadStartSplitsFinishPacenoteDistances. Failed to read pacenote data from %s", sPacenoteFileName.c_str());
+		sPacenoteFileName = m_sRBRRootDirW + L"\\" + trackFileName + wszPacenoteFilePostfix[idx];
+		if (fs::exists(sPacenoteFileName)) break;
+		sPacenoteFileName.clear();
 	}
 
-	//DebugPrint("RBRTM_ReadStartSplitsFinishPacenoteDistances. Distance start=%f s1=%f s2=%f finish=%f", *startDistance, *split1Distance, *split2Distance, *finishDistance);
+	if (sPacenoteFileName.empty())
+	{
+		DebugPrint(L"RBRTM_ReadStartSplitsFinishPacenoteDistances. The map %s doesn't have pacenote file. Cannot read pacenote data", trackFileName.c_str());
+		return FALSE;
+	}
 
-	return (*startDistance >= 0);
-*/
+	return ReadStartSplitsFinishPacenoteDistances(sPacenoteFileName, startDistance, split1Distance, split2Distance, finishDistance);
 }
 
 

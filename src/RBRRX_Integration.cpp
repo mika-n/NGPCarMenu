@@ -711,9 +711,9 @@ BOOL CNGPCarMenu::RBRRX_PrepareLoadTrack(int mapMenuIdx)
 }
 
 
-BOOL CNGPCarMenu::RBRRX_ReadStartSplitsFinishPacenoteDistances(const std::string& folderName, float* startDistance, float* split1Distance, float* split2Distance, float* finishDistance)
+BOOL CNGPCarMenu::RBRRX_ReadStartSplitsFinishPacenoteDistances(const std::string& sIniFileName, float* startDistance, float* split1Distance, float* split2Distance, float* finishDistance)
 {
-	std::string sIniFileName;
+	//std::string sIniFileName;
 	char szKeyName[12];
 	int iPacenotesIdx;
 	int iPacenoteType;
@@ -726,29 +726,32 @@ BOOL CNGPCarMenu::RBRRX_ReadStartSplitsFinishPacenoteDistances(const std::string
 	try
 	{
 		CSimpleIni btbPaceotesINIFile;
-		sIniFileName = m_sRBRRootDir + "\\RX_CONTENT\\" + folderName + "\\pacenotes.ini";
-		btbPaceotesINIFile.LoadFile(sIniFileName.c_str());
-		iPacenotesIdx = min(btbPaceotesINIFile.GetLongValue("PACENOTES", "count", 0) - 1, 1000000);
-
-		//for (; iPacenotesIdx >= 0; iPacenotesIdx--)
-		for (int idx = 0; idx < iPacenotesIdx; idx++)
+		//sIniFileName = m_sRBRRootDir + "\\RX_CONTENT\\" + folderName + "\\pacenotes.ini";
+		if (fs::exists(sIniFileName))
 		{
-			snprintf(szKeyName, sizeof(szKeyName), "P%d", idx /*iPacenotesIdx*/);
-			iPacenoteType = btbPaceotesINIFile.GetLongValue(szKeyName, "type", -1);
+			btbPaceotesINIFile.LoadFile(sIniFileName.c_str());
+			iPacenotesIdx = min(btbPaceotesINIFile.GetLongValue("PACENOTES", "count", 0) - 1, 1000000);
 
-			if (iPacenoteType == 21 && *startDistance < 0)
+			//for (; iPacenotesIdx >= 0; iPacenotesIdx--)
+			for (int idx = 0; idx < iPacenotesIdx; idx++)
 			{
-				*startDistance = static_cast<float>(btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0));
-			}
-			else if (iPacenoteType == 23)
-			{
-				if (*split1Distance < 0) *split1Distance = static_cast<float>(btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0));
-				else *split2Distance = static_cast<float>(btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0));
-			}
-			else if (iPacenoteType == 22 && *finishDistance < 0)
-			{
-				*finishDistance = static_cast<float>(btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0));
-				break;
+				snprintf(szKeyName, sizeof(szKeyName), "P%d", idx /*iPacenotesIdx*/);
+				iPacenoteType = btbPaceotesINIFile.GetLongValue(szKeyName, "type", -1);
+
+				if (iPacenoteType == 21 && *startDistance < 0)
+				{
+					*startDistance = static_cast<float>(btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0));
+				}
+				else if (iPacenoteType == 23)
+				{
+					if (*split1Distance < 0) *split1Distance = static_cast<float>(btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0));
+					else *split2Distance = static_cast<float>(btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0));
+				}
+				else if (iPacenoteType == 22 && *finishDistance < 0)
+				{
+					*finishDistance = static_cast<float>(btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0));
+					break;
+				}
 			}
 		}
 	}
@@ -774,7 +777,8 @@ BOOL CNGPCarMenu::RBRRX_ReadStartSplitsFinishPacenoteDistances(const std::string
 //
 int CNGPCarMenu::RBRRX_ReadDriveline(const std::string& folderName, CDrivelineSource& drivelineSource)
 {
-	std::string sINIFileName;
+	std::string sDrivelineINIFileName;
+	std::string sPacenoteINIFileName;
 	std::ifstream drivelineFile;
 
 	std::string sTextLine;
@@ -783,13 +787,24 @@ int CNGPCarMenu::RBRRX_ReadDriveline(const std::string& folderName, CDrivelineSo
 	std::vector<std::string> coordValues;
 	float x, y, distance;
 
-	sINIFileName = m_sRBRRootDir + "\\RX_Content\\" + folderName + "\\driveline.ini";
+	if (_iEqual(fs::path(folderName).filename().string(), "driveline.ini", true))
+	{
+		// Input param is a full path to driveline.ini file
+		sDrivelineINIFileName = folderName;
+		sPacenoteINIFileName = fs::path(folderName).replace_filename("").string() + "\\pacenotes.ini";
+	}
+	else
+	{
+		// Input param is a BTB track folder without path (without driveline.ini/pacenotes.ini file names, so append those now)
+		sDrivelineINIFileName = m_sRBRRootDir + "\\RX_Content\\" + folderName + "\\driveline.ini";
+		sPacenoteINIFileName  = m_sRBRRootDir + "\\RX_Content\\" + folderName + "\\pacenotes.ini";
+	}
 
-	DebugPrint("RBRRX_ReadDriveline. Reading driveline from %s", sINIFileName.c_str());
+	DebugPrint("RBRRX_ReadDriveline. Reading %s and %s files", sDrivelineINIFileName.c_str(), sPacenoteINIFileName.c_str());
 
 	drivelineSource.vectDrivelinePoint.clear();
 
-	if (folderName.empty() || !fs::exists(sINIFileName))
+	if (folderName.empty() || !fs::exists(sDrivelineINIFileName))
 		return 0;
 
 	drivelineSource.pointMin.x = drivelineSource.pointMin.y = 9999999.0f;
@@ -798,10 +813,10 @@ int CNGPCarMenu::RBRRX_ReadDriveline(const std::string& folderName, CDrivelineSo
 	try
 	{
 		// Read start/split1/split2/finish distance (from the beginning of driveline data)
-		RBRRX_ReadStartSplitsFinishPacenoteDistances(folderName, &drivelineSource.startDistance, &drivelineSource.split1Distance, &drivelineSource.split2Distance, &drivelineSource.finishDistance);
+		RBRRX_ReadStartSplitsFinishPacenoteDistances(sPacenoteINIFileName, &drivelineSource.startDistance, &drivelineSource.split1Distance, &drivelineSource.split2Distance, &drivelineSource.finishDistance);
 
 		// Read driveline data (this routine expects the driveline data to be already sorted by distance in ascending order)
-		drivelineFile.open(sINIFileName);
+		drivelineFile.open(sDrivelineINIFileName);
 		while (std::getline(drivelineFile, sTextLine))
 		{
 			// Skip all other but "Kx=coordX, coordY" lines 
@@ -841,7 +856,7 @@ int CNGPCarMenu::RBRRX_ReadDriveline(const std::string& folderName, CDrivelineSo
 	catch (...)
 	{
 		drivelineSource.vectDrivelinePoint.clear();
-		LogPrint("ERROR. RBRRX_ReadDriveline failed to read or invalid values in %s", sINIFileName.c_str());
+		LogPrint("ERROR. RBRRX_ReadDriveline failed to read or invalid values in %s", sDrivelineINIFileName.c_str());
 	}
 
 	return drivelineSource.vectDrivelinePoint.size();

@@ -330,7 +330,13 @@ public:
 			//	remappedX, remappedY, remappedCX, remappedCY,
 			//	IMAGE_TEXTURE_STRETCH_TO_FILL | IMAGE_TEXTURE_ALPHA_BLEND);
 
-			sprintf_s(szTextBuf, sizeof(szTextBuf) / sizeof(char), "%s\\Maps\\track-%d_O.trk", m_pNGPCarMenuAPI->GetModulePath(), m_iMap);
+			if(m_iMap ==  12)
+				// When mapID==12 then draw a BTB minimap as an example even when map 12 is not really a BTB track (the minimap img filename should be driveline.ini file in BTB track folder)
+				sprintf_s(szTextBuf, sizeof(szTextBuf) / sizeof(char), "%s\\RX_Content\\Tracks\\VyskalaSS1\\driveline.ini", m_pNGPCarMenuAPI->GetModulePath());
+			else
+				// Draw a minimap for the specified track (a map in Maps folder)
+				sprintf_s(szTextBuf, sizeof(szTextBuf) / sizeof(char), "%s\\Maps\\track-%d_O.trk", m_pNGPCarMenuAPI->GetModulePath(), m_iMap);
+
 			m_pNGPCarMenuAPI->LoadCustomImage(m_dwPluginID, C_MINIMAP_ID, szTextBuf, remappedX, remappedY, remappedCX, remappedCY, IMAGE_TEXTURE_POSITION_HORIZONTAL_RIGHT | IMAGE_TEXTURE_POSITION_VERTICAL_BOTTOM);
 			m_pNGPCarMenuAPI->ShowHideImage(m_dwPluginID, C_MINIMAP_ID, true);
 		}

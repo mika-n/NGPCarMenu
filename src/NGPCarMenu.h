@@ -764,6 +764,7 @@ public:
 
 	BOOL ReadStartSplitsFinishPacenoteDistances(const std::wstring& sPacenoteFileName, float* startDistance, float* split1Distance, float* split2Distance, float* finishDistance);
 	int  ReadDriveline(const std::wstring& sDrivelineFileName, CDrivelineSource& drivelineSource);
+	int  ReadDriveline(const std::string& sDrivelineFileName, CDrivelineSource& drivelineSource);
 	int  RescaleDrivelineToFitOutputRect(CDrivelineSource& drivelineSource, CMinimapData& minimapData);
 
 	std::string GetActivePluginName();	// RBR=Normal RBR (ie. no custom plugin), RBRTM, RBRRX, RSF

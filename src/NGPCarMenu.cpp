@@ -354,9 +354,65 @@ BOOL APIENTRY API_LoadCustomImage(DWORD pluginID, int imageID, LPCSTR szFileName
 
 		if (szFileName != nullptr)
 		{
-			if (!_iEqual(fs::path(pPluginLinkImage->m_sImageFileName).extension().string(), ".trk", true))
+			std::string sFileExtension = fs::path(pPluginLinkImage->m_sImageFileName).extension().string();
+			if (_iEqual(sFileExtension, ".trk", true))
 			{
+				// 
+				// The image file has .TRK extension. Draw a minimap for a classic map format
+				//
+				try
+				{
+					// Img source is track map data  (ex maps\track-71.trk). Create a minimap vector graph (read split positions from DLS and the actual track layout from TRK file)
+					CDrivelineSource drivelineSource;
+					g_pRBRPlugin->ReadStartSplitsFinishPacenoteDistances(fs::path(pPluginLinkImage->m_sImageFileName).replace_extension(".dls"), &drivelineSource.startDistance, &drivelineSource.split1Distance, &drivelineSource.split2Distance, &drivelineSource.finishDistance);
+					g_pRBRPlugin->ReadDriveline(_ToWString(pPluginLinkImage->m_sImageFileName), drivelineSource);
+
+					pPluginLinkImage->m_minimapData.trackFolder = pPluginLinkImage->m_sImageFileName;
+					pPluginLinkImage->m_minimapData.minimapRect.left = pImagePos->x;
+					pPluginLinkImage->m_minimapData.minimapRect.top = pImagePos->y;
+					pPluginLinkImage->m_minimapData.minimapRect.right = pImagePos->x + pImageSize->cx;
+					pPluginLinkImage->m_minimapData.minimapRect.bottom = pImagePos->y + pImageSize->cy;
+
+					g_pRBRPlugin->RescaleDrivelineToFitOutputRect(drivelineSource, pPluginLinkImage->m_minimapData);
+				}
+				catch (...)
+				{
+					pPluginLinkImage->m_imageTexture.imgSize.cx = -1;
+					pPluginLinkImage->m_minimapData.vectMinimapPoint.clear();
+					bRetValue = FALSE;
+				}
+			}
+			else if (_iEqual(sFileExtension, ".ini", true))
+			{
+				//
+				// BTB minimaps are identified by driveline.ini file name (pacenotes.ini is expected to be in the same folder)
+				//
+				try
+				{
+					// Img source is BTB driveline.ini file
+					CDrivelineSource drivelineSource;
+					g_pRBRPlugin->ReadDriveline(pPluginLinkImage->m_sImageFileName, drivelineSource);
+
+					pPluginLinkImage->m_minimapData.trackFolder = pPluginLinkImage->m_sImageFileName;
+					pPluginLinkImage->m_minimapData.minimapRect.left = pImagePos->x;
+					pPluginLinkImage->m_minimapData.minimapRect.top = pImagePos->y;
+					pPluginLinkImage->m_minimapData.minimapRect.right = pImagePos->x + pImageSize->cx;
+					pPluginLinkImage->m_minimapData.minimapRect.bottom = pImagePos->y + pImageSize->cy;
+
+					g_pRBRPlugin->RescaleDrivelineToFitOutputRect(drivelineSource, pPluginLinkImage->m_minimapData);
+				}
+				catch (...)
+				{
+					pPluginLinkImage->m_imageTexture.imgSize.cx = -1;
+					pPluginLinkImage->m_minimapData.vectMinimapPoint.clear();
+					bRetValue = FALSE;
+				}
+			}
+			else			
+			{
+				//
 				// Normal image file
+				//
 				try
 				{
 					HRESULT hResult = D3D9CreateRectangleVertexTexBufferFromFile(g_pRBRIDirect3DDevice9,
@@ -377,30 +433,6 @@ BOOL APIENTRY API_LoadCustomImage(DWORD pluginID, int imageID, LPCSTR szFileName
 				{
 					pPluginLinkImage->m_imageTexture.imgSize.cx = -1;
 					SAFE_RELEASE(pPluginLinkImage->m_imageTexture.pTexture);
-					bRetValue = FALSE;
-				}
-			}
-			else
-			{
-				try
-				{ 
-					// Img source is track map data  (ex maps\track-71.trk). Create a minimap vector graph (read split positions and the actual track layout)
-					CDrivelineSource drivelineSource;
-					g_pRBRPlugin->ReadStartSplitsFinishPacenoteDistances(fs::path(pPluginLinkImage->m_sImageFileName).replace_extension(".dls"), &drivelineSource.startDistance, &drivelineSource.split1Distance, &drivelineSource.split2Distance, &drivelineSource.finishDistance);
-					g_pRBRPlugin->ReadDriveline(_ToWString(pPluginLinkImage->m_sImageFileName), drivelineSource);
-
-					pPluginLinkImage->m_minimapData.trackFolder = pPluginLinkImage->m_sImageFileName;
-					pPluginLinkImage->m_minimapData.minimapRect.left   = pImagePos->x;
-					pPluginLinkImage->m_minimapData.minimapRect.top    = pImagePos->y;
-					pPluginLinkImage->m_minimapData.minimapRect.right  = pImagePos->x + pImageSize->cx;
-					pPluginLinkImage->m_minimapData.minimapRect.bottom = pImagePos->y + pImageSize->cy;
-
-					g_pRBRPlugin->RescaleDrivelineToFitOutputRect(drivelineSource, pPluginLinkImage->m_minimapData);
-				}
-				catch (...)
-				{
-					pPluginLinkImage->m_imageTexture.imgSize.cx = -1;
-					pPluginLinkImage->m_minimapData.vectMinimapPoint.clear();
 					bRetValue = FALSE;
 				}
 			}
@@ -2922,11 +2954,25 @@ BOOL CNGPCarMenu::ReadStartSplitsFinishPacenoteDistances(const std::wstring& sPa
 
 
 //----------------------------------------------------------------------------------------------------
-// Read driveline data from TRK file
-// Offset 0x10 = Num of driveline records (DWORD)
+// Read driveline data from TRK file or from BTB driveline.ini/pacenote.ini files
+//
+// Classic maps track-xx.trk:
+//    Offset 0x10 = Num of driveline records (DWORD)
 //        0x14 = Driveline record 8 x DWORD (x y z cx cy cz distance zero)
 //        ...N num of driveline records...
 //
+// BTB maps driveline.ini:
+//    Driveline.ini for a track layout and Pacenotes.ini file for split positions (expected to be in the same folder with driveline.ini file)
+//
+int CNGPCarMenu::ReadDriveline(const std::string& sDrivelineFileName, CDrivelineSource& drivelineSource)
+{
+	if (_iEqual(fs::path(sDrivelineFileName).filename().string(), "driveline.ini", true))
+		return RBRRX_ReadDriveline(sDrivelineFileName, drivelineSource);
+	else
+		return ReadDriveline(_ToWString(sDrivelineFileName), drivelineSource);
+}
+
+// Read driveline from classic map (TRK file)
 int CNGPCarMenu::ReadDriveline(const std::wstring& sDrivelineFileName, CDrivelineSource& drivelineSource)
 {
 	__int32 numOfDrivelineRecords = 0;
