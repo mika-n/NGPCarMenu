@@ -136,11 +136,21 @@ inline DWORD GetTickCount32()
 
 
 //-----------------------------------------------------------------------------------------------------------------------
-// Helper interfaces to CSimpleIni/CSimpleIniW classes to read options, trim whitespaces, remove enclosing quotes and set the default value
+// Helper interfaces to CSimpleIni/CSimpleIniW classes to read options, trim whitespaces, remove enclosing quotes and set the default value.
+// LoadFileEx knows how to conveert UTF16 file to UTF8 supported by CSimpleIni
 //
 class CSimpleIniEx : public CSimpleIni
 {
 public:
+	SI_Error LoadFileEx(const char* szFileName)
+	{
+		// UTF16 file. Convert it to UTF8 because CSimpleIniW doesn't support UTF16 format (RBRPro uses UTF16 formatted carList.ini file)
+		if (::_IsFileInUTF16Format(szFileName))
+			return this->LoadData(::_ConvertUTF16FileContentToUTF8(szFileName));
+		else
+			return this->LoadFile(szFileName);
+	}
+
 	std::string GetValueEx(const std::string& sSection1, const std::string& sSection2, const std::string& sKey, const std::string& sDefault)
 	{
 		std::string result = this->GetValue(sSection1.c_str(), sKey.c_str(), "");

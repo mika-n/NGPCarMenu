@@ -645,6 +645,14 @@ public:
 	bool m_bRBRFullscreenDX9;			// Is RBR running in fullscreen or windows DX9 mode? TRUE-fullscreen, FALSE=windowed
 	bool m_bPacenotePluginInstalled;	// Is Pacenote plugin used? RBR exit logic handles font cleanup a bit differently in fullscreen mode IF pacenote plugin is missing
 	bool m_bRallySimFansPluginInstalled;// Is this RallySimFans plugin version of RBR? It modifies Cars\Cars.ini and physics file on the fly to change the list of installed cars, so NGPCarMenu needs to refresh car specs when RSF modifies those
+	
+	UINT m_iPhysicsNGMajorVer;				// Version of the NGP physics library (PhysicsNG.dll)
+	UINT m_iPhysicsNGMinorVer;
+	UINT m_iPhysicsNGPatchVer;
+	UINT m_iPhysicsNGBuildVer;
+
+	bool m_bRBRProInstalled;		// Is this RBRPro RBR game instance setup by RBRPro manager?
+	std::string m_sRBRProVersion;	// Version of the RBRProManager.exe
 
 	std::string  m_sRBRRootDir;  // RBR app path, multibyte (or normal ASCII) string
 	std::wstring m_sRBRRootDirW; // RBR app path, widechar string

@@ -682,7 +682,7 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 
 	m_pGame = pGame;
 
-	m_bPacenotePluginInstalled = m_bRBRFullscreenDX9 = m_bRallySimFansPluginInstalled = FALSE;
+	m_bPacenotePluginInstalled = m_bRBRFullscreenDX9 = m_bRallySimFansPluginInstalled = m_bRBRProInstalled = FALSE;
 
 	// Init plugin title text with version tag of NGPCarMenu.dll file
 	char szTxtBuf[COUNT_OF_ITEMS(C_PLUGIN_TITLE_FORMATSTR) + 32];
@@ -804,6 +804,8 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_latestMapID = m_latestCarID = -1;
 
 	m_bGenerateReplayMetadataFile = TRUE;
+
+	m_iPhysicsNGMajorVer = m_iPhysicsNGMinorVer = m_iPhysicsNGPatchVer = m_iPhysicsNGBuildVer = 0;
 
 	m_pD3D9RenderStateCache = nullptr; 
 	gtcDirect3DBeginScene = nullptr;
@@ -3369,9 +3371,19 @@ const char* CNGPCarMenu::GetName(void)
 
 		m_bPacenotePluginInstalled = fs::exists(m_sRBRRootDir + "\\Plugins\\PaceNote.dll");
 		m_bRallySimFansPluginInstalled = fs::exists(m_sRBRRootDir + "\\Plugins\\RSFstub.dll");
+		GetFileVersionInformationAsNumber(m_sRBRRootDirW + L"\\Plugins\\PhysicsNG.dll", &m_iPhysicsNGMajorVer, &m_iPhysicsNGMinorVer, &m_iPhysicsNGPatchVer, &m_iPhysicsNGBuildVer); 
 
-		LogPrint("RBR FullscreenMode=%d PacenotePluginInstalled=%d RallySimFansPluginInstalled=%d", m_bRBRFullscreenDX9, m_bPacenotePluginInstalled, m_bRallySimFansPluginInstalled);
-	
+		m_bRBRProInstalled = fs::exists(m_sRBRRootDir + "\\..\\RBRProManager.exe") || fs::exists(m_sRBRRootDir + "\\..\\RBRPro.API.dll");
+
+		LogPrint("RBR FullscreenMode=%d PacenotePluginInstalled=%d RallySimFansPluginInstalled=%d RBRProManagerInstalled=%d", m_bRBRFullscreenDX9, m_bPacenotePluginInstalled, m_bRallySimFansPluginInstalled, m_bRBRProInstalled);
+		LogPrint("NGP version %d.%d.%d.%d", m_iPhysicsNGMajorVer, m_iPhysicsNGMinorVer, m_iPhysicsNGPatchVer, m_iPhysicsNGBuildVer);
+
+		if (m_bRBRProInstalled)
+		{
+			m_sRBRProVersion = ::GetFileVersionInformationAsString(m_sRBRRootDirW + L"\\..\\RBRProManager.exe");
+			LogPrint("RBRPro version %s", m_sRBRProVersion.c_str());
+		}
+
 		// Init RBR API objects
 		RBRAPI_InitializeObjReferences();
 
@@ -3802,17 +3814,6 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 				m_sMenuStatusText1 = "BACKSPACE key closes this screen. Use LEFT ARROW key as backspace.";
 				m_sMenuStatusText2 = "Use UP/DOWN ARROW keys to choose characters not supported by the original RBR profile name editor.";
 				m_sMenuStatusText3 = "The profile name can have only valid WinOS filename characters.";
-			}
-			else if (m_iMenuSelection == C_MENUCMD_RBRRXOPTION)
-			{
-				//RBRRX_PrepareLoadTrack("tracks\\[Finland] SS Rimmila");
-				//if(RBRRX_PrepareLoadTrack("tracks\\[Finland] SS Rimmila"))
-				//	m_pGame->StartGame(41, 0, IRBRGame::ERBRWeatherType::GOOD_WEATHER, IRBRGame::ERBRTyreTypes::TYRE_GRAVEL_DRY, nullptr);
-				m_pGame->StartGame(41, 0, IRBRGame::ERBRWeatherType::GOOD_WEATHER, IRBRGame::ERBRTyreTypes::TYRE_GRAVEL_DRY, nullptr);
-			}
-			else if (m_iMenuSelection == C_MENUCMD_RBRTMOPTION)
-			{
-				RBRRX_PrepareLoadTrack("SS Rimmila");
 			}
 		}
 
@@ -5044,6 +5045,40 @@ void CNGPCarMenu::CompleteSaveReplayProcess(const std::list<std::wstring>& repla
 				
 				replayINIFile.SetLongValue("Replay", "CarSlot", m_latestCarID);
 			}
+
+			replayINIFile.SetValue("Replay", "NGP", (
+				std::to_string(m_iPhysicsNGMajorVer) + "." +
+				std::to_string(m_iPhysicsNGMinorVer) + "." +
+				std::to_string(m_iPhysicsNGPatchVer) + "." +
+				std::to_string(m_iPhysicsNGBuildVer) ).c_str());
+
+
+			if (m_bRBRProInstalled)
+			{
+				// RBRPro manager customization. Add skin and lights metadata tags
+				std::string rbrProListNumber;
+				std::string sTextValue;
+				std::string sCarSlot;
+				CSimpleIniEx rbrProCarListsIniFile;
+
+				replayINIFile.SetValue("Replay", "RBRPro", m_sRBRProVersion.c_str());
+				
+				rbrProCarListsIniFile.SetUnicode(TRUE);
+				rbrProCarListsIniFile.LoadFileEx((m_sRBRRootDir + "\\..\\CarLists.ini").c_str());				
+
+				rbrProListNumber = rbrProCarListsIniFile.GetValueEx("RBRProManager", "", "ListNumber", "");			
+				if (!rbrProListNumber.empty())
+				{
+					sCarSlot = std::to_string(m_latestCarID);
+
+					sTextValue = rbrProCarListsIniFile.GetValueEx(rbrProListNumber, "", "CarSkin" + sCarSlot, "");
+					if (!sTextValue.empty()) replayINIFile.SetValue("Replay", "RBRProCarSkin", sTextValue.c_str());
+
+					sTextValue = rbrProCarListsIniFile.GetValueEx(rbrProListNumber, "", "CarLightsOption" + sCarSlot, "");
+					if (!sTextValue.empty()) replayINIFile.SetValue("Replay", "RBRProCarLightsOption", sTextValue.c_str());
+				}
+			}
+
 
 			replayINIFile.SaveFile(sReplayINIFileName.c_str());
 			replayINIFile.Reset();
