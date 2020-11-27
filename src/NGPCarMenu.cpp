@@ -57,6 +57,9 @@ tRBRControllerAxisData Func_OrigRBRControllerAxisData = nullptr;// Controller ax
 wchar_t* g_pOrigLoadReplayStatusText = nullptr;        // The original (localized) "Loading Replay" text
 wchar_t  g_wszCustomLoadReplayStatusText[256] = L"\0"; // Custom LoadReplay text (Loading Replay <rpl file name>)
 
+wchar_t* g_pOrigRallySchoolMenuText = nullptr;			  // The original (localized) "Rally School" menu text (could be that the menu is replacemend with custom menu name)
+wchar_t  g_wszRallySchoolMenuReplacementText[128] = L"Rally School"; // Custom rallySchool menu text
+
 #if USE_DEBUG == 1
 CD3DFont* g_pFontDebug = nullptr;
 #endif 
@@ -182,16 +185,18 @@ RBRCarSelectionMenuEntry g_RBRCarSelectionMenuEntry[8] = {
 #define C_MENUCMD_RBRTMOPTION		2
 #define C_MENUCMD_RBRRXOPTION		3
 #define C_MENUCMD_AUTOLOGONOPTION	4
-#define C_MENUCMD_RENAMEDRIVER		5
-#define C_MENUCMD_RELOAD			6
-#define C_MENUCMD_CREATE			7
+#define C_MENUCMD_RALLYSCHOOLMENUOPTION	5
+#define C_MENUCMD_RENAMEDRIVER		6
+#define C_MENUCMD_RELOAD			7
+#define C_MENUCMD_CREATE			8
 
-char* g_NGPCarMenu_PluginMenu[8] = {
+char* g_NGPCarMenu_PluginMenu[9] = {
 	 "> Create option"		// CreateOptions
 	,"> Image option"		    // ImageOptions
-	,"> RBRTM integration option"    // EnableDisableOptions
-	,"> RBRRX integration option"    // EnableDisableOptions
-	,"> Auto logon option"		     // AutoLogon option
+	,"> RBRTM integration"    // EnableDisableOptions
+	,"> RBRRX integration"    // EnableDisableOptions
+	,"> Auto logon"		     // AutoLogon option
+	,"> RallySchool menu replacement"   // Replace RallySchool menu entry with another menu shortcut
 	,"RENAME driver profile" // "Rename driver MULLIGATAWNY -> SpeedRacer" in the profile to match the loaded pfXXXX.rbr profile filename (creates a new profile file. Take a backup copy of the old profile file)
 	,"RELOAD car images"	 // Clear cached car images to force re-loading of new images
 	,"CREATE car images"	 // Create new car images (all or only missing car iamges)
@@ -694,6 +699,7 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 
 	m_iAutoLogonMenuState = -1;			// AutoLogon sequence is not yet run
 	m_dwAutoLogonEventStartTick = 0;
+	m_bShowAutoLogonProgressText = true;
 
 	m_pTracksIniFile = nullptr;
 
@@ -770,6 +776,7 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_iMenuRBRTMOption = 0;
 	m_iMenuRBRRXOption = 0;
 	m_iMenuAutoLogonOption = 0;
+	m_iMenuRallySchoolMenuOption = 0;
 	m_bAutoLogonWaitProfile = FALSE;
 
 	m_screenshotAPIType = C_SCREENSHOTAPITYPE_DIRECTX;
@@ -1391,7 +1398,24 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 			}
 		}
 
-		
+
+		// Custom RallySchool menu entry
+		m_sRallySchoolMenuReplacement = _ToString(pluginINIFile.GetValueEx(L"Default", L"", L"RallySchoolMenuReplacement", L"Disabled"));
+		if (_iEqual(m_sRallySchoolMenuReplacement, "main", true)) m_sRallySchoolMenuReplacement = "Disabled";
+
+		if (!_iEqual(m_sRallySchoolMenuReplacement, "disabled", true))
+		{
+			if (_iEqual(m_sRallySchoolMenuReplacement, "plugins", true))
+				m_iMenuRallySchoolMenuOption = 2; // Plugins auto-logon menu entry
+			else
+				m_iMenuRallySchoolMenuOption = 3; // Place-holder custom plugin value until the list of custom plugins is initialized
+
+			wcsncpy_s(g_wszRallySchoolMenuReplacementText, _ToWString(m_sRallySchoolMenuReplacement).c_str(), COUNT_OF_ITEMS(g_wszRallySchoolMenuReplacementText));
+		}
+		else
+			m_iMenuRallySchoolMenuOption = 0;
+
+
 		//
 		// If the existing INI file format is an old version1 then save the file using the new format specifier
 		//
@@ -1504,6 +1528,17 @@ void CNGPCarMenu::SaveSettingsToPluginINIFile()
 		pluginINIFile.SetValue(L"Default", L"RBRRX_Integration", std::to_wstring(this->m_iMenuRBRRXOption).c_str());
 
 		pluginINIFile.SetValue(L"Default", L"AutoLogon", _ToWString(std::string( m_iMenuAutoLogonOption < (int)g_NGPCarMenu_AutoLogonOptions.size() ? g_NGPCarMenu_AutoLogonOptions[m_iMenuAutoLogonOption] : m_sAutoLogon.c_str())).c_str());
+
+		pluginINIFile.SetValue(L"Default", L"RallySchoolMenuReplacement", _ToWString(m_sRallySchoolMenuReplacement).c_str());
+
+		if (g_pOrigRallySchoolMenuText != nullptr)
+		{
+			// Set RallySchool menu replacement up-to-date in case the INI file had a new RallySchoolMenuReplacement value
+			if (m_iMenuRallySchoolMenuOption >= 2)
+				wcsncpy_s(g_wszRallySchoolMenuReplacementText, _ToWString(m_sRallySchoolMenuReplacement).c_str(), COUNT_OF_ITEMS(g_wszRallySchoolMenuReplacementText));
+			else
+				wcsncpy_s(g_wszRallySchoolMenuReplacementText, g_pOrigRallySchoolMenuText, COUNT_OF_ITEMS(g_wszRallySchoolMenuReplacementText));
+		}
 
 		pluginINIFile.SaveFile(sIniFileName.c_str());
 	}
@@ -1802,8 +1837,9 @@ int CNGPCarMenu::InitAllNewCustomPluginIntegrations()
 //-------------------------------------------------------------------------------------------------------------------
 // AutoLogin feature enabled. Do the logon sequence and take the RBR menu automatically to the defined menu (Default profile, Main, Options, Plugins, Custom plugin)
 //
-void CNGPCarMenu::StartNewAutoLogonSequence()
+void CNGPCarMenu::StartNewAutoLogonSequence(bool showAutoLogonProgressText)
 {
+	m_bShowAutoLogonProgressText = showAutoLogonProgressText;
 	m_autoLogonSequenceLabel.clear();
 	m_autoLogonSequenceLabel.str(std::wstring());
 	for (auto& item : m_autoLogonSequenceSteps)
@@ -1819,8 +1855,8 @@ void CNGPCarMenu::DoAutoLogonSequence()
 	{
 		// Autologon sequence step took too long to complete (more than 15 secs if waitProfile enabled, otherwise 4 secs). Abort it. Maybe user pressed some keys to mess up it or RBR is waiting for something strange thing to happen
 		m_iAutoLogonMenuState = 0;
-		if(m_autoLogonSequenceSteps.size() <= 0) LogPrint("AutoLogon sequence queue empty. AutoLogon completed");
-		else LogPrint("WARNING. AutoLogon sequence aborted because of timeout");
+		if(m_autoLogonSequenceSteps.size() <= 0) LogPrint("Menu navigation queue is empty. Navigation completed");
+		else LogPrint("WARNING. Automatic menu navigation aborted because of timeout");
 		return;
 	} 
 
@@ -1875,6 +1911,16 @@ void CNGPCarMenu::DoAutoLogonSequence()
 		{
 			int  newSelectedItemIdx = -1;
 			//bool bRBRRXAutoLogon = FALSE;
+
+			// If auto-logon sequence has Plugings menu and the menu is already there then remove unnecessary Main/Options root path (no need to navigate there and then back to plugins menu)
+			if (g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->pluginsMenuObj)
+			{
+				if (_iEqual(m_autoLogonSequenceSteps[0], "main", true) && _iEqual(m_autoLogonSequenceSteps[1], "options", true) && _iEqual(m_autoLogonSequenceSteps[2], "plugins", true))
+				{
+					m_autoLogonSequenceSteps.pop_front();
+					m_autoLogonSequenceSteps.pop_front();
+				}
+			}
 
 			if (_iEqual(m_autoLogonSequenceSteps[0], "main", true) && g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN])
 			{
@@ -1939,7 +1985,9 @@ void CNGPCarMenu::DoAutoLogonSequence()
 						PRBRPluginMenuItemObj3 pItemArr = (PRBRPluginMenuItemObj3)g_pRBRPluginMenuSystem->pluginsMenuObj->pItemObj[idx];
 						if (pItemArr != nullptr && pItemArr->szItemName != nullptr && _iEqual(pItemArr->szItemName, m_autoLogonSequenceSteps[0]))
 						{
-							LogPrint("AutoLogon to the custom plugin %s", m_autoLogonSequenceSteps[0].c_str());
+							if(m_bShowAutoLogonProgressText)
+								LogPrint("Auto navigating to the custom plugin %s", m_autoLogonSequenceSteps[0].c_str());
+
 							//bRBRRXAutoLogon = _iEqual(m_autoLogonSequenceSteps[0], "rbr_rx", true);
 							newSelectedItemIdx = idx;
 							break;
@@ -1947,7 +1995,7 @@ void CNGPCarMenu::DoAutoLogonSequence()
 					}					
 
 					if(newSelectedItemIdx < 0)
-						LogPrint("WARNING. AutoLogon to %s plugin failed because the plugin is not installed. Check AutoLogon option", m_autoLogonSequenceSteps[0].c_str());
+						LogPrint("WARNING. Menu navigation to %s plugin failed because the plugin is not installed", m_autoLogonSequenceSteps[0].c_str());
 
 					// Complete the sequence when custom plugin is activated
 					m_autoLogonSequenceSteps.clear();
@@ -1963,7 +2011,7 @@ void CNGPCarMenu::DoAutoLogonSequence()
 			}
 			else if (newSelectedItemIdx == -2 && m_autoLogonSequenceSteps.size() > 0)
 			{
-				LogPrint("WARNING: Invalid AutoLogon sequence. Unexpected submenu entry %s. AutoLogon aborted", m_autoLogonSequenceSteps[0].c_str());
+				LogPrint("WARNING: Invalid menu navigation sequence. Unexpected submenu entry %s. Navigation aborted", m_autoLogonSequenceSteps[0].c_str());
 				m_iAutoLogonMenuState = 0;
 			}
 			
@@ -1972,7 +2020,9 @@ void CNGPCarMenu::DoAutoLogonSequence()
 				// Autlogon completed, all menu steps executed
 				m_iAutoLogonMenuState = 0;
 				m_dwAutoLogonEventStartTick = 0;
-				LogPrint("AutoLogon completed");
+
+				if (m_bShowAutoLogonProgressText)
+					LogPrint("Automatic menu navigation completed");
 			}
 		}
 	}
@@ -3491,7 +3541,6 @@ const char* CNGPCarMenu::GetName(void)
 
 		LogPrint("Completed the plugin initialization");
 	}
-
 	//DebugPrint("Exit CNGPCarMenu.GetName");
 
 	return "NGPCarMenu";
@@ -3579,6 +3628,8 @@ void CNGPCarMenu::DrawFrontEndPage(void)
 		g_NGPCarMenu_AutoLogonOptions.push_back("Main");
 		g_NGPCarMenu_AutoLogonOptions.push_back("Plugins");
 
+		m_iMenuRallySchoolMenuOption = 0;
+
 		if (g_pRBRPluginMenuSystem != nullptr)
 		{
 			for (int idx = g_pRBRPluginMenuSystem->pluginsMenuObj->firstSelectableItemIdx; idx < g_pRBRPluginMenuSystem->pluginsMenuObj->numOfItems - 1; idx++)
@@ -3591,6 +3642,10 @@ void CNGPCarMenu::DrawFrontEndPage(void)
 					// Set the AutoLogon menu idx to the custom plugin idx in this vector
 					if (_iEqual(m_sAutoLogon, pItemArr->szItemName))
 						m_iMenuAutoLogonOption = max((idx - g_pRBRPluginMenuSystem->pluginsMenuObj->firstSelectableItemIdx) + 3, 0);
+
+					// RallySchool menu option replacement idx if the menu is replaced with a custom plugin name
+					if (_iEqual(m_sRallySchoolMenuReplacement, pItemArr->szItemName))
+						m_iMenuRallySchoolMenuOption = max((idx - g_pRBRPluginMenuSystem->pluginsMenuObj->firstSelectableItemIdx) + 3, 0);
 				}
 			}
 		}	
@@ -3602,10 +3657,18 @@ void CNGPCarMenu::DrawFrontEndPage(void)
 			else if (_iEqual(m_sAutoLogon, "plugins", true)) m_iMenuAutoLogonOption = 2;
 			else m_iMenuAutoLogonOption = (int)g_NGPCarMenu_AutoLogonOptions.size();
 		}
+
+		if (m_iMenuRallySchoolMenuOption <= 0)
+		{
+			if (_iEqual(m_sRallySchoolMenuReplacement, "disabled", true)) m_iMenuRallySchoolMenuOption = 0;
+			else if (_iEqual(m_sRallySchoolMenuReplacement, "main", true)) m_iMenuRallySchoolMenuOption = 0; // Main is not relevant in menu replacement
+			else if (_iEqual(m_sRallySchoolMenuReplacement, "plugins", true)) m_iMenuRallySchoolMenuOption = 2;
+			else m_iMenuRallySchoolMenuOption = (int)g_NGPCarMenu_AutoLogonOptions.size();
+		}
 	}
 
 	// Draw blackout (coordinates specify the 'window' where you don't want black background but the "RBR world" to be visible)
-	m_pGame->DrawBlackOut(450.0f, 0.0f, 190.0f, 480.0f);
+	m_pGame->DrawBlackOut(520.0f, 0.0f, 190.0f, 480.0f);
 
 	// Draw custom plugin header line
 	m_pGame->SetMenuColor(IRBRGame::MENU_HEADING);
@@ -3629,7 +3692,7 @@ void CNGPCarMenu::DrawFrontEndPage(void)
 	else
 	{
 		// The red menu selection line (background color of the focused menu line)
-		m_pGame->DrawSelection(0.0f, 68.0f + (static_cast<float>(m_iMenuSelection) * 21.0f), 370.0f);
+		m_pGame->DrawSelection(0.0f, 68.0f + (static_cast<float>(m_iMenuSelection) * 21.0f), 440.0f);
 		
 		m_pGame->SetMenuColor(IRBRGame::MENU_TEXT);
 		for (unsigned int i = 0; i < COUNT_OF_ITEMS(g_NGPCarMenu_PluginMenu); ++i)
@@ -3644,6 +3707,8 @@ void CNGPCarMenu::DrawFrontEndPage(void)
 				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_EnableDisableOptions[m_iMenuRBRRXOption]);
 			else if (i == C_MENUCMD_AUTOLOGONOPTION)
 				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], (m_iMenuAutoLogonOption < (int)g_NGPCarMenu_AutoLogonOptions.size() ? g_NGPCarMenu_AutoLogonOptions[m_iMenuAutoLogonOption] : "<unknown>"));
+			else if (i == C_MENUCMD_RALLYSCHOOLMENUOPTION)
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], (m_iMenuRallySchoolMenuOption < (int)g_NGPCarMenu_AutoLogonOptions.size() ? g_NGPCarMenu_AutoLogonOptions[m_iMenuRallySchoolMenuOption] : "<unknown>"));
 			else if (i == C_MENUCMD_RENAMEDRIVER)
 				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: '%s'", g_NGPCarMenu_PluginMenu[i], g_pRBRProfile->szProfileName);
 			else
@@ -3716,7 +3781,7 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 
 				m_sMenuPrevDriverName = g_pRBRProfile->szProfileName;
 				strncpy_s(g_pRBRProfile->szProfileName, m_sMenuNewDriverName.c_str(), COUNT_OF_ITEMS(g_pRBRProfile->szProfileName));
-				StartNewAutoLogonSequence();
+				StartNewAutoLogonSequence(false);
 				//LogPrint(L"SaveProfile sequence. %s", m_autoLogonSequenceLabel.str().c_str());
 
 				// Navigate to main menu to start a new autologon sequence
@@ -3853,7 +3918,13 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 		if (m_iMenuSelection == C_MENUCMD_AUTOLOGONOPTION && bLeft && (--m_iMenuAutoLogonOption) < 0) m_iMenuAutoLogonOption = 0;
 		else if (m_iMenuSelection == C_MENUCMD_AUTOLOGONOPTION && bRight && (++m_iMenuAutoLogonOption) >= (int)g_NGPCarMenu_AutoLogonOptions.size()) m_iMenuAutoLogonOption = g_NGPCarMenu_AutoLogonOptions.size() - 1;
 
-		if (iPrevMenuImageOptionValue != m_iMenuImageOption || iPrevMenuRBRTMOptionValue != m_iMenuRBRTMOption || iPrevMenuRBRRXOptionValue != m_iMenuRBRRXOption || iPrevMenuAutoLogonOptionValue != m_iMenuAutoLogonOption)
+		int iPrevMenuRallySchoolMenuOptionValue = m_iMenuRallySchoolMenuOption;
+		if (m_iMenuSelection == C_MENUCMD_RALLYSCHOOLMENUOPTION && bLeft && (--m_iMenuRallySchoolMenuOption) < 0) m_iMenuRallySchoolMenuOption = 0;
+		else if (m_iMenuSelection == C_MENUCMD_RALLYSCHOOLMENUOPTION && bRight && (++m_iMenuRallySchoolMenuOption) >= (int)g_NGPCarMenu_AutoLogonOptions.size()) m_iMenuRallySchoolMenuOption = g_NGPCarMenu_AutoLogonOptions.size() - 1;
+		if (iPrevMenuRallySchoolMenuOptionValue != m_iMenuRallySchoolMenuOption)
+			m_sRallySchoolMenuReplacement = g_NGPCarMenu_AutoLogonOptions[m_iMenuRallySchoolMenuOption];
+
+		if (iPrevMenuImageOptionValue != m_iMenuImageOption || iPrevMenuRBRTMOptionValue != m_iMenuRBRTMOption || iPrevMenuRBRRXOptionValue != m_iMenuRBRRXOption || iPrevMenuAutoLogonOptionValue != m_iMenuAutoLogonOption || iPrevMenuRallySchoolMenuOptionValue != m_iMenuRallySchoolMenuOption)
 			SaveSettingsToPluginINIFile();
 	}
 }
@@ -4113,6 +4184,13 @@ inline void CNGPCarMenu::CustomRBRDirectXBeginScene()
 {
 	if (g_pRBRGameMode->gameMode == 03)
 	{
+		if (g_pOrigRallySchoolMenuText == nullptr && m_iMenuRallySchoolMenuOption >= 2)
+		{
+			g_pOrigRallySchoolMenuText = (wchar_t*) ((PRBRPluginMenuItemObj2)g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN]->pItemObj[3])->wszMenuTitleName;
+			if (g_pOrigRallySchoolMenuText != nullptr)
+				((PRBRPluginMenuItemObj2)g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN]->pItemObj[3])->wszMenuTitleName = g_wszRallySchoolMenuReplacementText;
+		}
+
 		if (m_bRenameDriverNameActive)
 		{
 			// If the current menu or the focused profile menu line has changed then user has either accepted or canceled the profile saving (renaming)
@@ -4120,7 +4198,24 @@ inline void CNGPCarMenu::CustomRBRDirectXBeginScene()
 				CompleteProfileRenaming();
 		}
 
-		if (g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_QUICKRALLY_CARS]
+		if (g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_RALLYSCHOOL] && m_iMenuRallySchoolMenuOption >= 2 && m_iAutoLogonMenuState == 0)
+		{
+			// RallySchool menu is replaced with a custom menu option (2=Plugins menu, 2>Custom plugin idx)
+			if (g_pRBRPluginMenuSystem->pluginsMenuObj != nullptr)
+				g_pRBRMenuSystem->currentMenuObj = g_pRBRPluginMenuSystem->pluginsMenuObj;
+			else
+				g_pRBRMenuSystem->currentMenuObj = g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN];
+				
+			m_autoLogonSequenceSteps.clear();
+			m_autoLogonSequenceSteps.push_back("main");
+			m_autoLogonSequenceSteps.push_back("options");
+			m_autoLogonSequenceSteps.push_back("plugins");
+			if (m_iMenuRallySchoolMenuOption > 2)
+				m_autoLogonSequenceSteps.push_back(m_sRallySchoolMenuReplacement);
+
+			StartNewAutoLogonSequence(false);
+		}
+		else if (g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_QUICKRALLY_CARS]
 			|| g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MULTIPLAYER_CARS_P1]
 			|| g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MULTIPLAYER_CARS_P2]
 			|| g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MULTIPLAYER_CARS_P3]
@@ -4481,13 +4576,16 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 
 		if (m_iAutoLogonMenuState > 0)
 		{
-			std::wstringstream sLogonSequenceText;
-			sLogonSequenceText << L"AUTOLOGON sequence of NGPCarMenu activated. ";
-			if (m_bAutoLogonWaitProfile) sLogonSequenceText << L"Choose a profile to continue. ";
-			sLogonSequenceText << m_autoLogonSequenceLabel.str();
+			if (m_bShowAutoLogonProgressText)
+			{
+				std::wstringstream sLogonSequenceText;
+				sLogonSequenceText << L"AUTOLOGON sequence of NGPCarMenu activated. ";
+				if (m_bAutoLogonWaitProfile) sLogonSequenceText << L"Choose a profile to continue. ";
+				sLogonSequenceText << m_autoLogonSequenceLabel.str();
 
-			RBRAPI_MapRBRPointToScreenPoint(50.0f, 0, &posX, nullptr);
-			g_pFontCarSpecCustom->DrawText(posX, 10, C_CARSPECTEXT_COLOR, sLogonSequenceText.str().c_str(), D3DFONT_CLEARTARGET);
+				RBRAPI_MapRBRPointToScreenPoint(50.0f, 0, &posX, nullptr);
+				g_pFontCarSpecCustom->DrawText(posX, 10, C_CARSPECTEXT_COLOR, sLogonSequenceText.str().c_str(), D3DFONT_CLEARTARGET);
+			}
 
 			DoAutoLogonSequence();
 		} 

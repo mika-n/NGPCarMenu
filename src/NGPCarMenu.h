@@ -533,6 +533,7 @@ protected:
 	std::deque<std::string> m_autoLogonSequenceSteps;	// Sequence steps of the autologon
 	int   m_iAutoLogonMenuState;        // State step of the autologon procedure (0=completed or not used, 1-2=LoadProfile steps, 3=MainMenu navigation steps)
 	DWORD m_dwAutoLogonEventStartTick;  // The start tick of the previous auto-logon event. If autologon takes too long then it is aborted (timeout)
+	bool  m_bShowAutoLogonProgressText; // Show the title of auto-logon sequence
 
 	bool m_bMenuSelectCarCustomized;	// TRUE - The SelectCar is in customized state, FALSE - Various original values restored (ie. tyre brand names)
 
@@ -544,6 +545,7 @@ protected:
 	int m_iMenuRBRTMOption;		// 0 = RBRTM integration disabled, 1 = Enabled
 	int m_iMenuRBRRXOption;		// 0 = RBRRX integration disabled, 1 = Enabled
 	int m_iMenuAutoLogonOption; // 0 = Disabled, 1=Main, 2=Plugins, 3+ custom plugin
+	int m_iMenuRallySchoolMenuOption; // 0 = Disabled, 1=Main, 2=Plugins, 3+ custom plugin
 
 	bool m_bRenameDriverNameActive;		// TRUE=Renaming of driver profile process is active (NGPCarMenu checks if the creation succeeded and takes a backup of the prev profile before completing the renaming)
 	int  m_iProfileMenuPrevSelectedIdx; //
@@ -562,7 +564,7 @@ protected:
 	DetourXS* gtcRBRReplay;
 	DetourXS* gtcRBRControllerAxisData;
 
-	void StartNewAutoLogonSequence();
+	void StartNewAutoLogonSequence(bool showAutoLogonProgressText = true);
 	void DoAutoLogonSequence();
 
 	void CompleteProfileRenaming();
@@ -656,6 +658,8 @@ public:
 
 	std::string  m_sRBRRootDir;  // RBR app path, multibyte (or normal ASCII) string
 	std::wstring m_sRBRRootDirW; // RBR app path, widechar string
+
+	std::string m_sRallySchoolMenuReplacement;  // RallySchool menu replacement (Disabled, Main, Plugins or custom plugin name)
 
 	std::string m_sAutoLogon;					// The current auto-logon option name (Disabled, Main, Plugins or custom plugin name)
 	bool m_bAutoLogonWaitProfile;				// TRUE=Wait for user to choose a profile until continuing the autoprofile process (multiprofile scenarios may need this)

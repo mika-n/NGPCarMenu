@@ -61,9 +61,10 @@ Note! If you use Windows Explorer integrated unzip tool to unzip the package the
 rbr\Plugins\NGPCarMenu.ini options (see the NGPCarMenu.ini.sample file for more details):
 | Option                 | Comment                                                                                |
 |------------------------|----------------------------------------------------------------------------------------|
-| AutoLogon              | Disabled, Main, Plugins, custom plugin name, Replay. If this is set then NGPCarMenu opens the specified menu screen automatically when RBR is launched. Replay option runs a RPL replay file (see AutoLogonParam1). If you have multi-profile RBR then see AutoLogonWaitProfileSelection option also. |
+| AutoLogon              | Disabled, Main, Plugins, custom plugin name, Replay. If this is set then NGPCarMenu opens the specified menu screen automatically when RBR is launched. Replay option runs a RPL replay file (see AutoLogonParam1). If you have multi-profile RBR then see AutoLogonWaitProfileSelection option also. See NGPCarMenu in-game menu. |
 | AutoLogonWaitProfileSelection | 0 (disabled) or 1 (enabled). If autologon is set and you have multiple profiles in RBR then setting this option to value 1 lets you to select a profile before autologon sequence does it job. If set to value 0, NGPCarMenu autologon selects automatically the first profile. |
 | AutoLogonParam1        | Additional parameter for AutoLogon command. At the moment only AutoLogon=Replay uses this option and the value should be RBR replay RPL filename. See NGPCarMenu.ini.sample for examples. |
+| RallySchoolMenuReplacement | Replace the RallySchool menu with a custom menu shortcut (Plugins or a custom plugin menu shortcut). See NGPCarMenu in-game menu. |
 | InvertedPedalsStartupFix | 0 or 1. If enabled (default) then NGPCarMenu fixes the notorious "inverted pedals" RBR bug when the car is at starting line (ie. throttle goes to 100% until a driver presses the inverted pedal at least once). |
 | ScreenshotPath         | Path of car preview images (relative to RBR executable location or absolute path). Supports various runtime variables (see NGPCarMenu.ini.sample for more details) |
 | ScreenshotReplay       | Replay filename the plugin uses to generate preview images. |

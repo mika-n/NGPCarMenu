@@ -531,17 +531,17 @@ typedef struct {
 } RBRPluginMenuItemObj3;
 typedef RBRPluginMenuItemObj3* PRBRPluginMenuItemObj3;
 
-/*
-// MenuObj->pItemObj pointer (obsolete?)
+
+// MenuObj->pItemObj pointer (fex main menu options)
 typedef struct {
 #pragma pack(push,1)
-	BYTE pad1[0x24];       // 0x00
-	LPCSTR szMenuItemID;   // 0x24
-	LPCSTR szMenuItemName; // 0x28
+	BYTE pad1[0x24];          // 0x00
+	LPCSTR  szMenuTitleID;    // 0x24
+	LPCWSTR wszMenuTitleName; // 0x28
 #pragma pack(pop)
-} RBRPluginMenuItemObj;
-typedef RBRPluginMenuItemObj* PRBRPluginMenuItemObj;
-*/
+} RBRPluginMenuItemObj2;
+typedef RBRPluginMenuItemObj2* PRBRPluginMenuItemObj2;
+
 
 // Menu object (RBRMenuPoint has references to these objects)
 struct RBRMenuObj;
