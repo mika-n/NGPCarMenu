@@ -778,6 +778,8 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_iMenuAutoLogonOption = 0;
 	m_iMenuRallySchoolMenuOption = 0;
 	m_bAutoLogonWaitProfile = FALSE;
+	
+	m_bAutoExitAfterReplay = FALSE;
 
 	m_screenshotAPIType = C_SCREENSHOTAPITYPE_DIRECTX;
 
@@ -1458,7 +1460,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 
 				m_autoLogonSequenceSteps.clear();
 				m_autoLogonSequenceSteps.push_back("main");
-				if (_iEqual(m_sAutoLogon, "replay", true))
+				if (_iStarts_With(m_sAutoLogon, "replay", true))
 				{
 					std::wstring sAutoLogonParam1;
 
@@ -1471,6 +1473,13 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 
 					if (!sAutoLogonParam1.empty())
 						m_autoLogonSequenceSteps.push_back(_ToString(sAutoLogonParam1));
+
+					// Special replay mode where RBR is automatically closed when replay is finished and focus moves back to the RBR main menu (RBRPro ReplayManager uses this method)
+					if (_iEqual(m_sAutoLogon, "replayandexit", true))
+					{
+						LogPrint(L"AutoLogon ReplayAndExit %s", sAutoLogonParam1.c_str());
+						m_bAutoExitAfterReplay = TRUE;
+					}
 				}
 				else if (!_iEqual(m_sAutoLogon, "main", true))
 				{
@@ -4175,6 +4184,13 @@ void CNGPCarMenu::OnReplayEnded()
 	}
 	else
 		m_bRBRReplayActive = m_bRBRRXReplayActive = m_bRBRReplayOrRacingEnding = FALSE;
+
+	if (m_bAutoExitAfterReplay)
+	{
+		LogPrint("Automatically exiting RBR");
+		::PostMessage(g_hRBRWnd, WM_CLOSE, 0, 0);
+		m_bAutoExitAfterReplay = FALSE;
+	}
 }
 
 
@@ -4990,8 +5006,11 @@ BOOL CNGPCarMenu::CustomRBRReplay(const char* szReplayFileName)
 	BOOL bResult = TRUE;
 	std::wstring sReplayFileName = _ToWString(szReplayFileName);
 
-	if (szReplayFileName == nullptr || !fs::exists(g_pRBRPlugin->m_sRBRRootDir + "\\Replays\\" + szReplayFileName) )
+	if (szReplayFileName == nullptr || !fs::exists(g_pRBRPlugin->m_sRBRRootDir + "\\Replays\\" + szReplayFileName))
+	{
+		if(szReplayFileName != nullptr) LogPrint("ERROR. RBR replay file missing. %s", szReplayFileName);
 		return FALSE;
+	}
 
 	// Customize the "Loading Replay" label text to include the RPL filename (unless the special "generate preview img" replay state is active)
 	if (g_pRBRPlugin->m_iCustomReplayState > 0 || _iEqual(sReplayFileName, C_REPLAYFILENAME_SCREENSHOTW))

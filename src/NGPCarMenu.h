@@ -663,6 +663,8 @@ public:
 
 	std::string m_sAutoLogon;					// The current auto-logon option name (Disabled, Main, Plugins or custom plugin name)
 	bool m_bAutoLogonWaitProfile;				// TRUE=Wait for user to choose a profile until continuing the autoprofile process (multiprofile scenarios may need this)
+	
+	bool m_bAutoExitAfterReplay;				// TRUE=Auto-exit RBR when focus returns to RBR main menu (used only in AutoLogon=ReplayAndExit replay mode, not really relevant in other cases)
 
 	std::wstring m_screenshotPath;				// Path to car preview screenshot images (by default AppPath + \plugins\NGPCarMenu\preview\XResxYRes\)
 	int m_screenshotAPIType;					// Uses DIRECTX or GDI API technique to generate a new screenshot file. 0=DirectX (default), 1=GDI. No GUI option, so tweak this in NGPCarMenu.ini file.
