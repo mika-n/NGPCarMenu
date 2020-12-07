@@ -128,11 +128,19 @@ public:
 		AddReplayFileToQueue(fileName);
 	}
 
+	/*
 	virtual void OnFileAdded(const std::wstring& fileName) override
 	{
 		//DebugPrint(L"OnFileAdded %s", fileName.c_str());
 		AddReplayFileToQueue(fileName);
 	}
+
+	virtual void OnFileRenamed(const std::wstring& fileName) override
+	{
+		//DebugPrint(L"OnFileRenamed%s", fileName.c_str());
+		AddReplayFileToQueue(fileName);
+	}
+	*/
 
 	// Flush the queue and write out all replayFileName.ini files with the current track and car metadata
 	void DoCompletion(BOOL onlyForceCleanup)

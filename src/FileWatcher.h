@@ -47,7 +47,7 @@ class IFileWatcherListener
 {
 public:
     virtual void OnFileChange (const std::wstring& path) = 0;
-    virtual void OnFileAdded  (const std::wstring& path) = 0;
+    //virtual void OnFileAdded  (const std::wstring& path) = 0;
     //virtual void OnFileRemoved(const std::wstring& path) = 0;
     //virtual void OnFileRenamed(const std::wstring& path) = 0;
     virtual void OnError      (const int errorCode) = 0;
@@ -76,7 +76,7 @@ private:
     std::unique_ptr<std::thread> m_pFileWatcherThread;  // File Watcher Thread
 
 public:
-    CFileSystemWatcher(DWORD notifyEvents = FILE_NOTIFY_CHANGE_LAST_WRITE)
+    CFileSystemWatcher(DWORD notifyEvents = FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_SIZE)
     {
         m_bRunning = m_bThreadRunning = false;
         m_hTermEvent = nullptr;
@@ -84,7 +84,7 @@ public:
         m_dwNotifyEvents = notifyEvents;
     }
 
-    CFileSystemWatcher(const std::wstring& watchDir, DWORD notifyEvents = FILE_NOTIFY_CHANGE_LAST_WRITE) : CFileSystemWatcher(notifyEvents)
+    CFileSystemWatcher(const std::wstring& watchDir, DWORD notifyEvents = FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_SIZE) : CFileSystemWatcher(notifyEvents)
     { 
         m_sDir = watchDir; 
     }
@@ -196,11 +196,22 @@ public:
      *
      * \param sFile
      */
-    void OnFileAdded(const std::wstring& sFile)
-    {
-        for (auto& listener : m_Listeners)
-            listener->OnFileAdded(sFile);
-    }
+    //void OnFileAdded(const std::wstring& sFile)
+    //{
+    //    for (auto& listener : m_Listeners)
+    //        listener->OnFileAdded(sFile);
+    //}
+
+    /*!
+     * Funtion called when a file is renamed from watch directory
+     *
+     * \param sFile
+     */
+    //void OnFileRenamed(const std::wstring& sFile)
+    //{
+    //   for (auto& listener : m_Listeners)
+    //        listener->OnFileRenamed(sFile);
+    //}
 
     /*!
      * Funtion called when a file is removed from watch directory
@@ -211,17 +222,6 @@ public:
     //{
     //    for (auto& listener : m_Listeners)
     //        listener->OnFileRemoved(sFile);
-    //}
-
-    /*!
-     * Funtion called when a file is renamed from watch directory
-     *
-     * \param sFile
-     */
-    //void OnFileRenamed(const std::wstring& sFile)
-    //{
-    //    for (auto& listener : m_Listeners)
-    //        listener->OnFileRenamed(sFile);
     //}
 
     /*!

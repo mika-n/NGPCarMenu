@@ -94,21 +94,13 @@ void fileWatcherThread(CFileSystemWatcher& watcherObj)
                     switch (fni->Action)
                     {
                         case FILE_ACTION_MODIFIED:
-                            watcherObj.OnFileChange(sFileName);
-                            break;
-
                         case FILE_ACTION_ADDED:
-                            watcherObj.OnFileAdded(sFileName);
+                        case FILE_ACTION_RENAMED_NEW_NAME:
+                            watcherObj.OnFileChange(sFileName);
                             break;
 
                         //case FILE_ACTION_REMOVED:
                         //    watcherObj.OnFileRemoved(sFileName);
-                        //    break;
-                        //case FILE_ACTION_RENAMED_OLD_NAME:
-                        //    watcherObj.OnFileRenamed(sFileName);
-                        //    break;
-                        //case FILE_ACTION_RENAMED_NEW_NAME:
-                        //    watcherObj.OnFileRenamed(sFileName);
                         //    break;
                     }
 
