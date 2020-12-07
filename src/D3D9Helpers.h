@@ -24,7 +24,11 @@
 //#define WIN32_LEAN_AND_MEAN			// Exclude rarely-used stuff from Windows headers
 //#include <windows.h>
 //#include <string>
+
+#include "vector"
+#include "d3d9.h"
 #include "SimpleINI\SimpleIni.h"
+
 
 //------------------------------------------------------------------------------------------------
 
@@ -109,8 +113,8 @@ inline bool _IsRectZero(const RECT& rect) { return (rect.bottom == 0 && rect.rig
 
 extern bool _StringToRect (const std::wstring & s, RECT * outRect, const wchar_t separatorChar = L' '); // String in "0 50 200 400" format is converted as RECT struct value 
 extern bool _StringToRect (const std::string & s, RECT * outRect, const char separatorChar = ' ');
-extern bool _StringToPoint(const std::wstring & s, POINT * outPoint, const wchar_t separatorChar = L' '); // String in "0 50" format is converted as POINT struct value 
-extern bool _StringToPoint(const std::string & s, POINT * outPoint, const char separatorChar = ' ');
+extern bool _StringToPoint(const std::wstring & s, POINT * outPoint, const wchar_t separatorChar = L' ', long defaultValue = 0); // String in "0 50" format is converted as POINT struct value 
+extern bool _StringToPoint(const std::string & s, POINT * outPoint, const char separatorChar = ' ', long defaultValue = 0);
 
 extern std::wstring GetCmdLineArgValue(const std::wstring& argName); // Return the value of specified command line argument (fex "RichardBurnsRally_SSE.exe -AutoLogonParam1 myRun.rpl" would have -AutoLogonParam1 arg)
 extern std::string  GetCmdLineArgValue(const std::string& argName);
@@ -177,10 +181,10 @@ public:
 		else outRect->bottom = -1;
 	}
 
-	void GetValueEx(const std::string& sSection1, const std::string& sSection2, const std::string& sKey, const std::string& sDefault, POINT* outPoint)
+	void GetValueEx(const std::string& sSection1, const std::string& sSection2, const std::string& sKey, const std::string& sDefault, POINT* outPoint, long defaultValue = 0)
 	{
 		std::string result = GetValueEx(sSection1, sSection2, sKey, sDefault);
-		_StringToPoint(result, outPoint);
+		_StringToPoint(result, outPoint, ' ', defaultValue);
 
 	}
 
@@ -200,6 +204,15 @@ public:
 class CSimpleIniWEx : public CSimpleIniW
 {
 public:
+	SI_Error LoadFileEx(const WCHAR* szFileName)
+	{
+		// UTF16 file. Convert it to UTF8 because CSimpleIniW doesn't support UTF16 format (RBRPro uses UTF16 formatted carList.ini file)
+		if (::_IsFileInUTF16Format(szFileName))
+			return this->LoadData(::_ConvertUTF16FileContentToUTF8(_ToString(szFileName).c_str()));
+		else
+			return this->LoadFile(szFileName);
+	}
+
 	std::wstring GetValueEx(const std::wstring& sSection1, const std::wstring& sSection2, const std::wstring& sKey, const std::wstring& sDefault)
 	{
 		std::wstring result = this->GetValue(sSection1.c_str(), sKey.c_str(), L"");
@@ -226,10 +239,10 @@ public:
 		else outRect->bottom = -1;
 	}
 
-	void GetValueEx(const std::wstring& sSection1, const std::wstring& sSection2, const std::wstring& sKey, const std::wstring& sDefault, POINT* outPoint)
+	void GetValueEx(const std::wstring& sSection1, const std::wstring& sSection2, const std::wstring& sKey, const std::wstring& sDefault, POINT* outPoint, long defaultValue = 0)
 	{
 		std::wstring result = GetValueEx(sSection1, sSection2, sKey, sDefault);
-		_StringToPoint(result, outPoint);
+		_StringToPoint(result, outPoint, L' ', defaultValue);
 	}
 
 	long GetValueEx(const std::wstring& sSection1, const std::wstring& sSection2, const std::wstring& sKey, long iDefault)

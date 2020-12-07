@@ -19,7 +19,7 @@ OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 
 -----------------------------------------------------------------------------
 
-This work includes some code snippets from a "public domain" where the code example was published freely available without
+This work includes some code snippets or ideas borrowed from a "public domain" where the code example was published freely available without
 any explicit licenses. Here are references to those code snippets:
 
  - (Jacob Roman) Drawing 2D images on D3D9. Code ideas borrowed from Jacob's forum post and the modified derived work is part of this project:
@@ -41,12 +41,15 @@ any explicit licenses. Here are references to those code snippets:
  - (Typ1232) Trianglefan logic to draw a colored circle (specified precision).
    https://stackoverflow.com/questions/21330429/draw-point-or-filled-in-circle (posted by Typ1232)
 
-Thank you Jacob, Ivan, Simon, Sasha, TheIronWolfModding, Typ1232 for sharing the information. And of course those who has done the ground work to keep RBR alive (WorkerBee, car and track modellers, audio authors, pacenote authors).
+Thank you Jacob, Ivan, Simon, Sasha, TheIronWolfModding, Typ1232 for sharing the information. 
+And of course those who has done the ground work to keep RBR alive all these years (WorkerBee, car and track modellers, audio authors, pacenote authors).
 
-This work contains components with own licence texts. Please refer to those components for more details.
+This work contains components with own licence texts. Please refer to those components for more details. 
  - DetourXS, Dominic Tobias. Re-routing function pointers. https://dominictobias.com
  - SharedFont, Agrippa1994. D3D9 compatible font class. https://github.com/agrippa1994/DX9-Overlay-API
  - SimpleINI, Brodie Thiesfield. Ascii and UTF8 INI file reading. https://github.com/brofield/simpleini
+ - SQLite3, SQLite consortium. https://www.sqlite.org
+ - CppSQLite3U C++ wrapper class, Unicode fork of CppSQLite3U by Softvoile. The fork is based on the original CppSQLite3 wrapper by Rob Groves. http://softvoile.com/development/CppSQLite3U/ and https://www.codeproject.com/Articles/6343/CppSQLite-C-Wrapper-for-SQLite
  - PyString, Sony Pictures Imageworks Inc. Couple string helper routines. https://github.com/imageworks/pystring
  - The plugin interface files published by the original Richard Burns Rally author. Warthog Games and/or SCi Games
 

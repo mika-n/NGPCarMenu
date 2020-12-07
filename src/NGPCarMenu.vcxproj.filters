@@ -16,6 +16,9 @@
     <Filter Include="Misc">
       <UniqueIdentifier>{ba50cf03-b98a-4d32-85de-7c8187b3ad7e}</UniqueIdentifier>
     </Filter>
+    <Filter Include="SQLite">
+      <UniqueIdentifier>{db26449f-cbb3-4088-8ed7-cb041c922ebd}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="PluginHelpers.cpp">
@@ -47,6 +50,12 @@
     </ClCompile>
     <ClCompile Include="FileWatcher.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SQLite\CppSQLite3U.cpp">
+      <Filter>SQLite</Filter>
+    </ClCompile>
+    <ClCompile Include="SQLite\sqlite3.c">
+      <Filter>SQLite</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -102,6 +111,12 @@
     </ClInclude>
     <ClInclude Include="FileWatcher.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="SQLite\CppSQLite3U.h">
+      <Filter>SQLite</Filter>
+    </ClInclude>
+    <ClInclude Include="SQLite\sqlite3.h">
+      <Filter>SQLite</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

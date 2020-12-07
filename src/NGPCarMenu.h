@@ -48,6 +48,7 @@
 #include "D3D9Helpers.h"			// Various text and D3D9 support functions created for this RBR plugin
 #include "RBRAPI.h"					// RBR memory addresses and data structures
 
+//#include "SQLite/CppSQLite3U.h"
 
 #define C_PLUGIN_TITLE_FORMATSTR "NGPCarMenu Plugin (%s) by MIKA-N"	// %s is replaced with version tag strign. Remember to tweak it in NGPCarMenu.rc when making a new release
 #define C_PLUGIN_FOOTER_STR      "https://github.com/mika-n/NGPCarMenu"
@@ -103,9 +104,11 @@ typedef struct {
 	WCHAR wszCarPhysics3DModel[128];   // 3D model:
 	WCHAR wszCarPhysicsLivery[128];    // Livery (Liver and Livery credits)
 	WCHAR wszCarPhysicsCustomTxt[128]; // If physics/CARNAME file has a 5th text line, otherwise blank text. The 5th line in car model file can be used to show any custom text
+	WCHAR wszCarPhysics[128];		   // Car physics name (NGP physics folder name in practice)
 
 	WCHAR wszCarFMODBank[128];		   // Custom FMOD sound bank
 	WCHAR wszCarFMODBankAuthors[128];  // Custom FMOD sound bank
+
 } RBRCarSelectionMenuEntry;
 typedef RBRCarSelectionMenuEntry* PRBRCarSelectionMenuEntry;
 
@@ -547,6 +550,8 @@ protected:
 	int m_iMenuAutoLogonOption; // 0 = Disabled, 1=Main, 2=Plugins, 3+ custom plugin
 	int m_iMenuRallySchoolMenuOption; // 0 = Disabled, 1=Main, 2=Plugins, 3+ custom plugin
 
+	bool m_bFirstTimeWndInitialization; // Do "first time RBR initializations" in EndScene
+
 	bool m_bRenameDriverNameActive;		// TRUE=Renaming of driver profile process is active (NGPCarMenu checks if the creation succeeded and takes a backup of the prev profile before completing the renaming)
 	int  m_iProfileMenuPrevSelectedIdx; //
 	std::string m_sMenuPrevDriverName;	// Previous driver name
@@ -559,10 +564,16 @@ protected:
 	std::forward_list<std::unique_ptr<CMinimapData>> m_cacheRBRRXMinimapData; // Cached minimap data (when a minimap is generated at runtime it is cached here to speed up the next calculation)
 	std::forward_list<std::unique_ptr<CMinimapData>> m_cacheRBRTMMinimapData; // 
 
+	POINT m_rbrWindowPosition;			// Custom position of RBR wnd (or if x=-1 and y=-1 then RBR wnd is opened at default location on the primary monitor)
+
+	std::string m_raceStatDBFilePath;	// Path to race stat DB folder or empty if feature is disabled
+
 	DetourXS* gtcDirect3DBeginScene;
 	DetourXS* gtcDirect3DEndScene;
 	DetourXS* gtcRBRReplay;
 	DetourXS* gtcRBRControllerAxisData;
+
+	static BOOL CALLBACK MonitorEnumCallback(HMONITOR hMon, HDC hdc, LPRECT lprcMonitor, LPARAM pData);
 
 	void StartNewAutoLogonSequence(bool showAutoLogonProgressText = true);
 	void DoAutoLogonSequence();
@@ -587,6 +598,8 @@ protected:
 
 	int InitPluginIntegration(const std::string& customPluginName, bool bInitRBRTM);
 	int InitAllNewCustomPluginIntegrations();
+
+	bool InitializeRaceStatDB();
 
 	int GetNextScreenshotCarID(int currentCarID);
 	static bool PrepareScreenshotReplayFile(int carID);
@@ -655,6 +668,7 @@ public:
 
 	bool m_bRBRProInstalled;		// Is this RBRPro RBR game instance setup by RBRPro manager?
 	std::string m_sRBRProVersion;	// Version of the RBRProManager.exe
+	std::string m_sRSFVersion;		// Version of the RSF plugin
 
 	std::string  m_sRBRRootDir;  // RBR app path, multibyte (or normal ASCII) string
 	std::wstring m_sRBRRootDirW; // RBR app path, widechar string

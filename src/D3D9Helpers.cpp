@@ -580,7 +580,7 @@ bool _StringToRect(const std::string& s, RECT* outRect, const char separatorChar
 //
 // Split "12 14" string as POINT x y values
 //
-bool _StringToPoint(const std::wstring& s, POINT* outPoint, const wchar_t separatorChar)
+bool _StringToPoint(const std::wstring& s, POINT* outPoint, const wchar_t separatorChar, long defaultValue)
 {
 	std::vector<std::wstring> items;
 
@@ -598,10 +598,10 @@ bool _StringToPoint(const std::wstring& s, POINT* outPoint, const wchar_t separa
 		}
 
 		if (items.size() >= 1) outPoint->x= std::stoi(items[0]);
-		else outPoint->x = 0;
+		else outPoint->x = defaultValue;
 
 		if (items.size() >= 2) outPoint->y = std::stoi(items[1]);
-		else outPoint->y = 0;
+		else outPoint->y = defaultValue;
 	}
 	catch (...)
 	{
@@ -612,7 +612,7 @@ bool _StringToPoint(const std::wstring& s, POINT* outPoint, const wchar_t separa
 	return (items.size() >= 2);
 }
 
-bool _StringToPoint(const std::string& s, POINT* outPoint, const char separatorChar)
+bool _StringToPoint(const std::string& s, POINT* outPoint, const char separatorChar, long defaultValue)
 {
 	std::vector<std::string> items;
 
@@ -630,10 +630,10 @@ bool _StringToPoint(const std::string& s, POINT* outPoint, const char separatorC
 		}
 
 		if (items.size() >= 1) outPoint->x = std::stoi(items[0]);
-		else outPoint->x = 0;
+		else outPoint->x = defaultValue;
 
 		if (items.size() >= 2) outPoint->y = std::stoi(items[1]);
-		else outPoint->y = 0;
+		else outPoint->y = defaultValue;
 	}
 	catch (...)
 	{

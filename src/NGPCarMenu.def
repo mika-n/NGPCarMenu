@@ -11,3 +11,4 @@ API_InitializeFont
 API_DrawTextA
 API_DrawTextW
 API_PrepareBTBTrackLoad
+API_CheckBTBTrackLoadStatus

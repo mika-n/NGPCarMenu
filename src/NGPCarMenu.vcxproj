@@ -115,6 +115,8 @@
     <ClCompile Include="RBRAPI.cpp" />
     <ClCompile Include="RBRRX_Integration.cpp" />
     <ClCompile Include="RBRTM_Integration.cpp" />
+    <ClCompile Include="SQLite\CppSQLite3U.cpp" />
+    <ClCompile Include="SQLite\sqlite3.c" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\ReadMe.md" />
@@ -140,6 +142,8 @@
     <ClInclude Include="RBRAPI.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="SimpleINI\SimpleIni.h" />
+    <ClInclude Include="SQLite\CppSQLite3U.h" />
+    <ClInclude Include="SQLite\sqlite3.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="NGPCarMenu.h" />
   </ItemGroup>

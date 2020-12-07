@@ -1271,7 +1271,7 @@ void CNGPCarMenu::RBRRX_EndScene()
 					m_latestMapRBRRX.trackOptionsFirstTimeSetup = FALSE;
 
 					// RBR_RX has a bug where shorter track name is not null-terminated, so the remaining of the previous track name may be shown as a left over if the new track name is shorter.
-					wcsncpy_s(m_pRBRRXPlugin->wszTrackName, min(m_latestMapRBRRX.name.length()+1, COUNT_OF_ITEMS(m_pRBRRXPlugin->wszTrackName)), _ToWString(m_latestMapRBRRX.name).c_str(), COUNT_OF_ITEMS(m_pRBRRXPlugin->wszTrackName));
+					wcsncpy_s(m_pRBRRXPlugin->wszTrackName, COUNT_OF_ITEMS(m_pRBRRXPlugin->wszTrackName), _ToWString(m_latestMapRBRRX.name).c_str(), COUNT_OF_ITEMS(m_pRBRRXPlugin->wszTrackName)-1);
 
 					// Map preview img and minimap on top of the img
 					//RBRAPI_MapRBRPointToScreenPoint(5.0f, 145.0f, &posLeft, &posTop);
