@@ -52,7 +52,7 @@ void fileWatcherThread(CFileSystemWatcher& watcherObj)
 
     try
     {
-        buffer = (BYTE*) _aligned_malloc(1024 * 32, sizeof(DWORD)); /// ReadDirectoryChangesW requires that the buffer is DWORD aligned
+        buffer = (BYTE*) _aligned_malloc(1024 * 64, sizeof(DWORD)); /// ReadDirectoryChangesW requires that the buffer is DWORD aligned
 
         do
         {
@@ -66,7 +66,7 @@ void fileWatcherThread(CFileSystemWatcher& watcherObj)
                 break;
 
             // Wait file events in hDir/sDir without blocking (overlapped async)
-            bPending = ::ReadDirectoryChangesW(hDir, /*&buffer[0], buffer.size(),*/ buffer, 1024 * 32, FALSE, watcherObj.GetNotifyEventType(), &dwBytesReturned, &o, NULL);
+            bPending = ::ReadDirectoryChangesW(hDir, /*&buffer[0], buffer.size(),*/ buffer, 1024 * 64, FALSE, watcherObj.GetNotifyEventType(), &dwBytesReturned, &o, NULL);
 
             if (!bPending)
             {
