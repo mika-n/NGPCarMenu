@@ -3720,13 +3720,14 @@ const char* CNGPCarMenu::GetName(void)
 		gtcRBRReplay = new DetourXS((LPVOID)0x4999B0, ::CustomRBRReplay, TRUE);
 		Func_OrigRBRReplay = (tRBRReplay)gtcRBRReplay->GetTrampoline();
 
-		gtcRBRSaveReplay = new DetourXS((LPVOID)0x0049B030, ::CustomRBRSaveReplay, TRUE);
-		Func_OrigRBRSaveReplay = (tRBRSaveReplay)gtcRBRSaveReplay->GetTrampoline();
+		if (m_bGenerateReplayMetadataFile)
+		{
+			gtcRBRSaveReplay = new DetourXS((LPVOID)0x0049B030, ::CustomRBRSaveReplay, TRUE);
+			Func_OrigRBRSaveReplay = (tRBRSaveReplay)gtcRBRSaveReplay->GetTrampoline();
+		}
 
 		if (g_iInvertedPedalsStartupFixFlag != 0)
 		{
-			DebugPrint("GetName. Preparing RBR inverted pedal fix");
-
 			gtcRBRControllerAxisData = new DetourXS((LPVOID)0x4C2610, ::CustomRBRControllerAxisData, TRUE);
 			Func_OrigRBRControllerAxisData = (tRBRControllerAxisData)gtcRBRControllerAxisData->GetTrampoline();
 		}
