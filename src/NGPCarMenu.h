@@ -408,7 +408,9 @@ extern CNGPCarMenu* g_pRBRPlugin;
 
 extern HRESULT __fastcall CustomRBRDirectXBeginScene(void* objPointer);
 extern HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer);
+
 extern int     __fastcall CustomRBRReplay(void* objPointer, DWORD dummyEDX, const char* szReplayFileName, __int32* pUnknown1, __int32* pUnknown2, size_t iReplayFileSize);
+extern int     __fastcall CustomRBRSaveReplay(void* objPointer, DWORD dummyEDX, const char* szReplayFileName, __int32 mapID, __int32 carID, __int32 unknown1);
 
 extern float   __fastcall CustomRBRControllerAxisData(void* objPointer, DWORD dummyEDX, __int32 axisID);
 
@@ -571,6 +573,7 @@ protected:
 	DetourXS* gtcDirect3DBeginScene;
 	DetourXS* gtcDirect3DEndScene;
 	DetourXS* gtcRBRReplay;
+	DetourXS* gtcRBRSaveReplay;
 	DetourXS* gtcRBRControllerAxisData;
 
 	static BOOL CALLBACK MonitorEnumCallback(HMONITOR hMon, HDC hdc, LPRECT lprcMonitor, LPARAM pData);
@@ -844,10 +847,13 @@ public:
 	HRESULT CustomRBRDirectXEndScene(void* objPointer);
 
 	BOOL CustomRBRReplay(const char* szReplayFileName);
-	void CompleteSaveReplayProcess(const std::list<std::wstring>& replayFileQueue);
+	BOOL CustomRBRSaveReplay(const char* szReplayFileName);
+
+	//void CompleteSaveReplayProcess(const std::list<std::wstring>& replayFileQueue);
+	void CompleteSaveReplayProcess(const std::string& replayFileName);
 
 	void RBRRX_CustomLoadTrackScreen();
-	BOOL RBRRX_PrepareLoadTrack(const std::string& mapName);
+	BOOL RBRRX_PrepareLoadTrack(const std::string& mapName, std::string mapFolderName);
 
 	//------------------------------------------------------------------------------------------------
 	virtual const char* GetName(void);

@@ -38,7 +38,7 @@
 #include <wincodec.h>			// GUID_ContainerFormatPng 
 
 #include "NGPCarMenu.h"
-#include "FileWatcher.h"
+//#include "FileWatcher.h"
 
 #include "SQLite/CppSQLite3U.h"
 
@@ -53,8 +53,14 @@ BOOL g_bRBRHooksInitialized = FALSE; // TRUE-RBR main memory and DX9 function ho
 
 tRBRDirectXBeginScene Func_OrigRBRDirectXBeginScene = nullptr;  // Re-routed built-in DX9 RBR function pointers
 tRBRDirectXEndScene   Func_OrigRBRDirectXEndScene = nullptr;
+
 tRBRReplay            Func_OrigRBRReplay = nullptr;				// Re-routed RBR replay class method
+tRBRSaveReplay        Func_OrigRBRSaveReplay = nullptr;		    // 
+
 tRBRControllerAxisData Func_OrigRBRControllerAxisData = nullptr;// Controller axis data, the custom method is used to fix inverted pedal RBR bug
+
+
+//------------------------------------------------------------------------------------------------
 
 wchar_t* g_pOrigLoadReplayStatusText = nullptr;        // The original (localized) "Loading Replay" text
 wchar_t  g_wszCustomLoadReplayStatusText[256] = L"\0"; // Custom LoadReplay text (Loading Replay <rpl file name>)
@@ -74,7 +80,6 @@ CD3DFont* g_pFontRBRRXLoadTrackSpec = nullptr;
 
 CNGPCarMenu*         g_pRBRPlugin = nullptr;			// The one and only RBRPlugin instance
 PRBRPluginMenuSystem g_pRBRPluginMenuSystem = nullptr;  // Pointer to RBR plugin menu system (for some reason Plugins menu is not part of the std menu arrays)
-
 
 std::vector<std::unique_ptr<CRBRPluginIntegratorLink>>* g_pRBRPluginIntegratorLinkList = nullptr;	// List of custom plugin integration definitions (other plugin can use NGPCarMenu API to draw custom images)
 std::vector<std::unique_ptr<CD3DFont>>* g_pRBRPluginIntegratorFontList = nullptr;					// List of custom plugin font definitions (other plugin can use NGPCarMenu API to draw custom text using other than RBR fonts also)
@@ -96,6 +101,7 @@ CppSQLite3DB* g_pRaceStatDB = nullptr;	// Race statistics database
 //--------------------------------------------------------------------------------------------------------------------------
 // Class to listen for new rbr\Replahs\*.rpl files after RBRRX/BTB racing has ended.
 //
+/*
 class RBRReplayFileWatcherListener : public IFileWatcherListener
 {
 protected:
@@ -128,19 +134,17 @@ public:
 		AddReplayFileToQueue(fileName);
 	}
 
-	/*
-	virtual void OnFileAdded(const std::wstring& fileName) override
-	{
+	//virtual void OnFileAdded(const std::wstring& fileName) override
+	//{
 		//DebugPrint(L"OnFileAdded %s", fileName.c_str());
-		AddReplayFileToQueue(fileName);
-	}
+	//	AddReplayFileToQueue(fileName);
+	//}
 
-	virtual void OnFileRenamed(const std::wstring& fileName) override
-	{
+	//virtual void OnFileRenamed(const std::wstring& fileName) override
+	//{
 		//DebugPrint(L"OnFileRenamed%s", fileName.c_str());
-		AddReplayFileToQueue(fileName);
-	}
-	*/
+	//	AddReplayFileToQueue(fileName);
+	//}
 
 	// Flush the queue and write out all replayFileName.ini files with the current track and car metadata
 	void DoCompletion(BOOL onlyForceCleanup)
@@ -154,6 +158,7 @@ public:
 
 CFileSystemWatcher    g_watcherNewReplayFiles;
 IFileWatcherListener* g_watcherNewReplayFileListener;
+*/
 
 
 //--------------------------------------------------------------------------------------------------------------------------
@@ -639,7 +644,7 @@ BOOL APIENTRY API_DrawTextW(DWORD pluginID, int textID, int posX, int posY, cons
 }
 
 // Prepare track ¤41 for a BTB track loading. Custom plugin should call m_pGame->StartGame(...) IRBR method to start a rally after calling this prepare function
-BOOL APIENTRY API_PrepareBTBTrackLoad(DWORD pluginID, LPCSTR szBTBTrackName)
+BOOL APIENTRY API_PrepareBTBTrackLoad(DWORD pluginID, LPCSTR szBTBTrackName, LPCSTR szBTBTrackFolder)
 {
 	CRBRPluginIntegratorLink* pPluginIntegrationLink = nullptr;
 	for (auto& item : *g_pRBRPluginIntegratorLinkList)
@@ -652,16 +657,19 @@ BOOL APIENTRY API_PrepareBTBTrackLoad(DWORD pluginID, LPCSTR szBTBTrackName)
 	}
 
 	// Unknown plugin integration. Can't do anything
-	if (pPluginIntegrationLink == nullptr || g_pRBRPlugin == nullptr)
+	if (pPluginIntegrationLink == nullptr || g_pRBRPlugin == nullptr || szBTBTrackName == nullptr || szBTBTrackFolder == nullptr)
 		return FALSE;
 
-	return g_pRBRPlugin->RBRRX_PrepareLoadTrack(std::string(szBTBTrackName));
+	return g_pRBRPlugin->RBRRX_PrepareLoadTrack(std::string(szBTBTrackName), std::string(szBTBTrackFolder));
 }
 
-BOOL APIENTRY API_CheckBTBTrackLoadStatus(DWORD /*pluginID*/, LPCSTR szBTBTrackName)
+BOOL APIENTRY API_CheckBTBTrackLoadStatus(DWORD /*pluginID*/, LPCSTR szBTBTrackName, LPCSTR szBTBTrackFolder)
 {	
-	if (g_pRBRPlugin == nullptr || g_pRBRGameMode->gameMode == 0x03)
+	if (g_pRBRPlugin == nullptr || g_pRBRGameMode->gameMode == 0x03 || g_pRBRPlugin->GetActiveRacingType() != 2)
+	{
+		DebugPrint("API_CheckBTBTrackLoadStatus. The BTB track loading failed, the track ended up in the #41 original track");
 		return FALSE;
+	}
 
 	// TODO: Add check routine to make sure the BTB was loaded and not the original RBR #41 Cote d'Arbrozin track
 	return TRUE;
@@ -845,6 +853,7 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	gtcDirect3DBeginScene = nullptr;
 	gtcDirect3DEndScene = nullptr;
 	gtcRBRReplay = nullptr;
+	gtcRBRSaveReplay = nullptr;
 	gtcRBRControllerAxisData = nullptr;
 
 	//RefreshSettingsFromPluginINIFile();
@@ -864,11 +873,11 @@ CNGPCarMenu::~CNGPCarMenu(void)
 
 		g_bD3DFontReleaseStateBlocks = m_bPacenotePluginInstalled; // CD3DFont bug workaround when Pacenote plugin is NOT installed (releaseStateBlocks should be FALSE if pacenotes plugin is not installed)
 
-		if (gtcDirect3DBeginScene != nullptr) delete gtcDirect3DBeginScene;
-		if (gtcDirect3DEndScene != nullptr) delete gtcDirect3DEndScene;
-
-		if (gtcRBRReplay != nullptr) delete gtcRBRReplay;
-		if (gtcRBRControllerAxisData != nullptr) delete gtcRBRControllerAxisData;
+		SAFE_DELETE(gtcDirect3DBeginScene);
+		SAFE_DELETE(gtcDirect3DEndScene);
+		SAFE_DELETE(gtcRBRReplay);
+		SAFE_DELETE(gtcRBRSaveReplay);
+		SAFE_DELETE(gtcRBRControllerAxisData);
 
 #if USE_DEBUG == 1
 		SAFE_DELETE(g_pFontDebug);
@@ -895,7 +904,7 @@ CNGPCarMenu::~CNGPCarMenu(void)
 
 		SAFE_DELETE(g_pRBRRXTrackNameListAlreadyInitialized);
 		SAFE_RELEASE(g_mapRBRRXRightBlackBarVertexBuffer);
-		SAFE_DELETE(g_watcherNewReplayFileListener);
+		//SAFE_DELETE(g_watcherNewReplayFileListener);
 
 		if (g_pRaceStatDB != nullptr)
 		{
@@ -3711,6 +3720,9 @@ const char* CNGPCarMenu::GetName(void)
 		gtcRBRReplay = new DetourXS((LPVOID)0x4999B0, ::CustomRBRReplay, TRUE);
 		Func_OrigRBRReplay = (tRBRReplay)gtcRBRReplay->GetTrampoline();
 
+		gtcRBRSaveReplay = new DetourXS((LPVOID)0x0049B030, ::CustomRBRSaveReplay, TRUE);
+		Func_OrigRBRSaveReplay = (tRBRSaveReplay)gtcRBRSaveReplay->GetTrampoline();
+
 		if (g_iInvertedPedalsStartupFixFlag != 0)
 		{
 			DebugPrint("GetName. Preparing RBR inverted pedal fix");
@@ -4333,6 +4345,7 @@ void CNGPCarMenu::OnRaceStarted()
 		m_bRBRRXRacingActive = (g_pRBRPlugin->GetActivePluginName() == "RBRRX");
 
 	// Racing started. Start a watcher thread to receive notifications of new rbr\Replays\fileName.rpl replay files if NGPCarMenu generated RPL metadata file generation is enabled
+/*
 	if (!g_watcherNewReplayFiles.Running() && m_bGenerateReplayMetadataFile)
 	{
 		if (g_watcherNewReplayFileListener == nullptr)
@@ -4346,13 +4359,14 @@ void CNGPCarMenu::OnRaceStarted()
 		g_watcherNewReplayFileListener->DoCompletion(TRUE);
 		g_watcherNewReplayFiles.Start();
 	}
+*/
 
 	DebugPrint("OnRaceStarted. RBRRacingActive=%d  RBRRXRacingActive=%d", m_bRBRRacingActive, m_bRBRRXRacingActive);
 }
 
 void CNGPCarMenu::OnRaceEnded()
 {
-	DebugPrint("OnRaceEnded. RBRRacingActive=%d  RBRRXRacingActive=%d  watcherRPLRunning=%d  Map=%s (%d)", m_bRBRRacingActive, m_bRBRRXRacingActive, g_watcherNewReplayFiles.Running(), _ToString(m_latestMapName).c_str(), m_latestMapID);
+	DebugPrint("OnRaceEnded. RBRRacingActive=%d  RBRRXRacingActive=%d  watcherRPLRunning=%d  Map=%s (%d)", m_bRBRRacingActive, m_bRBRRXRacingActive, /*g_watcherNewReplayFiles.Running()*/FALSE, _ToString(m_latestMapName).c_str(), m_latestMapID);
 
 	m_bRBRRacingActive = m_bRBRRXRacingActive = m_bRBRReplayOrRacingEnding = FALSE;
 }
@@ -5053,12 +5067,14 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 
 		if (m_bRBRReplayOrRacingEnding)
 		{
+			/*
 			if (g_watcherNewReplayFiles.Running())
 			{
 				// Racing has ended. Check if there are new replay files and create replayFileName.ini metadata file if necessary
 				g_watcherNewReplayFiles.Stop();
 				g_watcherNewReplayFileListener->DoCompletion();
 			}
+			*/
 
 			// Complete racing or replaying
 			if (GetActiveReplayType() == 0) OnRaceEnded();
@@ -5198,6 +5214,17 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 
 
 //----------------------------------------------------------------------------------------------------
+// Custom RBR save replay method. Signal the replay RPL filename that NGPCarMenu plugin should create INI metadata file for this replay file
+//
+BOOL CNGPCarMenu::CustomRBRSaveReplay(const char* szReplayFileName)
+{
+	DebugPrint("CustomRBRSaveReplay. %s", szReplayFileName);
+	CompleteSaveReplayProcess(std::string(szReplayFileName));
+	return TRUE;
+}
+
+
+//----------------------------------------------------------------------------------------------------
 // Custom RBR replay method. This custom replay method supports replay files for both traditional RBR tracks and RBRX/BTB tracks.
 // Return: 0=Failed to load replay file, 1=OK
 //
@@ -5272,7 +5299,8 @@ BOOL CNGPCarMenu::CustomRBRReplay(const char* szReplayFileName)
 //----------------------------------------------------------------------------------------------------
 // Complete RBRRX/BTB replay saving. Create replay INI definition files
 //
-void CNGPCarMenu::CompleteSaveReplayProcess(const std::list<std::wstring>& replayFileQueue)
+//void CNGPCarMenu::CompleteSaveReplayProcess(const std::list<std::wstring>& replayFileQueue)
+void CNGPCarMenu::CompleteSaveReplayProcess(const std::string& replayFileName)
 {
 	std::wstring fileNameWithoutExt;
 	std::wstring fileNameMapIDPart;
@@ -5291,151 +5319,149 @@ void CNGPCarMenu::CompleteSaveReplayProcess(const std::list<std::wstring>& repla
 	if (!m_bGenerateReplayMetadataFile)
 		return;
 
-	bBTBReplayFile = (GetActiveRacingType() == 2 || GetActivePluginName() == "RBRRX");
+	try
+	{
+		bBTBReplayFile = (GetActiveRacingType() == 2 || GetActivePluginName() == "RBRRX");
 
-	// If this is RallysimFans version of RBR installation then RSF plugin modifies Cars\Cars.ini file on the fly. Re-read car model names before trying to write replay metadata.
-	// Also, the actual mapID is part of the replay save filename (xxxx_rsf_xxxx_157.rpl)
-	if (m_bRallySimFansPluginInstalled)
-		InitCarSpecData_RBRCIT();
+		// If this is RallysimFans version of RBR installation then RSF plugin modifies Cars\Cars.ini file on the fly. Re-read car model names before trying to write replay metadata.
+		// Also, the actual mapID is part of the replay save filename (xxxx_rsf_xxxx_157.rpl)
+		if (m_bRallySimFansPluginInstalled)
+			InitCarSpecData_RBRCIT();
 
-	// Read the current path of the car model (the folder below rbrAppPath\cars folder)
-	stockCarListINIFile.LoadFile((m_sRBRRootDirW + L"\\cars\\Cars.ini").c_str());
-	swprintf_s(wszStockCarINISection, COUNT_OF_ITEMS(wszStockCarINISection), L"Car0%d", m_latestCarID);
+		// Read the current path of the car model (the folder below rbrAppPath\cars folder)
+		stockCarListINIFile.LoadFile((m_sRBRRootDirW + L"\\cars\\Cars.ini").c_str());
+		swprintf_s(wszStockCarINISection, COUNT_OF_ITEMS(wszStockCarINISection), L"Car0%d", m_latestCarID);
 	
-	sCarModelFolder = _ToString(stockCarListINIFile.GetValueEx(wszStockCarINISection, L"", L"FileName", L""));
-	sCarModelFolder = fs::path(sCarModelFolder).remove_filename().generic_string();
-	sCarModelFolder = _RemoveEnclosingChar(sCarModelFolder, '/', FALSE);
-	sCarModelFolder = _RemoveEnclosingChar(sCarModelFolder, '\\', FALSE);
+		sCarModelFolder = _ToString(stockCarListINIFile.GetValueEx(wszStockCarINISection, L"", L"FileName", L""));
+		sCarModelFolder = fs::path(sCarModelFolder).remove_filename().generic_string();
+		sCarModelFolder = _RemoveEnclosingChar(sCarModelFolder, '/', FALSE);
+		sCarModelFolder = _RemoveEnclosingChar(sCarModelFolder, '\\', FALSE);
 
-	if (m_bRallySimFansPluginInstalled)
-	{
-		// RSF version of the car physics folder (the folder below rsfdata\cars folder)
-		sCarPhysicsFolder = _ToString(stockCarListINIFile.GetValueEx(wszStockCarINISection, L"", L"RSFCarPhysics", L""));
-		sCarPhysicsFolder = _RemoveEnclosingChar(sCarPhysicsFolder, '/', FALSE);
-		sCarPhysicsFolder = _RemoveEnclosingChar(sCarPhysicsFolder, '\\', FALSE);
-	}
-
-	// If physicsFolder is still empty at this point then use the NGP filename from Phystics\<carSubFolder> folder as physics folder name (non-RSF installations)
-	if (sCarPhysicsFolder.empty() && m_latestCarID >= 0 && m_latestCarID <= 7)
-		sCarPhysicsFolder = _ToString(g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(m_latestCarID)].wszCarPhysics);
-
-	for (auto& fileNameItem : replayFileQueue)
-	{
-		try
+		if (m_bRallySimFansPluginInstalled)
 		{
-			fileNameWithoutExt = fs::path(fileNameItem).replace_extension().generic_wstring();
-			sReplayINIFileName = m_sRBRRootDir + "\\Replays\\" + _ToString(fileNameWithoutExt) + ".ini";
+			// RSF version of the car physics folder (the folder below rsfdata\cars folder)
+			sCarPhysicsFolder = _ToString(stockCarListINIFile.GetValueEx(wszStockCarINISection, L"", L"RSFCarPhysics", L""));
+			sCarPhysicsFolder = _RemoveEnclosingChar(sCarPhysicsFolder, '/', FALSE);
+			sCarPhysicsFolder = _RemoveEnclosingChar(sCarPhysicsFolder, '\\', FALSE);
+		}
 
-			// Re-create the replay metadata INI file in case the old file has some garbage left overs from an old version
-			std::ofstream recreatedFile(sReplayINIFileName, std::ios::out | std::ios::trunc);
+		// If physicsFolder is still empty at this point then use the NGP filename from Phystics\<carSubFolder> folder as physics folder name (non-RSF installations)
+		if (sCarPhysicsFolder.empty() && m_latestCarID >= 0 && m_latestCarID <= 7)
+			sCarPhysicsFolder = _ToString(g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(m_latestCarID)].wszCarPhysics);
 
-			if(bBTBReplayFile)
-				recreatedFile << "; RBR replay metadata file generated by NGPCarMenu plugin. TYPE and NAME options are required in BTB replays. Other options are just for informative purposes" << std::endl;
-			else
-				recreatedFile << "; RBR replay metadata file generated by NGPCarMenu plugin. All options are just for informative purposes" << (m_bRBRTMPluginActive ? " in RBRTM replays" : "") << std::endl;
-			recreatedFile.close();
+		//fileNameWithoutExt = fs::path(fileNameItem).replace_extension().generic_wstring();
+		fileNameWithoutExt = fs::path(replayFileName).replace_extension().generic_wstring();
+		sReplayINIFileName = m_sRBRRootDir + "\\Replays\\" + _ToString(fileNameWithoutExt) + ".ini";
 
-			replayINIFile.LoadFile(sReplayINIFileName.c_str());
-			replayINIFile.SetValue("Replay", "Type", (bBTBReplayFile ? "BTB" : (m_bRBRTMPluginActive ? "TM" : (m_bRallySimFansPluginInstalled ? "RSF" : "RBR"))));
+		// Re-create the replay metadata INI file in case the old file has some garbage left overs from an old version
+		std::ofstream recreatedFile(sReplayINIFileName, std::ios::out | std::ios::trunc);
+
+		if(bBTBReplayFile)
+			recreatedFile << "; RBR replay metadata file generated by NGPCarMenu plugin. TYPE and NAME options are required in BTB replays. Other options are just for informative purposes" << std::endl;
+		else
+			recreatedFile << "; RBR replay metadata file generated by NGPCarMenu plugin. All options are just for informative purposes" << (m_bRBRTMPluginActive ? " in RBRTM replays" : "") << std::endl;
+		recreatedFile.close();
+
+		replayINIFile.LoadFile(sReplayINIFileName.c_str());
+		replayINIFile.SetValue("Replay", "Type", (bBTBReplayFile ? "BTB" : (m_bRBRTMPluginActive ? "TM" : (m_bRallySimFansPluginInstalled ? "RSF" : "RBR"))));
 			
-			if (bBTBReplayFile)
-			{
-				replayINIFile.SetValue("Replay", "Name",        m_latestMapRBRRX.name.c_str());
-				replayINIFile.SetValue("Replay", "TrackFolder", m_latestMapRBRRX.folderName.c_str());
-				bWriteMapName = FALSE;
-			}
+		if (bBTBReplayFile)
+		{
+			replayINIFile.SetValue("Replay", "Name",        m_latestMapRBRRX.name.c_str());
+			replayINIFile.SetValue("Replay", "TrackFolder", m_latestMapRBRRX.folderName.c_str());
+			bWriteMapName = FALSE;
+		}
 
-			if (m_bRallySimFansPluginInstalled)
-			{
-				// Hotlap and Online rallies in RSF replay file has the map name in the filename already (and the RBR runtime mapID is often just a stub placeholer)
-				bWriteMapName = false;
+		if (m_bRallySimFansPluginInstalled)
+		{
+			// Hotlap and Online rallies in RSF replay file has the map name in the filename already (and the RBR runtime mapID is often just a stub placeholer)
+			bWriteMapName = false;
 
-				if (fileNameWithoutExt.find(L"_rsf_practice_") != std::wstring::npos)
+			if (fileNameWithoutExt.find(L"_rsf_practice_") != std::wstring::npos)
+			{
+				// Take the actual RSF mapID from the end of the practice replay filename because sometimes RSF re-uses existing RBR mapIDs (uses existing map slots to load RFS specific custom map)
+				size_t iLastDashPos = fileNameWithoutExt.find_last_of(L'_');
+				if (iLastDashPos != std::wstring::npos && iLastDashPos + 1 < fileNameWithoutExt.length())
 				{
-					// Take the actual RSF mapID from the end of the practice replay filename because sometimes RSF re-uses existing RBR mapIDs (uses existing map slots to load RFS specific custom map)
-					size_t iLastDashPos = fileNameWithoutExt.find_last_of(L'_');
-					if (iLastDashPos != std::wstring::npos && iLastDashPos + 1 < fileNameWithoutExt.length())
+					fileNameMapIDPart = fileNameWithoutExt.substr(iLastDashPos + 1);
+					if (_IsAllDigit(fileNameMapIDPart))
 					{
-						fileNameMapIDPart = fileNameWithoutExt.substr(iLastDashPos + 1);
-						if (_IsAllDigit(fileNameMapIDPart))
-						{
-							m_latestMapID = std::stoi(fileNameMapIDPart);
-							bWriteMapName = true;
-						}
+						m_latestMapID = std::stoi(fileNameMapIDPart);
+						bWriteMapName = true;
 					}
 				}
 			}
-
-			if (bWriteMapName)
-			{
-				std::wstring wsStageName = GetMapNameByMapID(m_latestMapID);
-				if (!wsStageName.empty()) replayINIFile.SetValue("Replay", "Name", _ToString(wsStageName).c_str());
-			}
-
-			replayINIFile.SetValue("Replay", "MapID", std::to_string(m_latestMapID).c_str());
-
-			if (m_latestCarID >= 0 && m_latestCarID <= 7)
-			{
-				DWORD ptrValue;
-				ptrValue = *((DWORD*)g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(m_latestCarID)].ptrCarDescription);
-				if(!m_bRallySimFansPluginInstalled && ptrValue != 0 && ((const char*)ptrValue)[0] == '\0')
-					replayINIFile.SetValue("Replay", "CarModel", (const char*)ptrValue);
-				else
-					// RSF doesn't set CarName parameter in Cars\Cars.ini file, so take the CarModel directly from the local data structure (well, usually it is the same as ptrCarDescription name)
-					replayINIFile.SetValue("Replay", "CarModel", _ToString(g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(m_latestCarID)].wszCarModel).c_str());
-
-				replayINIFile.SetLongValue("Replay", "CarSlot", m_latestCarID);
-
-				replayINIFile.SetValue("Replay", "CarModelFolder", sCarModelFolder.c_str());
-				replayINIFile.SetValue("Replay", "CarPhysicsFolder", sCarPhysicsFolder.c_str());
-			}
-
-			replayINIFile.SetValue("Replay", "NGP", (
-				std::to_string(m_iPhysicsNGMajorVer) + "." +
-				std::to_string(m_iPhysicsNGMinorVer) + "." +
-				std::to_string(m_iPhysicsNGPatchVer) + "." +
-				std::to_string(m_iPhysicsNGBuildVer) ).c_str());
-
-
-			if (m_bRBRProInstalled)
-			{
-				// RBRPro manager customization. Add skin and lights metadata tags
-				std::string rbrProListNumber;
-				std::string sTextValue;
-				std::string sCarSlot;
-				CSimpleIniEx rbrProCarListsIniFile;
-
-				replayINIFile.SetValue("Replay", "RBRPro", m_sRBRProVersion.c_str());
-				
-				rbrProCarListsIniFile.SetUnicode(TRUE);
-				rbrProCarListsIniFile.LoadFileEx((m_sRBRRootDir + "\\..\\CarLists.ini").c_str());				
-
-				rbrProListNumber = rbrProCarListsIniFile.GetValueEx("RBRProManager", "", "ListNumber", "");			
-				if (!rbrProListNumber.empty())
-				{
-					sCarSlot = std::to_string(m_latestCarID);
-
-					sTextValue = rbrProCarListsIniFile.GetValueEx(rbrProListNumber, "", "CarSkin" + sCarSlot, "");
-					if (!sTextValue.empty()) replayINIFile.SetValue("Replay", "RBRProCarSkin", sTextValue.c_str());
-
-					sTextValue = rbrProCarListsIniFile.GetValueEx(rbrProListNumber, "", "CarLightsOption" + sCarSlot, "");
-					if (!sTextValue.empty()) replayINIFile.SetValue("Replay", "RBRProCarLightsOption", sTextValue.c_str());
-				}
-			}
-
-			if (m_bRallySimFansPluginInstalled)
-			{
-				replayINIFile.SetValue("Replay", "RSF", m_sRSFVersion.c_str());
-				//replayINIFile.SetValue("Replay", "RSFCarPhysics", sCarPhysicsFolder.c_str());
-			}
-
-			replayINIFile.SaveFile(sReplayINIFileName.c_str());
-			replayINIFile.Reset();
 		}
-		catch (...)
+
+		if (bWriteMapName)
 		{
-			replayINIFile.Reset();
+			std::wstring wsStageName = GetMapNameByMapID(m_latestMapID);
+			if (!wsStageName.empty()) replayINIFile.SetValue("Replay", "Name", _ToString(wsStageName).c_str());
 		}
+
+		replayINIFile.SetValue("Replay", "MapID", std::to_string(m_latestMapID).c_str());
+
+		if (m_latestCarID >= 0 && m_latestCarID <= 7)
+		{
+			DWORD ptrValue;
+			ptrValue = *((DWORD*)g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(m_latestCarID)].ptrCarDescription);
+			if(!m_bRallySimFansPluginInstalled && ptrValue != 0 && ((const char*)ptrValue)[0] == '\0')
+				replayINIFile.SetValue("Replay", "CarModel", (const char*)ptrValue);
+			else
+				// RSF doesn't set CarName parameter in Cars\Cars.ini file, so take the CarModel directly from the local data structure (well, usually it is the same as ptrCarDescription name)
+				replayINIFile.SetValue("Replay", "CarModel", _ToString(g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(m_latestCarID)].wszCarModel).c_str());
+
+			replayINIFile.SetLongValue("Replay", "CarSlot", m_latestCarID);
+
+			replayINIFile.SetValue("Replay", "CarModelFolder", sCarModelFolder.c_str());
+			replayINIFile.SetValue("Replay", "CarPhysicsFolder", sCarPhysicsFolder.c_str());
+		}
+
+		replayINIFile.SetValue("Replay", "NGP", (
+			std::to_string(m_iPhysicsNGMajorVer) + "." +
+			std::to_string(m_iPhysicsNGMinorVer) + "." +
+			std::to_string(m_iPhysicsNGPatchVer) + "." +
+			std::to_string(m_iPhysicsNGBuildVer) ).c_str());
+
+
+		if (m_bRBRProInstalled)
+		{
+			// RBRPro manager customization. Add skin and lights metadata tags
+			std::string rbrProListNumber;
+			std::string sTextValue;
+			std::string sCarSlot;
+			CSimpleIniEx rbrProCarListsIniFile;
+
+			replayINIFile.SetValue("Replay", "RBRPro", m_sRBRProVersion.c_str());
+				
+			rbrProCarListsIniFile.SetUnicode(TRUE);
+			rbrProCarListsIniFile.LoadFileEx((m_sRBRRootDir + "\\..\\CarLists.ini").c_str());				
+
+			rbrProListNumber = rbrProCarListsIniFile.GetValueEx("RBRProManager", "", "ListNumber", "");			
+			if (!rbrProListNumber.empty())
+			{
+				sCarSlot = std::to_string(m_latestCarID);
+
+				sTextValue = rbrProCarListsIniFile.GetValueEx(rbrProListNumber, "", "CarSkin" + sCarSlot, "");
+				if (!sTextValue.empty()) replayINIFile.SetValue("Replay", "RBRProCarSkin", sTextValue.c_str());
+
+				sTextValue = rbrProCarListsIniFile.GetValueEx(rbrProListNumber, "", "CarLightsOption" + sCarSlot, "");
+				if (!sTextValue.empty()) replayINIFile.SetValue("Replay", "RBRProCarLightsOption", sTextValue.c_str());
+			}
+		}
+
+		if (m_bRallySimFansPluginInstalled)
+		{
+			replayINIFile.SetValue("Replay", "RSF", m_sRSFVersion.c_str());
+			//replayINIFile.SetValue("Replay", "RSFCarPhysics", sCarPhysicsFolder.c_str());
+		}
+
+		replayINIFile.SaveFile(sReplayINIFileName.c_str());
+		replayINIFile.Reset();
+	}
+	catch (...)
+	{
+		replayINIFile.Reset();
 	}
 }
 
@@ -5451,6 +5477,10 @@ HRESULT __fastcall CustomRBRDirectXBeginScene(void* objPointer)
 
 	// Call the origial RBR BeginScene and let it to initialize the new D3D scene
 	HRESULT hResult = ::Func_OrigRBRDirectXBeginScene(objPointer);
+
+	// If racing is active then no need to do any custom things
+	if (g_pRBRGameMode->gameMode == 0x01) 
+		return hResult;
 
 	if (g_pRBRGameMode->gameMode == 0x03 || g_pRBRPlugin->m_iCustomReplayState > 0)
 	{
@@ -5504,9 +5534,10 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 #endif
 
 	// Do RBRTM/RBRRX/RBR/RallySimFans menu and replay things only when racing is not active
-	if (g_pRBRPlugin->m_iCustomReplayState > 0 
-	|| (g_pRBRGameMode->gameMode != 01 && !((g_pRBRGameMode->gameMode == 0x0A || (g_pRBRGameMode->gameMode == 0x02 && g_watcherNewReplayFiles.Running()))) 
-	))
+	//if (g_pRBRPlugin->m_iCustomReplayState > 0 
+	//|| (g_pRBRGameMode->gameMode != 01 && !((g_pRBRGameMode->gameMode == 0x0A || (g_pRBRGameMode->gameMode == 0x02 && g_watcherNewReplayFiles.Running()))))
+	//)
+	if (g_pRBRGameMode->gameMode != 01)
 		return g_pRBRPlugin->CustomRBRDirectXEndScene(objPointer);
 	else
 		return ::Func_OrigRBRDirectXEndScene(objPointer); // Racing is active. No need to do any NGPCarMenu special things
@@ -5514,7 +5545,7 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 
 
 //----------------------------------------------------------------------------------------------------------------------------
-// RBR replay callback handler.
+// RBR replay callback handlers
 //
 int __fastcall CustomRBRReplay(void* objPointer, DWORD /*ignoreEDX*/, const char* szReplayFileName, __int32* pUnknown1, __int32* pUnknown2, size_t iReplayFileSize)
 {
@@ -5524,6 +5555,13 @@ int __fastcall CustomRBRReplay(void* objPointer, DWORD /*ignoreEDX*/, const char
 	return Func_OrigRBRReplay(objPointer, szReplayFileName, pUnknown1, pUnknown2, iReplayFileSize);
 }
 
+int __fastcall CustomRBRSaveReplay(void* objPointer, DWORD /*ignoreEDX*/, const char* szReplayFileName, __int32 mapID, __int32 carID, __int32 unknown1)
+{
+	if (!g_bRBRHooksInitialized || !g_pRBRPlugin->CustomRBRSaveReplay(szReplayFileName /*, mapID, carID, unknown1*/))
+		return 0; // ERROR 
+
+	return Func_OrigRBRSaveReplay(objPointer, szReplayFileName, mapID, carID, unknown1);
+}
 
 
 //----------------------------------------------------------------------------------------------------------------------------

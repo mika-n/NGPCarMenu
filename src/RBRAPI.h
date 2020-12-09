@@ -121,8 +121,9 @@ extern BOOL RBRAPI_MapRBRColorToRGBA(IRBRGame::EMenuColors colorType, int* outRe
 typedef HRESULT(__fastcall* tRBRDirectXBeginScene)(void* objPointer);
 typedef HRESULT(__fastcall* tRBRDirectXEndScene)(void* objPointer);
 
-// Overloaded RBR replay method
+// Overloaded RBR replay methods
 typedef int(__thiscall* tRBRReplay)(void* objPointer, const char* szReplayFileName, __int32* pUnknown1, __int32* pUnknown2, size_t iReplayFileSize);
+typedef int(__thiscall* tRBRSaveReplay)(void* objPointer, const char* szReplayFileName, __int32 mapID, __int32 carID, __int32 unknown1);
 
 // Overloaded dinput controller axis (digital button/steering analog axis) handler method
 typedef float(__thiscall* tRBRControllerAxisData)(void* objPointer, __int32 axisID);

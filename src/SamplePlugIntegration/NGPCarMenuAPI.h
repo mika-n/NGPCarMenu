@@ -41,7 +41,9 @@ typedef DWORD (APIENTRY *tAPI_InitializeFont)(const char* fontName, DWORD fontSi
 typedef BOOL  (APIENTRY *tAPI_DrawTextA)(DWORD pluginID, int textID, int posX, int posY, const char* szText, DWORD fontID, DWORD color, DWORD drawOptions);
 typedef BOOL  (APIENTRY* tAPI_DrawTextW)(DWORD pluginID, int textID, int posX, int posY, const wchar_t* wszText, DWORD fontID, DWORD color, DWORD drawOptions);
 
-typedef BOOL  (APIENTRY* tAPI_PrepareBTBTrackLoad)(DWORD pluginID, LPCSTR szBTBTrackName); // Prepare track #41 (CortezArbroz) for a BTB track loading. Custom plugin should call m_pGame->StartGame(...) IRBR method to start a rally after calling this prepare function
+typedef BOOL  (APIENTRY* tAPI_PrepareBTBTrackLoad)(DWORD pluginID, LPCSTR szBTBTrackName, LPCSTR szBTBTrackFolderName);     // Prepare track #41 (CortezArbroz) for a BTB track loading. Custom plugin should call m_pGame->StartGame(...) IRBR method to start a rally after calling this prepare function
+typedef BOOL  (APIENTRY* tAPI_CheckBTBTrackLoadStatus)(DWORD pluginID, LPCSTR szBTBTrackName, LPCSTR szBTBTrackFolderName); // Check the status of BTB track loading to make sure driver didn't end up in #41 (CortezArbroz) original track
+
 
 #define C_NGPCARMENU_DLL_FILENAME "\\Plugins\\NGPCarMenu.dll"
 
@@ -99,7 +101,8 @@ protected:
 	tAPI_DrawTextA fp_API_DrawTextA;
 	tAPI_DrawTextW fp_API_DrawTextW;
 
-	tAPI_PrepareBTBTrackLoad fp_API_PrepareBTBTrackLoad;
+	tAPI_PrepareBTBTrackLoad     fp_API_PrepareBTBTrackLoad;
+	tAPI_CheckBTBTrackLoadStatus fp_API_CheckBTBTrackLoadStatus;
 
 	void Cleanup()
 	{
@@ -113,6 +116,7 @@ protected:
 		fp_API_DrawTextA = nullptr;
 		fp_API_DrawTextW = nullptr;
 		fp_API_PrepareBTBTrackLoad = nullptr;
+		fp_API_CheckBTBTrackLoadStatus = nullptr;
 
 		if (hDLLModule) ::FreeLibrary(hDLLModule);
 		hDLLModule = nullptr;
@@ -168,6 +172,7 @@ public:
 				fp_API_DrawTextA = (tAPI_DrawTextA)GetProcAddress(hDLLModule, "API_DrawTextA");
 				fp_API_DrawTextW = (tAPI_DrawTextW)GetProcAddress(hDLLModule, "API_DrawTextW");
 				fp_API_PrepareBTBTrackLoad = (tAPI_PrepareBTBTrackLoad)GetProcAddress(hDLLModule, "API_PrepareBTBTrackLoad");
+				fp_API_CheckBTBTrackLoadStatus = (tAPI_CheckBTBTrackLoadStatus)GetProcAddress(hDLLModule, "API_CheckBTBTrackLoadStatus");
 			}
 		}
 
@@ -281,10 +286,19 @@ public:
 	}
 
 	// Prepare RBR track #41 (CortezArbroz) for BTB track loading. szBTBTrackName param should be the name of the BTB track (ie. the value of rx_content\tracks\someBTBTrack\track.ini NAME option and as shown in RBRRX stages menu list)
-	BOOL PrepareBTBTrackLoad(DWORD pluginID, LPCSTR szBTBTrackName)
+	BOOL PrepareBTBTrackLoad(DWORD pluginID, LPCSTR szBTBTrackName, LPCSTR szBTBTrackFolderName)
 	{
-		if (fp_API_PrepareBTBTrackLoad != nullptr)
-			return fp_API_PrepareBTBTrackLoad(pluginID, szBTBTrackName);
+		if (fp_API_PrepareBTBTrackLoad != nullptr && fp_API_CheckBTBTrackLoadStatus != nullptr)
+			return fp_API_PrepareBTBTrackLoad(pluginID, szBTBTrackName, szBTBTrackFolderName);
+		else
+			return FALSE;
+	}
+
+	// Check BTB track loading status (make sure the track is not the #41 original track). This method can be called only when the countdown timer is running because then RBR has completed the map loading
+	BOOL CheckBTBTrackLoadStatus(DWORD pluginID, LPCSTR szBTBTrackName, LPCSTR szBTBTrackFolderName)
+	{
+		if (fp_API_PrepareBTBTrackLoad != nullptr && fp_API_CheckBTBTrackLoadStatus != nullptr)
+			return fp_API_CheckBTBTrackLoadStatus(pluginID, szBTBTrackName, szBTBTrackFolderName);
 		else
 			return FALSE;
 	}

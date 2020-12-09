@@ -17,6 +17,8 @@
 // OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
+// Note. RBR_RX/BTB plugin in RBR was created by black f./jharron. We all should thank him for making it possible in RBR.
+//
 
 #include "stdafx.h"
 
@@ -632,8 +634,9 @@ BOOL CNGPCarMenu::RBRRX_PrepareReplayTrack(const std::string& mapName)
 //----------------------------------------------------------------------------------------------------
 // Load BTB track
 //
-BOOL CNGPCarMenu::RBRRX_PrepareLoadTrack(const std::string& mapName)
+BOOL CNGPCarMenu::RBRRX_PrepareLoadTrack(const std::string& mapName, std::string mapFolderName)
 {
+	std::string rbrxMapFolderName;
 	int mapMenuIdx = -1;
 	PRBRRXPlugin pTmpRBRRXPlugin;
 
@@ -646,7 +649,31 @@ BOOL CNGPCarMenu::RBRRX_PrepareLoadTrack(const std::string& mapName)
 
 	if (mapMenuIdx < 0)
 	{
-		LogPrint("WARNING. RBRRX PrepareLoadTrack tried to load '%s' BTB track, but it is missing. BTB track loading failed", mapName.c_str());
+		LogPrint("WARNING. Tried to load '%s' BTB track, but the track is missing", mapName.c_str());
+		return FALSE;
+	}
+
+	rbrxMapFolderName = m_sRBRRootDir + "\\RX_Content\\" + pTmpRBRRXPlugin->pMenuItems[mapMenuIdx].szTrackFolder;
+	
+	// Remap the mapFolderName to use fullpath in case the input parameter is not yet the fullpath value
+	if (mapFolderName.length() > 3)
+	{
+		if (!(mapFolderName[1] == ':' && mapFolderName[2] == '\\') && !(mapFolderName[0] == '\\' && mapFolderName[1] == '\\'))
+		{
+			if (_iStarts_With(mapFolderName, "tracks\\", true))
+				mapFolderName = m_sRBRRootDir + "\\RX_Content\\" + mapFolderName;
+			else if (_iStarts_With(mapFolderName, "rx_content\\", true))
+				mapFolderName = m_sRBRRootDir + mapFolderName;
+			else
+				mapFolderName = m_sRBRRootDir + "\\RX_Content\\Tracks\\" + mapFolderName;
+		}
+	}
+	else
+		mapFolderName = "";
+
+	if (mapFolderName.empty() || !fs::exists(mapFolderName) || !_iEqual(rbrxMapFolderName, mapFolderName, false))
+	{
+		LogPrint("WARNING. Tried to load '%s' BTB track, but the folder is missing or wrong", mapName.c_str());
 		return FALSE;
 	}
 

@@ -230,9 +230,9 @@ public:
 			}
 			else if (m_iSelection == C_CMD_STAGEBTBSTART)
 			{
-				// rbrAppPath\RX_Content\Tracks\ folder should have the "Vysälä SS1" BTB stage. 
+				// rbrAppPath\RX_Content\Tracks\ folder should have the "Vyskälä SS1" BTB stage. 
 				// You can download it from https://vileska.blogspot.com/p/vyskala-ss1.html website or use any other BTB stage as an example here.
-				m_pNGPCarMenuAPI->PrepareBTBTrackLoad(m_dwPluginID, "Vyskälä SS1");
+				m_pNGPCarMenuAPI->PrepareBTBTrackLoad(m_dwPluginID, "Vyskälä SS1", "VyskalaSS1");
 
 				// Remember that BTB tracks are loaded through track #41. Also, the tyre is recommended to match the surface of the track (ie. a snow BTB track with a gravel tyre is probably not a good idea)
 				m_pGame->StartGame(41, 2, IRBRGame::GOOD_WEATHER, IRBRGame::TYRE_GRAVEL_DRY, NULL);
