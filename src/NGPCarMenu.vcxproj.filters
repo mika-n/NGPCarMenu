@@ -71,6 +71,9 @@
     <None Include="NGPCarMenu_fi.ini" />
     <None Include="NGPCarMenu_en.ini" />
     <None Include="NGPCarMenu_se.ini" />
+    <None Include="RaceStatDB.cpp">
+      <Filter>Source Files</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="PluginHelpers.h">

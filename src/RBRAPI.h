@@ -706,7 +706,7 @@ typedef struct {
 typedef RBRStatusText* PRBRStatusText;
 
 
-// Offset 0x007EABA8.  Pacenotes. (Contributed by TheIronWolf)
+// Offset (0x007EABA8) + 0x10.  Pacenotes. (Contributed by TheIronWolf)
 typedef struct
 {
 #pragma pack(push,1)

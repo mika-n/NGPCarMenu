@@ -117,6 +117,7 @@
     <ClCompile Include="RBRTM_Integration.cpp" />
     <ClCompile Include="SQLite\CppSQLite3U.cpp" />
     <ClCompile Include="SQLite\sqlite3.c" />
+    <ClCompile Include="RaceStatDB.cpp" />	
   </ItemGroup>
   <ItemGroup>
     <None Include="..\ReadMe.md" />

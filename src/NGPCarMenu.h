@@ -48,7 +48,9 @@
 #include "D3D9Helpers.h"			// Various text and D3D9 support functions created for this RBR plugin
 #include "RBRAPI.h"					// RBR memory addresses and data structures
 
-//#include "SQLite/CppSQLite3U.h"
+#if 0
+#include "SQLite/CppSQLite3U.h"
+#endif
 
 #define C_PLUGIN_TITLE_FORMATSTR "NGPCarMenu Plugin (%s) by MIKA-N"	// %s is replaced with version tag strign. Remember to tweak it in NGPCarMenu.rc when making a new release
 #define C_PLUGIN_FOOTER_STR      "https://github.com/mika-n/NGPCarMenu"
@@ -433,6 +435,9 @@ extern PRBRPluginMenuSystem g_pRBRPluginMenuSystem;
 
 extern std::vector<std::string>* g_pRBRRXTrackNameListAlreadyInitialized;
 
+#if 0
+extern CppSQLite3DB* g_pRaceStatDB;
+#endif
 
 //------------------------------------------------------------------------------------------------//
 // CRBRPluginIntegratorLink. Integrates the custom image drawing with a specified plugin.
@@ -523,7 +528,34 @@ public:
 };
 
 
-//------------------------------------------------------------------------------------------------//
+//------------------------------------------------------------------------------------------------
+//
+typedef struct {
+	int  MapKey;
+	std::string StageName;	// len 128
+	char Surface;
+	int  Length;
+	std::string Format;		// 3		RBR / BTB
+	int  MapID;
+	std::string Folder;		// 128
+} RaceStat_Map;
+typedef RaceStat_Map* PRaceStat_Map;
+
+typedef struct {
+	int  CarKey;
+	std::string ModelName;		// Len 128
+	std::string FIACategory;	// 128
+	std::string Physics;		// 128
+	std::string INIFile;		// 128
+	std::string Folder;			// 128
+	std::string NGPRevision;	// 128
+	int NGPVersion;
+	int NGPCarID;
+} RaceStat_Car;
+typedef RaceStat_Car* PRaceStat_Car;
+
+
+//------------------------------------------------------------------------------------------------
 // CNGPCarMenu class. Custom car preview images in RBR and RBRTM "select a car" menus.
 //
 class CNGPCarMenu : public IPlugin
@@ -602,7 +634,12 @@ protected:
 	int InitPluginIntegration(const std::string& customPluginName, bool bInitRBRTM);
 	int InitAllNewCustomPluginIntegrations();
 
-	bool InitializeRaceStatDB();
+	bool RaceStatDB_Initialize(); // Initialize and open raceStat DB
+	int	 RaceStatDB_GetMapKey(int mapID, const std::string& mapName);	// Return MapKey for the map (if this is BTB track then mapID is -1 and only mapName is set)
+
+#if 0
+	CppSQLite3Query RaceStatDB_ExecQuery(LPCSTR szQuery, LPCSTR param1 = nullptr, LPCSTR param2 = nullptr, LPCSTR param3 = nullptr, LPCSTR param4 = nullptr); // Helper routine to query parameterized qry
+#endif
 
 	int GetNextScreenshotCarID(int currentCarID);
 	static bool PrepareScreenshotReplayFile(int carID);
@@ -625,6 +662,8 @@ protected:
 
 	void DrawProgressBar(D3DRECT rec, float progressValue, LPDIRECT3DDEVICE9 pOutputD3DDevice = nullptr);
 
+	BOOL ReadStartSplitFinishPacenoteDistances(double* pStartDistance, double* pSplit1Distance, double* pSplit2Distance, double* pFinishDistance); // Read start/splits/finish notes from the currently loaded track
+
 	void RBRRX_EndScene();
 	void RBRTM_EndScene();
 
@@ -634,6 +673,7 @@ protected:
 	BOOL RBRRX_PrepareLoadTrack(int mapMenuIdx);
 
 	void   RBRRX_FocusNthMenuIdxRow(int menuIdx);
+	//bool   RBRRX_ReadStageStartAndEndPacenote(const std::string& pacenoteFileName, double* pStartDistance, double* pFinishDistance);
 	void   RBRRX_UpdateMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo);
 	double RBRRX_UpdateINILengthOption(const std::string& sFolderName, double newLength);
 
@@ -642,7 +682,7 @@ protected:
 	int  RBRRX_CalculateNumOfValidMapsInRecentList(PRBRRXMenuItem pMapMenuItemsRBRRX = nullptr, int numOfItemsMenuItemsRBRRX = 0);
 	void RBRRX_AddMapToRecentList(std::string folderName);
 
-	BOOL RBRRX_ReadStartSplitsFinishPacenoteDistances(const std::string& folderName, float* startDistance, float* split1Distance, float* split2Distance, float* finishDistance);
+	BOOL RBRRX_ReadStartSplitsFinishPacenoteDistances(const std::string& folderName, double* startDistance, double* split1Distance, double* split2Distance, double* finishDistance);
 	int  RBRRX_ReadDriveline(const std::string& folderName, CDrivelineSource& drivelineSource );
 	void RBRRX_DrawMinimap(const std::string& folderName, int screenID, LPDIRECT3DDEVICE9 pOutputD3DDevice = nullptr);
 
@@ -661,9 +701,11 @@ public:
 	T_PLUGINSTATE m_PluginState;
 
 	bool m_bRBRFullscreenDX9;			// Is RBR running in fullscreen or windows DX9 mode? TRUE-fullscreen, FALSE=windowed
+
 	bool m_bPacenotePluginInstalled;	// Is Pacenote plugin used? RBR exit logic handles font cleanup a bit differently in fullscreen mode IF pacenote plugin is missing
 	bool m_bRallySimFansPluginInstalled;// Is this RallySimFans plugin version of RBR? It modifies Cars\Cars.ini and physics file on the fly to change the list of installed cars, so NGPCarMenu needs to refresh car specs when RSF modifies those
-	
+	bool m_bRBRTMPluginInstalled;		// Is this RBRTM plugin version of RBR installation?
+
 	UINT m_iPhysicsNGMajorVer;				// Version of the NGP physics library (PhysicsNG.dll)
 	UINT m_iPhysicsNGMinorVer;
 	UINT m_iPhysicsNGPatchVer;
@@ -798,6 +840,8 @@ public:
 	int  ReadDriveline(const std::string& sDrivelineFileName, CDrivelineSource& drivelineSource);
 	int  RescaleDrivelineToFitOutputRect(CDrivelineSource& drivelineSource, CMinimapData& minimapData);
 
+	std::string GetRBRInstallType();	// TM=RBR using RBRTM plugin, RSF=RBR using RSF plugin, UNK=Unknown installation type
+
 	std::string GetActivePluginName();	// RBR=Normal RBR (ie. no custom plugin), RBRTM, RBRRX, RSF
 	int GetActiveReplayType();			// 0=no replay, 1=Normal RBR/TM/RSF (classic map), 2=BTB (rbrrx/btb map)
 	int GetActiveRacingType();			// 0=no racing, 1=Normal RBR/TM/RSF (classic map), 2=BTB (rbrrx/btb map)
@@ -854,6 +898,7 @@ public:
 
 	void RBRRX_CustomLoadTrackScreen();
 	BOOL RBRRX_PrepareLoadTrack(const std::string& mapName, std::string mapFolderName);
+	int  RBRRX_CheckTrackLoadStatus(const std::string& mapName, std::string mapFolderName, BOOL preLoadCheck = FALSE);
 
 	//------------------------------------------------------------------------------------------------
 	virtual const char* GetName(void);

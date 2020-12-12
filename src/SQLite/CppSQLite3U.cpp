@@ -465,6 +465,27 @@ int CppSQLite3Statement::execDML()
 	}
 }
 
+// Modified by MIKA-N. This method was missing from the original class
+CppSQLite3Query CppSQLite3Statement::execQuery()
+{
+	checkDB();
+	checkVM();
+
+	int nRet = _sqlite3_step(mpVM);
+	if (nRet == SQLITE_DONE)
+	{	// no rows
+		return CppSQLite3Query(mpDB, mpVM, true/*eof*/, false);
+	}
+	else if (nRet == SQLITE_ROW)
+	{	// at least 1 row
+		return CppSQLite3Query(mpDB, mpVM, false/*eof*/, false);
+	}
+
+	sqlite3_reset(mpVM);
+	LPCTSTR szError = (LPCTSTR)_sqlite3_errmsg(mpDB);
+	throw CppSQLite3Exception(nRet, (LPTSTR)szError, DONT_DELETE_MSG);
+}
+
 
 void CppSQLite3Statement::bind(int nParam, LPCTSTR szValue)
 {

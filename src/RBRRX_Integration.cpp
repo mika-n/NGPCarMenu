@@ -366,47 +366,28 @@ void CNGPCarMenu::RBRRX_UpdateMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo)
 //
 double CNGPCarMenu::RBRRX_UpdateINILengthOption(const std::string& folderName, double newLengthKm)
 {
-	std::string sIniFileName;
-
 	if (folderName.empty())
 		return newLengthKm;
 
 	try
 	{
+		std::string sIniFileName;
+
 		if (newLengthKm < 0)
 		{
 			// Use pacenotes.ini file to estimate the length because RBR data structure doesn't define it or track.ini length option.
 			// Calculate type22 (finish line) - type21 (start line) difference to estimate the stage length
-			char szKeyName[12];
-			int iPacenotesIdx;
-			int iPacenoteType;
 			double startDistance = -1;
 			double finishDistance = -1;
 
-			CSimpleIni btbPaceotesINIFile;
 			sIniFileName = m_sRBRRootDir + "\\RX_CONTENT\\" + folderName + "\\pacenotes.ini";
-			btbPaceotesINIFile.LoadFile(sIniFileName.c_str());
-			iPacenotesIdx = min(btbPaceotesINIFile.GetLongValue("PACENOTES", "count", 0) - 1, 1000000);
-			
-			for (; iPacenotesIdx >= 0; iPacenotesIdx--)
+			if(RBRRX_ReadStartSplitsFinishPacenoteDistances(sIniFileName, &startDistance, nullptr, nullptr, &finishDistance))
 			{
-				snprintf(szKeyName, sizeof(szKeyName), "P%d", iPacenotesIdx);
-				iPacenoteType = btbPaceotesINIFile.GetLongValue(szKeyName, "type", -1);
-
-				if (iPacenoteType == 21 && startDistance < 0)
-				{
-					startDistance = btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0);
-					if (startDistance >= 0 && finishDistance >= 0) break;
-				}
-				else if (iPacenoteType == 22 && finishDistance < 0)
-				{
-					finishDistance = btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0);
-					if (startDistance >= 0 && finishDistance >= 0) break;
-				}
+				newLengthKm = (finishDistance - startDistance) / 1000.0f;
+				if (newLengthKm <= 0) newLengthKm = 1.0;
 			}
-
-			newLengthKm = (finishDistance - startDistance) / 1000.0f;
-			if (newLengthKm <= 0) newLengthKm = 1.0;
+			else
+				newLengthKm = 1.0;
 		}
 
 		CSimpleIni btbTrackINIFile;
@@ -636,48 +617,11 @@ BOOL CNGPCarMenu::RBRRX_PrepareReplayTrack(const std::string& mapName)
 //
 BOOL CNGPCarMenu::RBRRX_PrepareLoadTrack(const std::string& mapName, std::string mapFolderName)
 {
-	std::string rbrxMapFolderName;
-	int mapMenuIdx = -1;
-	PRBRRXPlugin pTmpRBRRXPlugin;
-
-	pTmpRBRRXPlugin = m_pRBRRXPlugin;
-	if (pTmpRBRRXPlugin == nullptr)
-		pTmpRBRRXPlugin = (PRBRRXPlugin)GetModuleBaseAddr("RBR_RX.DLL");
-
-	if(pTmpRBRRXPlugin != nullptr)
-		mapMenuIdx = RBRRX_FindMenuItemIdxByMapName(pTmpRBRRXPlugin->pMenuItems, pTmpRBRRXPlugin->numOfItems, mapName);
-
-	if (mapMenuIdx < 0)
-	{
-		LogPrint("WARNING. Tried to load '%s' BTB track, but the track is missing", mapName.c_str());
-		return FALSE;
-	}
-
-	rbrxMapFolderName = m_sRBRRootDir + "\\RX_Content\\" + pTmpRBRRXPlugin->pMenuItems[mapMenuIdx].szTrackFolder;
-	
-	// Remap the mapFolderName to use fullpath in case the input parameter is not yet the fullpath value
-	if (mapFolderName.length() > 3)
-	{
-		if (!(mapFolderName[1] == ':' && mapFolderName[2] == '\\') && !(mapFolderName[0] == '\\' && mapFolderName[1] == '\\'))
-		{
-			if (_iStarts_With(mapFolderName, "tracks\\", true))
-				mapFolderName = m_sRBRRootDir + "\\RX_Content\\" + mapFolderName;
-			else if (_iStarts_With(mapFolderName, "rx_content\\", true))
-				mapFolderName = m_sRBRRootDir + mapFolderName;
-			else
-				mapFolderName = m_sRBRRootDir + "\\RX_Content\\Tracks\\" + mapFolderName;
-		}
-	}
+	int mapMenuIdx = RBRRX_CheckTrackLoadStatus(mapName, mapFolderName, TRUE);
+	if (mapMenuIdx >= 0)
+		return RBRRX_PrepareLoadTrack(mapMenuIdx);
 	else
-		mapFolderName = "";
-
-	if (mapFolderName.empty() || !fs::exists(mapFolderName) || !_iEqual(rbrxMapFolderName, mapFolderName, false))
-	{
-		LogPrint("WARNING. Tried to load '%s' BTB track, but the folder is missing or wrong", mapName.c_str());
 		return FALSE;
-	}
-
-	return RBRRX_PrepareLoadTrack(mapMenuIdx);
 }
 
 BOOL CNGPCarMenu::RBRRX_PrepareLoadTrack(int mapMenuIdx)
@@ -738,46 +682,126 @@ BOOL CNGPCarMenu::RBRRX_PrepareLoadTrack(int mapMenuIdx)
 }
 
 
-BOOL CNGPCarMenu::RBRRX_ReadStartSplitsFinishPacenoteDistances(const std::string& sIniFileName, float* startDistance, float* split1Distance, float* split2Distance, float* finishDistance)
+//---------------------------------------------------------------------------------------------------------------------------------
+// Check the status of the loaded BTB track (if BTB loading failed then the map may be the original #41 Cote stage
+//
+int CNGPCarMenu::RBRRX_CheckTrackLoadStatus(const std::string& mapName, std::string mapFolderName, BOOL preLoadCheck)
 {
-	//std::string sIniFileName;
+	int mapMenuIdx = -1;
+	std::string rbrxMapFolderName;
+	PRBRRXPlugin pTmpRBRRXPlugin;
+
+	pTmpRBRRXPlugin = m_pRBRRXPlugin;
+	if (pTmpRBRRXPlugin == nullptr)
+		pTmpRBRRXPlugin = (PRBRRXPlugin)GetModuleBaseAddr("RBR_RX.DLL");
+
+	if (pTmpRBRRXPlugin != nullptr)
+		mapMenuIdx = RBRRX_FindMenuItemIdxByMapName(pTmpRBRRXPlugin->pMenuItems, pTmpRBRRXPlugin->numOfItems, mapName);
+
+	if (mapMenuIdx < 0)
+	{
+		LogPrint("WARNING. Tried to load '%s' BTB track, but the track is missing", mapName.c_str());
+		return -1;
+	}
+
+	rbrxMapFolderName = m_sRBRRootDir + "\\RX_Content\\" + pTmpRBRRXPlugin->pMenuItems[mapMenuIdx].szTrackFolder;
+
+	// Remap the mapFolderName to use fullpath in case the input parameter is not yet the fullpath value
+	if (mapFolderName.length() > 3)
+	{
+		if (!(mapFolderName[1] == ':' && mapFolderName[2] == '\\') && !(mapFolderName[0] == '\\' && mapFolderName[1] == '\\'))
+		{
+			if (_iStarts_With(mapFolderName, "tracks\\", true))
+				mapFolderName = m_sRBRRootDir + "\\RX_Content\\" + mapFolderName;
+			else if (_iStarts_With(mapFolderName, "rx_content\\", true))
+				mapFolderName = m_sRBRRootDir + mapFolderName;
+			else
+				mapFolderName = m_sRBRRootDir + "\\RX_Content\\Tracks\\" + mapFolderName;
+		}
+	}
+	else
+		mapFolderName = "";
+
+	if (mapFolderName.empty() || !fs::exists(mapFolderName) || !_iEqual(rbrxMapFolderName, mapFolderName, false))
+	{
+		LogPrint("WARNING. Tried to load '%s' BTB track, but the folder is missing or wrong", mapName.c_str());
+		return -1;
+	}
+
+	if(preLoadCheck)
+		return mapMenuIdx;
+
+	// The BTB map should have been loaded at this point. Make sure the loaded track didn't end up to the original #41 Cote track
+	double startDistance = -1, split1Distance = -1, split2Distance = -1, finishDistance = -1;
+	double startDistanceRBR = -1, split1DistanceRBR = -1, split2DistanceRBR = -1, finishDistanceRBR = -1;
+
+	if (g_pRBRGameMode->gameMode == 0x01 || g_pRBRGameMode->gameMode == 0x0A || g_pRBRGameMode->gameMode == 0x0D || g_pRBRGameMode->gameMode == 0x02)
+	{
+		RBRAPI_InitializeRaceTimeObjReferences();
+
+		if (RBRRX_ReadStartSplitsFinishPacenoteDistances(mapFolderName + "\\pacenotes.ini", &startDistance, &split1Distance, &split2Distance, &finishDistance)
+			&& ReadStartSplitFinishPacenoteDistances(&startDistanceRBR, &split1DistanceRBR, &split2DistanceRBR, &finishDistanceRBR))
+		{
+			DebugPrint("start=%lf %lf  split1=%lf %lf  split2=%lf %lf  finish=%lf %lf", startDistance, startDistanceRBR, split1Distance, split1DistanceRBR, split2Distance, split2DistanceRBR, finishDistance, finishDistanceRBR);
+
+			if (abs(startDistance - startDistanceRBR) > 0.5 || abs(split1Distance - split1DistanceRBR) > 0.5 || abs(split2Distance - split2DistanceRBR) > 0.5 || abs(finishDistance - finishDistanceRBR) > 0.5)
+				return -1;
+		}
+		else
+			return -1;
+	}
+	else
+		return -1;
+
+	return mapMenuIdx;
+}
+
+
+//---------------------------------------------------------------------------------------------------------------------------------
+// Read start/split1/split2/finish pacenotes (needed to calculate the distance)
+//
+BOOL CNGPCarMenu::RBRRX_ReadStartSplitsFinishPacenoteDistances(const std::string& sIniFileName, double* startDistance, double* split1Distance, double* split2Distance, double* finishDistance)
+{
 	char szKeyName[12];
 	int iPacenotesIdx;
 	int iPacenoteType;
 	
-	*startDistance  = -1;
-	*split1Distance = -1;
-	*split2Distance = -1;
-	*finishDistance = -1;
+	if(startDistance)  *startDistance  = -1;
+	if(split1Distance) *split1Distance = -1;
+	if(split2Distance) *split2Distance = -1;
+	if(finishDistance) *finishDistance = -1;
 
 	try
 	{
 		CSimpleIni btbPaceotesINIFile;
-		//sIniFileName = m_sRBRRootDir + "\\RX_CONTENT\\" + folderName + "\\pacenotes.ini";
 		if (fs::exists(sIniFileName))
 		{
 			btbPaceotesINIFile.LoadFile(sIniFileName.c_str());
 			iPacenotesIdx = min(btbPaceotesINIFile.GetLongValue("PACENOTES", "count", 0) - 1, 1000000);
 
-			//for (; iPacenotesIdx >= 0; iPacenotesIdx--)
 			for (int idx = 0; idx < iPacenotesIdx; idx++)
 			{
-				snprintf(szKeyName, sizeof(szKeyName), "P%d", idx /*iPacenotesIdx*/);
+				snprintf(szKeyName, sizeof(szKeyName), "P%d", idx);
 				iPacenoteType = btbPaceotesINIFile.GetLongValue(szKeyName, "type", -1);
 
-				if (iPacenoteType == 21 && *startDistance < 0)
+				if (iPacenoteType == 21 && startDistance && *startDistance < 0)
 				{
-					*startDistance = static_cast<float>(btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0));
+					*startDistance = btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0);
+
+					if ((split1Distance == nullptr && split2Distance == nullptr) && finishDistance == nullptr || *finishDistance >= 0)
+						break;
 				}
 				else if (iPacenoteType == 23)
 				{
-					if (*split1Distance < 0) *split1Distance = static_cast<float>(btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0));
-					else *split2Distance = static_cast<float>(btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0));
+					if (split1Distance && *split1Distance < 0) *split1Distance = btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0);
+					else if(split2Distance) *split2Distance = btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0);
 				}
-				else if (iPacenoteType == 22 && *finishDistance < 0)
+				else if (iPacenoteType == 22 && finishDistance && *finishDistance < 0)
 				{
-					*finishDistance = static_cast<float>(btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0));
-					break;
+					*finishDistance = btbPaceotesINIFile.GetDoubleValue(szKeyName, "distance", 0);
+
+					if (startDistance == nullptr || *startDistance >= 0)
+						break;
 				}
 			}
 		}
@@ -787,10 +811,15 @@ BOOL CNGPCarMenu::RBRRX_ReadStartSplitsFinishPacenoteDistances(const std::string
 		return FALSE;
 	}
 
-	// Some original RBR maps don't have type21 start pointer, weird. If the startDistance is missing then set it as zero.
-	if (*startDistance < 0) *startDistance = 0.0f;
+	// Some maps don't have the start note, weird. If the startDistance is missing then set it as zero.
+	if (startDistance && *startDistance < 0) *startDistance = 0.0f;
 
-	return TRUE;
+	//DebugPrint("RBRRX_ReadStartSplitsFinishPacenoteDistances. start=%lf split1=%lf split2=%lf finish=%lf", *startDistance, *split1Distance, *split2Distance, *finishDistance);
+
+	if (startDistance && finishDistance)
+		return (*startDistance >= 0 && *finishDistance >= 0);
+	else
+		return TRUE;
 }
 
 
@@ -840,7 +869,13 @@ int CNGPCarMenu::RBRRX_ReadDriveline(const std::string& folderName, CDrivelineSo
 	try
 	{
 		// Read start/split1/split2/finish distance (from the beginning of driveline data)
-		RBRRX_ReadStartSplitsFinishPacenoteDistances(sPacenoteINIFileName, &drivelineSource.startDistance, &drivelineSource.split1Distance, &drivelineSource.split2Distance, &drivelineSource.finishDistance);
+		double startDistance, split1Distance, split2Distance, finishDistance;
+		RBRRX_ReadStartSplitsFinishPacenoteDistances(sPacenoteINIFileName, &startDistance, &split1Distance, &split2Distance, &finishDistance);
+
+		drivelineSource.startDistance  = static_cast<float>(startDistance);
+		drivelineSource.split1Distance = static_cast<float>(split1Distance);
+		drivelineSource.split2Distance = static_cast<float>(split2Distance);
+		drivelineSource.finishDistance = static_cast<float>(finishDistance);
 
 		// Read driveline data (this routine expects the driveline data to be already sorted by distance in ascending order)
 		drivelineFile.open(sDrivelineINIFileName);

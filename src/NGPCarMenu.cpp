@@ -40,8 +40,6 @@
 #include "NGPCarMenu.h"
 //#include "FileWatcher.h"
 
-#include "SQLite/CppSQLite3U.h"
-
 namespace fs = std::filesystem;
 
 //------------------------------------------------------------------------------------------------
@@ -95,8 +93,9 @@ std::vector<std::string>* g_pRBRRXTrackNameListAlreadyInitialized = nullptr; // 
 
 int g_iInvertedPedalsStartupFixFlag = 0; // Bit1=Throttle (0x01), Bit2=Brake (0x02), Bit3=Clutch (0x04), Bit4=Handbrake (0x08). Fix the inverted pedal bug in RBR when the game is started or alt-tabbed to desktop
 
+#if 0
 CppSQLite3DB* g_pRaceStatDB = nullptr;	// Race statistics database
-
+#endif
 
 //--------------------------------------------------------------------------------------------------------------------------
 // Class to listen for new rbr\Replahs\*.rpl files after RBRRX/BTB racing has ended.
@@ -665,14 +664,14 @@ BOOL APIENTRY API_PrepareBTBTrackLoad(DWORD pluginID, LPCSTR szBTBTrackName, LPC
 
 BOOL APIENTRY API_CheckBTBTrackLoadStatus(DWORD /*pluginID*/, LPCSTR szBTBTrackName, LPCSTR szBTBTrackFolder)
 {	
-	if (g_pRBRPlugin == nullptr || g_pRBRGameMode->gameMode == 0x03 || g_pRBRPlugin->GetActiveRacingType() != 2)
-	{
-		DebugPrint("API_CheckBTBTrackLoadStatus. The BTB track loading failed, the track ended up in the #41 original track");
-		return FALSE;
-	}
+	BOOL bResult = FALSE;
+	if (g_pRBRPlugin != nullptr && g_pRBRPlugin->GetActiveRacingType() == 2)
+		bResult = (g_pRBRPlugin->RBRRX_CheckTrackLoadStatus(std::string(szBTBTrackName), std::string(szBTBTrackFolder), FALSE) >= 0);
 
-	// TODO: Add check routine to make sure the BTB was loaded and not the original RBR #41 Cote d'Arbrozin track
-	return TRUE;
+	if (bResult == FALSE)
+		LogPrint("The BTB track loading failed");
+
+	return bResult;
 }
 
 
@@ -716,7 +715,7 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 
 	m_pGame = pGame;
 
-	m_bPacenotePluginInstalled = m_bRBRFullscreenDX9 = m_bRallySimFansPluginInstalled = m_bRBRProInstalled = FALSE;
+	m_bPacenotePluginInstalled = m_bRBRFullscreenDX9 = m_bRallySimFansPluginInstalled = m_bRBRProInstalled = m_bRBRTMPluginInstalled = FALSE;
 
 	// Init plugin title text with version tag of NGPCarMenu.dll file
 	char szTxtBuf[COUNT_OF_ITEMS(C_PLUGIN_TITLE_FORMATSTR) + 32];
@@ -906,12 +905,9 @@ CNGPCarMenu::~CNGPCarMenu(void)
 		SAFE_RELEASE(g_mapRBRRXRightBlackBarVertexBuffer);
 		//SAFE_DELETE(g_watcherNewReplayFileListener);
 
-		if (g_pRaceStatDB != nullptr)
-		{
-			g_pRaceStatDB->close();
-			SAFE_DELETE(g_pRaceStatDB);
-		}
-
+#if 0
+		SAFE_DELETE(g_pRaceStatDB);
+#endif 
 		SAFE_DELETE(m_pD3D9RenderStateCache);
 
 		DebugPrint("Exit CNGPCarMenu.Destructor");
@@ -1466,6 +1462,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 		//
 		// Race stat db
 		//
+#if 0
 		if (g_pRaceStatDB == nullptr)
 		{
 			m_raceStatDBFilePath = _ToString(pluginINIFile.GetValueEx(L"Default", L"", L"RaceStatDB", (!m_bRBRProInstalled ? L"Plugins\\NGPCarMenu\\raceStatDB.sqlite3" : L"0")));
@@ -1474,10 +1471,9 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 			else if (m_raceStatDBFilePath.length() >= 2 && m_raceStatDBFilePath[0] != '\\' && m_raceStatDBFilePath[1] != ':')
 				m_raceStatDBFilePath = m_sRBRRootDir + "\\" + m_raceStatDBFilePath;
 
-			if (!m_raceStatDBFilePath.empty())
-				InitializeRaceStatDB();
+			RaceStatDB_Initialize();
 		}
-
+#endif
 
 		//
 		// If the existing INI file format is an old version1 then save the file using the new format specifier
@@ -1901,93 +1897,6 @@ int CNGPCarMenu::InitAllNewCustomPluginIntegrations()
 	}
 
 	return iInitCount;
-}
-
-
-//-------------------------------------------------------------------------------------------------------------------
-// Initialize race stat DB if it is missing
-//
-bool CNGPCarMenu::InitializeRaceStatDB()
-{
-	// RaceStatDB feature disabled if the db filePath is empty
-	if (m_raceStatDBFilePath.empty())
-		return FALSE;
-
-	// Is raceStatDB already initialized and connected. If it is then do nothing
-	if (g_pRaceStatDB != nullptr)
-		return TRUE;
-
-	g_pRaceStatDB = new CppSQLite3DB();
-	LogPrint("RaceStatDB %s (SQLite %s)", m_raceStatDBFilePath.c_str(), g_pRaceStatDB->SQLiteVersion());
-
-	bool bResult = TRUE;
-	try
-	{
-		if (!fs::exists(m_raceStatDBFilePath))
-			LogPrint("InitializeRaceStatDB. Creating new race statistics database file");
-		else
-			LogPrint("InitializeRaceStatDB. Opening existing race statistics database file");
-
-		g_pRaceStatDB->open(m_raceStatDBFilePath.c_str());
-
-		if (!g_pRaceStatDB->tableExists("StatInfo"))
-		{
-			LogPrint("InitializeRaceStatDB. Creating StatInfo");
-
-			bResult = g_pRaceStatDB->execDML("CREATE TABLE StatInfo(AttribName char(16) PRIMARY KEY not null, AttribValue char(64) not null);") == SQLITE_OK;
-			if(bResult) bResult = g_pRaceStatDB->execDML("INSERT INTO StatInfo VALUES ('Version', '1');") == SQLITE_OK;
-		}
-
-		// TODO. Read the Version attribute from StatInfo table and check if the table structure needs DDL changes
-		// TODO. Create D_Car and D_Map dim tables
-
-		if (bResult && !g_pRaceStatDB->tableExists("F_RallyResult"))
-		{
-			LogPrint("InitializeRaceStatDB. Creating F_RallyResult");
-
-			bResult = g_pRaceStatDB->execDML("CREATE TABLE F_RallyResult("
-				"RaceID int PRIMARY KEY not null,"	// Unique raceID "surrogate" key
-				"RaceDate int not null,"			// YYYYMMDD
-				"RaceDateTime int not null,"		// HHMISS (24h, local timestamp)
-				"CarID int not null,"				// Key to D_Car tbl
-				"MapID int not null,"				// Key to D_Map tbl
-				"SplitTime1 real,"					
-				"SplitTime2 real,"					// Split1/Split2/Finish time in secs (if finish time is NULL then the race was retired)
-				"FinishTime real,"
-				"TotalDuration real,"				// Total time between "OnRaceStarted and OnRaceEnded" (including the time spent in pause state, this is NOT the same as finish time in racing)
-				"FalseStart int not null,"			// 0=No false start, 1=Yes false start (false start penalty added to the race time)
-				"CallForHelp int not null,"			// Number of "call for help" calls (always 0 at the moment, not yet implemented)
-				"TyreType char(1) not null,"		// G=Gravel, T=Tarmac, S=Snow, U=Unknown
-				"TyreSubType char(1) not null,"		// D=Dry, I=Intermediate, W=Wet (snow tracks have only D)
-				"WeatherType char(1) not null,"		// G=Good, B=Bad, U=Unknown
-				"ProfileName char(16) not null,"	// Name of the profile
-				"PluginType char(8) not null,"		// Plugin or RBR game mode used in this race (RBR, TM, RX, RSF)
-				"PluginSubType char(4) not null,"	// RBR: QR, MP, RC | TM: SH, OFF, ON | RX: RX, RSF | RSF: PR, OFF, ON | UNK=Unknown
-				"CarSlot int not null,"				// Car slot#
-				"SetupFile char(64) not null,"		// Name of the setup file (empty str at the moment, not yet implemented)
-				"NGPVersion int not null,"			// NGP physics version (3xxx, 4xxx, 5xxx or 6xxx where x is the minor version(example NGP 6.3.758 -> 6003)
-				"NGPSubVersion int not null"		// NGP phystics patch version (example NGP 6.3.758 -> 758)
-				");") == SQLITE_OK;
-		}
-	}
-	catch (CppSQLite3Exception ex)
-	{
-		bResult = FALSE;
-		LogPrint("ERROR. %s", ex.errorMessage());
-	}
-	catch (...)
-	{
-		bResult = FALSE;
-	}
-
-	if (bResult == FALSE)
-	{
-		LogPrint("ERROR. Error while opening the race stat db");		
-		m_raceStatDBFilePath.clear();
-		SAFE_DELETE(g_pRaceStatDB);
-	}
-
-	return bResult;
 }
 
 
@@ -3011,6 +2920,61 @@ bool CNGPCarMenu::PrepareScreenshotReplayFile(int carID)
 
 
 //-----------------------------------------------------------------------------------------------
+// Read start/spli1/split2/finish distances from the currently loaded map
+//
+BOOL CNGPCarMenu::ReadStartSplitFinishPacenoteDistances(double* pStartDistance, double* pSplit1Distance, double* pSplit2Distance, double* pFinishDistance)
+{
+	BOOL bResult = FALSE;
+
+	*pStartDistance  = -1;
+	*pSplit1Distance = -1;
+	*pSplit2Distance = -1;
+	*pFinishDistance = -1;
+
+	if (g_pRBRGameMode->gameMode == 0x01 || g_pRBRGameMode->gameMode == 0x0A || g_pRBRGameMode->gameMode == 0x0D || g_pRBRGameMode->gameMode == 0x02)
+	{		
+		if (g_pRBRPacenotes != nullptr && g_pRBRPacenotes->pPacenotes != nullptr)
+		{
+			for (int idx = 0; idx < g_pRBRPacenotes->numPacenotes; idx++)
+			{
+				if (g_pRBRPacenotes->pPacenotes[idx].type == 21) 
+					*pStartDistance = static_cast<double>(g_pRBRPacenotes->pPacenotes[idx].distance);
+				else if (g_pRBRPacenotes->pPacenotes[idx].type == 22) 
+					*pFinishDistance = static_cast<double>(g_pRBRPacenotes->pPacenotes[idx].distance);
+				else if (g_pRBRPacenotes->pPacenotes[idx].type == 23)
+				{
+					if(*pSplit1Distance < 0)
+						*pSplit1Distance = static_cast<double>(g_pRBRPacenotes->pPacenotes[idx].distance);
+					else if (*pSplit2Distance < 0)
+					{
+						*pSplit2Distance = static_cast<double>(g_pRBRPacenotes->pPacenotes[idx].distance);
+
+						if(*pSplit1Distance > *pSplit2Distance)
+						{
+							// Splits in wrong order. Swap the order
+							double temp = *pSplit1Distance;
+							*pSplit1Distance = *pSplit2Distance;
+							*pSplit2Distance = temp;
+						}
+					}
+				}
+
+				if (*pStartDistance >= 0 && *pSplit1Distance >= 0 && *pSplit2Distance >= 0 && *pFinishDistance >= 0)
+					break;
+			}
+
+			// Some maps don't have the start note. Weird. Set it as zero
+			if (*pStartDistance < 0) *pStartDistance = 0.0;
+
+			bResult = (*pStartDistance >= 0 && *pFinishDistance >= 0);
+		}
+	}
+
+	return bResult;
+}
+
+
+//-----------------------------------------------------------------------------------------------
 // Read start/spli1/split2/finish distances from a pacenote DLS map file
 //
 BOOL CNGPCarMenu::ReadStartSplitsFinishPacenoteDistances(const std::wstring& sPacenoteFileName, float* startDistance, float* split1Distance, float* split2Distance, float* finishDistance)
@@ -3114,7 +3078,7 @@ BOOL CNGPCarMenu::ReadStartSplitsFinishPacenoteDistances(const std::wstring& sPa
 						else
 						{
 							// Sometimes DLS file may have splits in "wrong order", so make sure the distance of split1 < split2
-							if (vectPacenoteData[idx].distance > * split1Distance)
+							if (vectPacenoteData[idx].distance > *split1Distance)
 								*split2Distance = vectPacenoteData[idx].distance;
 							else
 							{
@@ -3280,7 +3244,7 @@ std::wstring CNGPCarMenu::ReplacePathVariables(const std::wstring& sPath, int se
 	imgExtension = _ToWString(g_NGPCarMenu_ImageOptions[this->m_iMenuImageOption]);
 	sResult = _ReplaceStr(sResult, L"%filetype%", imgExtension);
 
-	sResult = _ReplaceStr(sResult, L"%plugin%", (rbrtmplugin ? L"RBRTM" : L"RBR"));
+	sResult = _ReplaceStr(sResult, L"%plugin%", (rbrtmplugin ? L"TM" : L"RBR"));
 
 	if (mapID > 0) sResult = _ReplaceStr(sResult, L"%mapid%", std::to_wstring(mapID));
 	if (mapName != nullptr) sResult = _ReplaceStr(sResult, L"%mapname%", mapName);	
@@ -3590,11 +3554,13 @@ const char* CNGPCarMenu::GetName(void)
 
 		m_bPacenotePluginInstalled = fs::exists(m_sRBRRootDir + "\\Plugins\\PaceNote.dll");
 		m_bRallySimFansPluginInstalled = fs::exists(m_sRBRRootDir + "\\Plugins\\RSFstub.dll");
+		m_bRBRTMPluginInstalled = fs::exists(m_sRBRRootDir + "\\Plugins\\RBRTM.dll");
+
 		GetFileVersionInformationAsNumber(m_sRBRRootDirW + L"\\Plugins\\PhysicsNG.dll", &m_iPhysicsNGMajorVer, &m_iPhysicsNGMinorVer, &m_iPhysicsNGPatchVer, &m_iPhysicsNGBuildVer); 
 
 		m_bRBRProInstalled = fs::exists(m_sRBRRootDir + "\\..\\RBRProManager.exe") || fs::exists(m_sRBRRootDir + "\\..\\RBRPro.API.dll");
 
-		LogPrint("RBR FullscreenMode=%d PacenotePluginInstalled=%d RallySimFansPluginInstalled=%d RBRProManagerInstalled=%d", m_bRBRFullscreenDX9, m_bPacenotePluginInstalled, m_bRallySimFansPluginInstalled, m_bRBRProInstalled);
+		LogPrint("RBR FullscreenMode=%d PacenotePluginInstalled=%d TMPluginInstalled=%d RSFPluginInstalled=%d RBRProManagerInstalled=%d", m_bRBRFullscreenDX9, m_bPacenotePluginInstalled, m_bRBRTMPluginInstalled, m_bRallySimFansPluginInstalled, m_bRBRProInstalled);
 		LogPrint("NGP version %d.%d.%d.%d", m_iPhysicsNGMajorVer, m_iPhysicsNGMinorVer, m_iPhysicsNGPatchVer, m_iPhysicsNGBuildVer);
 
 		if (m_bRBRProInstalled)
@@ -4188,16 +4154,24 @@ void CNGPCarMenu::StageStarted(int iMap, const char* ptxtPlayerName, bool bWasFa
 
 
 //---------------------------------------------------
+std::string CNGPCarMenu::GetRBRInstallType()
+{
+	if (m_bRBRTMPluginInstalled) return "TM";			// TM rbr installation
+	if (m_bRallySimFansPluginInstalled) return "RSF";	// RallySimFans rbr installation
+	return "UNK"; // Vanilla rbr or some other online plugin installation?
+}
+
+
+//---------------------------------------------------
 // RBR=Normal RBR (ie. no custom plugin), RBRTM, RBRRX, RSF
 //
 std::string CNGPCarMenu::GetActivePluginName()
 {
-	// Custom plugin not active, so the RBR status must be "RBR" (=normal RBR)
 	if (m_bRBRTMPluginActive)
-		return "RBRTM";
+		return "TM";
 
 	if (m_bRBRRXPluginActive)
-		return "RBRRX";			// At some point RBRRX may be active even when the custom plugin is not the current menu obj (ie. stage selected in RBRRX stages menu and the RBR stage options menu is open)
+		return "RX";			// At some point RBRRX may be active even when the custom plugin is not the current menu obj (ie. stage selected in RBRRX stages menu and the RBR stage options menu is open)
 
 	if (g_pRBRPluginIntegratorLinkList != nullptr)
 	{
@@ -4273,9 +4247,9 @@ void CNGPCarMenu::OnPluginActivated(const std::string& pluginName)
 {
 	DebugPrint("OnPluginActivated %s", pluginName.c_str());
 
-	if(pluginName == "RBRTM")
+	if(pluginName == "TM")
 		m_bRBRTMPluginActive = true;
-	else if (pluginName == "RBRRX")
+	else if (pluginName == "RX")
 		m_bRBRRXPluginActive = true;
 }
 
@@ -4283,7 +4257,7 @@ void CNGPCarMenu::OnPluginDeactivated(const std::string& pluginName)
 {
 	DebugPrint("OnPluginDeactivated %s", pluginName.c_str());
 
-	if (pluginName == "RBRTM")
+	if (pluginName == "TM")
 	{
 		m_bRBRTMPluginActive = false;
 
@@ -4298,7 +4272,7 @@ void CNGPCarMenu::OnPluginDeactivated(const std::string& pluginName)
 			m_pRBRTMPlugin->activeStatus = 0x00;
 		}
 	}
-	else if (pluginName == "RBRRX")
+	else if (pluginName == "RX")
 		m_bRBRRXPluginActive = false;
 }
 
@@ -4314,7 +4288,7 @@ void CNGPCarMenu::OnMapLoaded()
 	m_latestCarID = g_pRBRMapSettings->carID;
 	m_latestMapID = g_pRBRMapSettings->trackID;
 
-	if (GetActivePluginName() == "RBRTM")
+	if (GetActivePluginName() == "TM")
 	{
 		// RBRTM doesn't update the RBR stage name string value, it alawys uses "Rally HQ" string, so read the stageName option from Tracks.ini file
 		if (prevRBRTMMapID != m_latestMapID)
@@ -4327,9 +4301,10 @@ void CNGPCarMenu::OnMapLoaded()
 	}
 	else
 	{
+		prevRBRTMMapID  = -1;
 		m_latestMapName = (g_pRBRMapLocationName != nullptr ? g_pRBRMapLocationName : L"");
 
-		if (GetActivePluginName() == "RBRRX")
+		if (GetActivePluginName() == "RX")
 			RBRRX_OnMapLoaded();
 	}
 
@@ -4343,7 +4318,7 @@ void CNGPCarMenu::OnRaceStarted()
 
 	// If custom BTB PrepareBTBTrack API call was called then RBRRX racing flag is already set, but if RBRRX plugin was used to start a BTB track then check if RBRRX plugin is active to determine if this rally is with BTB track (and not the normal RBR #41 Cortez racing)
 	if (!m_bRBRRXRacingActive)
-		m_bRBRRXRacingActive = (g_pRBRPlugin->GetActivePluginName() == "RBRRX");
+		m_bRBRRXRacingActive = (g_pRBRPlugin->GetActivePluginName() == "RX");
 
 	// Racing started. Start a watcher thread to receive notifications of new rbr\Replays\fileName.rpl replay files if NGPCarMenu generated RPL metadata file generation is enabled
 /*
@@ -4368,6 +4343,16 @@ void CNGPCarMenu::OnRaceStarted()
 void CNGPCarMenu::OnRaceEnded()
 {
 	DebugPrint("OnRaceEnded. RBRRacingActive=%d  RBRRXRacingActive=%d  watcherRPLRunning=%d  Map=%s (%d)", m_bRBRRacingActive, m_bRBRRXRacingActive, /*g_watcherNewReplayFiles.Running()*/FALSE, _ToString(m_latestMapName).c_str(), m_latestMapID);
+
+#if 0
+	int mapKey = -1;
+	if(GetActiveRacingType() == 2)
+		mapKey = RaceStatDB_GetMapKey(-1, _ToString(m_latestMapName));
+	else if (GetActiveRacingType() == 1)
+		mapKey = RaceStatDB_GetMapKey(m_latestMapID, _ToString(m_latestMapName));
+
+	DebugPrint("OnRaceEnded. MapKey=%d", mapKey);
+#endif
 
 	m_bRBRRacingActive = m_bRBRRXRacingActive = m_bRBRReplayOrRacingEnding = FALSE;
 }
@@ -4547,19 +4532,19 @@ inline void CNGPCarMenu::CustomRBRDirectXBeginScene()
 			if (m_iMenuRBRTMOption == 1)
 			{
 				if (!m_bRBRTMPluginActive && g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->customPluginMenuObj && g_pRBRPluginMenuSystem->pluginsMenuObj->selectedItemIdx == m_iRBRTMPluginMenuIdx)
-					OnPluginActivated("RBRTM");
+					OnPluginActivated("TM");
 				else if (m_bRBRTMPluginActive && (g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->optionsMenuObj || g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->pluginsMenuObj || g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN]))
 					// Menu is back in RBR Plugins/Options/Main menu, so RBRTM cannot be the foreground plugin anymore
-					OnPluginDeactivated("RBRTM");
+					OnPluginDeactivated("TM");
 			}
 
 			// Check if RBRRX plugin is active
 			if (m_iMenuRBRRXOption == 1)
 			{
 				if (!m_bRBRRXPluginActive && g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->customPluginMenuObj && m_iRBRRXPluginMenuIdx == g_pRBRPluginMenuSystem->pluginsMenuObj->selectedItemIdx)
-					OnPluginActivated("RBRRX");
+					OnPluginActivated("RX");
 				else if (m_bRBRRXPluginActive && (g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->optionsMenuObj || g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->pluginsMenuObj || g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN]))
-					OnPluginDeactivated("RBRRX");
+					OnPluginDeactivated("RX");
 			}
 
 			// Check if any of the custom plugins are active
@@ -5322,7 +5307,7 @@ void CNGPCarMenu::CompleteSaveReplayProcess(const std::string& replayFileName)
 
 	try
 	{
-		bBTBReplayFile = (GetActiveRacingType() == 2 || GetActivePluginName() == "RBRRX");
+		bBTBReplayFile = (GetActiveRacingType() == 2 || GetActivePluginName() == "RX");
 
 		// If this is RallysimFans version of RBR installation then RSF plugin modifies Cars\Cars.ini file on the fly. Re-read car model names before trying to write replay metadata.
 		// Also, the actual mapID is part of the replay save filename (xxxx_rsf_xxxx_157.rpl)
