@@ -51,11 +51,8 @@
     <ClCompile Include="FileWatcher.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="SQLite\CppSQLite3U.cpp">
-      <Filter>SQLite</Filter>
-    </ClCompile>
-    <ClCompile Include="SQLite\sqlite3.c">
-      <Filter>SQLite</Filter>
+    <ClCompile Include="RaceStatDB.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -71,8 +68,17 @@
     <None Include="NGPCarMenu_fi.ini" />
     <None Include="NGPCarMenu_en.ini" />
     <None Include="NGPCarMenu_se.ini" />
-    <None Include="RaceStatDB.cpp">
-      <Filter>Source Files</Filter>
+    <None Include="SQLite\CppSQLite3U.cpp">
+      <Filter>SQLite</Filter>
+    </None>
+    <None Include="SQLite\CppSQLite3U.h">
+      <Filter>SQLite</Filter>
+    </None>
+    <None Include="SQLite\sqlite3.c">
+      <Filter>SQLite</Filter>
+    </None>
+    <None Include="SQLite\sqlite3.h">
+      <Filter>SQLite</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
@@ -114,12 +120,6 @@
     </ClInclude>
     <ClInclude Include="FileWatcher.h">
       <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="SQLite\CppSQLite3U.h">
-      <Filter>SQLite</Filter>
-    </ClInclude>
-    <ClInclude Include="SQLite\sqlite3.h">
-      <Filter>SQLite</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
