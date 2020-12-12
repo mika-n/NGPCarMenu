@@ -294,7 +294,8 @@ public:
 			return FALSE;
 	}
 
-	// Check BTB track loading status (make sure the track is not the #41 original track). This method can be called only when the countdown timer is running because then RBR has completed the map loading
+	// Check BTB track loading status (make sure the track is not the #41 original track). TRUE=BTB was loaded successfully, FALSE=BTB track loading failed and the map is the original #41 Cote
+	// This method can be called only when the camera is spinning around the car in a starting line and the countdown timer is about to start.
 	BOOL CheckBTBTrackLoadStatus(DWORD pluginID, LPCSTR szBTBTrackName, LPCSTR szBTBTrackFolderName)
 	{
 		if (fp_API_PrepareBTBTrackLoad != nullptr && fp_API_CheckBTBTrackLoadStatus != nullptr)
