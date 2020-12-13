@@ -2106,7 +2106,7 @@ void CNGPCarMenu::DoAutoLogonSequence()
 // - Step3: Use the car model name (step1) as a key to RBRCIT/carlist/carList.ini file NAME=xxxx line
 //   - FIA category (cat) / year / weight / power / trans
 //
-void CNGPCarMenu::InitCarSpecData_RBRCIT()
+void CNGPCarMenu::InitCarSpecData_RBRCIT(int updatedCarSlotMenuIdx)
 {
 	DebugPrint("Enter CNGPCarMenu.InitCarSpecData_RBRCIT");
 
@@ -2127,7 +2127,7 @@ void CNGPCarMenu::InitCarSpecData_RBRCIT()
 
 		if (fs::exists(m_rbrCITCarListFilePath))
 			ngpCarListINIFile.LoadFileEx(m_rbrCITCarListFilePath.c_str());
-		else
+		else if (!m_bRallySimFansPluginInstalled)
 			// Add warning about missing RBRCIT carList.ini file
 			wcsncpy_s(g_RBRCarSelectionMenuEntry[0].wszCarPhysicsCustomTxt, (m_rbrCITCarListFilePath + L" missing. Cannot show car specs").c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[0].wszCarPhysicsCustomTxt));
 
@@ -2138,15 +2138,23 @@ void CNGPCarMenu::InitCarSpecData_RBRCIT()
 		// The loop uses menu idx order, not in car slot# idx order
 		for (int idx = 0; idx < 8; idx++)
 		{
+			if (updatedCarSlotMenuIdx != -1 && updatedCarSlotMenuIdx != idx)
+				continue;
+
 			iNumOfGears = -1;
 			sPath = CNGPCarMenu::m_sRBRRootDir + "\\physics\\" + szPhysicsCarFolder[idx];
 
 			// Use rbr\cars\Cars.ini file to lookup the car model name ([CarXX] where xx=00..07 and CarName attribute)
 			sStockCarModelName = InitCarModelNameFromCarsFile(&stockCarListINIFile, idx);
-			if (!sStockCarModelName.empty())
-				wcsncpy_s(g_RBRCarSelectionMenuEntry[idx].wszCarModel, sStockCarModelName.c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[idx].wszCarModel));
-			else
+			if(sStockCarModelName.empty() /*|| (m_bRallySimFansPluginInstalled && updatedCarSlotMenuIdx != -1)*/)
 				g_RBRCarSelectionMenuEntry[idx].wszCarModel[0] = L'\0';
+			else
+				wcsncpy_s(g_RBRCarSelectionMenuEntry[idx].wszCarModel, sStockCarModelName.c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[idx].wszCarModel));
+
+			//if (!sStockCarModelName.empty())
+			//	wcsncpy_s(g_RBRCarSelectionMenuEntry[idx].wszCarModel, sStockCarModelName.c_str(), COUNT_OF_ITEMS(g_RBRCarSelectionMenuEntry[idx].wszCarModel));
+			//else
+			//	g_RBRCarSelectionMenuEntry[idx].wszCarModel[0] = L'\0';
 
 			if (!InitCarSpecDataFromPhysicsFile(sPath, &g_RBRCarSelectionMenuEntry[idx], &iNumOfGears) && g_RBRCarSelectionMenuEntry[idx].wszCarModel[0] == L'\0')
 			{
@@ -2175,6 +2183,9 @@ void CNGPCarMenu::InitCarSpecData_RBRCIT()
 					);
 				}
 			}
+
+			if (updatedCarSlotMenuIdx != -1)
+				break;
 		}
 	}
 	catch (const fs::filesystem_error& ex)
@@ -2753,6 +2764,7 @@ int CNGPCarMenu::CalculateMaxLenCarMenuName()
 	int iPos;
 	size_t len = 0;
 
+	// The loop uses menu order, not slot# order
 	for (int idx = 0; idx < 8; idx++)
 	{
 		// Car model names are in WCHAR, but RBR uses CHAR strings in car menu names. Convert the wchar car model name to char string and use only N first chars.
@@ -4320,8 +4332,20 @@ void CNGPCarMenu::OnRaceStarted()
 	if (!m_bRBRRXRacingActive)
 		m_bRBRRXRacingActive = (g_pRBRPlugin->GetActivePluginName() == "RX");
 
-	// Racing started. Start a watcher thread to receive notifications of new rbr\Replays\fileName.rpl replay files if NGPCarMenu generated RPL metadata file generation is enabled
+	if (m_bRallySimFansPluginInstalled && (g_pRBRMapSettings->carID >= 0 && g_pRBRMapSettings->carID <= 7))
+	{
+		int carMenuIdx = RBRAPI_MapCarIDToMenuIdx(g_pRBRMapSettings->carID);
+
+		// RSF plugin modifies car slots on the fly. Update the standard RBR car name to match with the RSF car selection because some other plugins and external tools expect to see the car name in RBR data structures
+		InitCarSpecData_RBRCIT(carMenuIdx);
+
+		// Car model names are in WCHAR, but RBR uses CHAR strings in car menu names. Convert the wchar car model name to char string and use only N first chars.
+		size_t len = 0;
+		wcstombs_s(&len, g_RBRCarSelectionMenuEntry[carMenuIdx].szCarMenuName, sizeof(g_RBRCarSelectionMenuEntry[carMenuIdx].szCarMenuName), g_RBRCarSelectionMenuEntry[carMenuIdx].wszCarModel, _TRUNCATE);
+	}
+
 /*
+	// Racing started. Start a watcher thread to receive notifications of new rbr\Replays\fileName.rpl replay files if NGPCarMenu generated RPL metadata file generation is enabled
 	if (!g_watcherNewReplayFiles.Running() && m_bGenerateReplayMetadataFile)
 	{
 		if (g_watcherNewReplayFileListener == nullptr)
@@ -4337,7 +4361,7 @@ void CNGPCarMenu::OnRaceStarted()
 	}
 */
 
-	DebugPrint("OnRaceStarted. RBRRacingActive=%d  RBRRXRacingActive=%d", m_bRBRRacingActive, m_bRBRRXRacingActive);
+	DebugPrint("OnRaceStarted. GameMode=%d  RBRRacingActive=%d  RBRRXRacingActive=%d", g_pRBRGameMode->gameMode, m_bRBRRacingActive, m_bRBRRXRacingActive);
 }
 
 void CNGPCarMenu::OnRaceEnded()
@@ -5311,8 +5335,8 @@ void CNGPCarMenu::CompleteSaveReplayProcess(const std::string& replayFileName)
 
 		// If this is RallysimFans version of RBR installation then RSF plugin modifies Cars\Cars.ini file on the fly. Re-read car model names before trying to write replay metadata.
 		// Also, the actual mapID is part of the replay save filename (xxxx_rsf_xxxx_157.rpl)
-		if (m_bRallySimFansPluginInstalled)
-			InitCarSpecData_RBRCIT();
+		//if (m_bRallySimFansPluginInstalled)
+		//	InitCarSpecData_RBRCIT();
 
 		// Read the current path of the car model (the folder below rbrAppPath\cars folder)
 		stockCarListINIFile.LoadFile((m_sRBRRootDirW + L"\\cars\\Cars.ini").c_str());
@@ -5391,10 +5415,10 @@ void CNGPCarMenu::CompleteSaveReplayProcess(const std::string& replayFileName)
 		{
 			DWORD ptrValue;
 			ptrValue = *((DWORD*)g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(m_latestCarID)].ptrCarDescription);
-			if(!m_bRallySimFansPluginInstalled && ptrValue != 0 && ((const char*)ptrValue)[0] == '\0')
+			if(/*!m_bRallySimFansPluginInstalled &&*/ ptrValue != 0 && ((const char*)ptrValue)[0] != '\0')
 				replayINIFile.SetValue("Replay", "CarModel", (const char*)ptrValue);
 			else
-				// RSF doesn't set CarName parameter in Cars\Cars.ini file, so take the CarModel directly from the local data structure (well, usually it is the same as ptrCarDescription name)
+				// If the RBR carMenuDescription is missing then take the CarModel directly from the local data structure (well, usually it is the same as ptrCarDescription name)
 				replayINIFile.SetValue("Replay", "CarModel", _ToString(g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(m_latestCarID)].wszCarModel).c_str());
 
 			replayINIFile.SetLongValue("Replay", "CarSlot", m_latestCarID);

@@ -615,7 +615,7 @@ protected:
 
 	void CompleteProfileRenaming();
 
-	void InitCarSpecData_RBRCIT();
+	void InitCarSpecData_RBRCIT(int updatedCarSlotMenuIdx = -1); // If updatedCarSlot==-1 then update all slots, otherwise only the specified slot
 	void InitCarSpecData_EASYRBR();
 	void InitCarSpecAudio();
 
