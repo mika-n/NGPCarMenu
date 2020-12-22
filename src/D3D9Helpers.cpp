@@ -677,7 +677,7 @@ std::string GetCmdLineArgValue(const std::string& argName)
 // Is the file in UTF16 format instead of UTF8 or ANSI-ASCII?
 bool _IsFileInUTF16Format(const std::string& fileName)
 {
-	BYTE buffer[2];
+	BYTE buffer[2] = { 0 };
 
 	std::ifstream srcFile(fileName, std::ifstream::binary | std::ios::in);
 	if (!srcFile) return FALSE;	
@@ -771,6 +771,59 @@ BOOL GetFileVersionInformationAsNumber(const std::wstring& fileName, UINT* pMajo
 }
 
 
+std::string GetGUIDAsString()
+{
+	std::string sResult;
+	GUID guid;
+
+	if (CoCreateGuid(&guid) == S_OK)
+	{
+		char szBuffer[40];
+		snprintf(szBuffer, sizeof(szBuffer), "%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x", guid.Data1, guid.Data2, guid.Data3, guid.Data4[0], guid.Data4[1], guid.Data4[2], guid.Data4[3], guid.Data4[4], guid.Data4[5], guid.Data4[6], guid.Data4[7]);
+		sResult = szBuffer;
+	}
+
+	return sResult;
+}
+
+
+void GetCurrentDateAndTimeAsYYYYMMDD_HHMISS(int* pCurrentDate, std::string* pCurrentTime)
+{
+	std::time_t rawtime;
+	std::tm* timeinfo;
+	char buffer[80]{};
+
+	std::time(&rawtime);
+	timeinfo = std::localtime(&rawtime); // TODO. Change to localtime_s safe version
+
+	std::strftime(buffer, 80, "%Y%m%d %H%M%S", timeinfo);
+	std::puts(buffer);
+	buffer[8] = '\0';
+
+	if (pCurrentDate) *pCurrentDate = atoi(buffer);
+	if (pCurrentTime) *pCurrentTime = &buffer[9];
+}
+
+// Round float to nearest X decimals
+double RoundFloatToDouble(float value, int decimals)
+{
+	//if (decimals == 0) return round(value);
+	//else return static_cast<double>(roundf(value * powf(10, decimals))) / 1000.0;
+	if (decimals == 0) return static_cast<double>(roundf(value));
+	double d0 = pow(10, decimals);
+	double d1 = d0 * 10;
+	return (static_cast<int>((value + (5.0 / d1)) * d0)) / d0;
+}
+
+// Round float down to nearest X decimals
+double FloorFloatToDouble(float value, int decimals)
+{
+	if (decimals == 0) return static_cast<double>(floorf(value));
+	double d0 = pow(10, decimals);
+	return (static_cast<int>(value * d0)) / d0;
+}
+
+
 //---------------------------------------------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------------------------------------------------------
@@ -846,7 +899,7 @@ void DebugCloseFile()
 void DebugPrintFunc_CHAR_or_WCHAR(LPCSTR szTxtBuf, LPCWSTR wszTxtBuf, int iMaxCharsInBuf)
 {
 	SYSTEMTIME t;
-	char szTxtTimeStampBuf[32];
+	char szTxtTimeStampBuf[32] = { 0 };
 	bool bFirstMessage = g_iLogMsgCount == 0;
 
 	try
@@ -963,7 +1016,7 @@ void DebugClearFile()
 
 void DebugDumpBuffer(byte* pBuffer, int iPreOffset = 0, int iBytesToDump = 64)
 {
-	char txtBuffer[64];
+	char txtBuffer[64] = { 0 };
 
 	byte* pBuffer2 = pBuffer - iPreOffset;
 	for (int idx = 0; idx < iBytesToDump; idx += 8)
@@ -1041,7 +1094,7 @@ HRESULT D3D9SavePixelsToFileGDI(const HWND hAppWnd, RECT wndCaptureRect, const s
 
 	BITMAP hAppWndBitmap;
 	BITMAPINFOHEADER bmpInfoHeader;
-	BITMAPFILEHEADER bmpFileHeader;
+	BITMAPFILEHEADER bmpFileHeader = { 0 };
 
 	Gdiplus::Bitmap* gdiBitmap = nullptr;
 
@@ -1248,7 +1301,7 @@ HRESULT D3D9SaveScreenToFile(const LPDIRECT3DDEVICE9 pD3Device, const HWND hAppW
 	IDirect3DSurface9* surface = nullptr;
 	LPBYTE screenshotBuffer = nullptr;
 	D3DDISPLAYMODE mode;
-	D3DLOCKED_RECT rc;
+	D3DLOCKED_RECT rc = { 0 };
 	int pitch;
 
 	GUID cf; // GUID_ContainerFormatPng or GUID_ContainerFormatBmp
@@ -1411,8 +1464,8 @@ HRESULT D3D9LoadTextureFromFile(const LPDIRECT3DDEVICE9 pD3Device, const std::ws
 
 CUSTOM_VERTEX_TEX_2D D3D9CreateCustomVertexTex2D(float x, float y, DWORD color, float tu, float tv)
 {
-	CUSTOM_VERTEX_TEX_2D vertex;
-
+	CUSTOM_VERTEX_TEX_2D vertex{};
+	
 	vertex.x = x;
 	vertex.y = y;
 	vertex.z = 0.0f;
@@ -1426,7 +1479,7 @@ CUSTOM_VERTEX_TEX_2D D3D9CreateCustomVertexTex2D(float x, float y, DWORD color, 
 
 CUSTOM_VERTEX_2D D3D9CreateCustomVertex2D(float x, float y, DWORD color)
 {
-	CUSTOM_VERTEX_2D vertex;
+	CUSTOM_VERTEX_2D vertex{};
 
 	vertex.x = x;
 	vertex.y = y;
@@ -1580,7 +1633,7 @@ HRESULT D3D9CreateRectangleVertexBuffer(const LPDIRECT3DDEVICE9 pD3Device, float
 	hResult = pD3Device->CreateVertexBuffer(sizeof(custRectVertex), 0, CUSTOM_VERTEX_FORMAT_2D, D3DPOOL_DEFAULT, &pTempVertexBuffer, nullptr);
 	if (SUCCEEDED(hResult))
 	{		
-		void* pData;
+		void* pData = nullptr;
 
 		hResult = D3D9CreateRectangleVertex2D(x, y, cx, cy, custRectVertex, sizeof(custRectVertex), color);
 

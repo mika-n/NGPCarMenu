@@ -43,6 +43,7 @@ namespace fs = std::filesystem;
 
 
 //------------------------------------------------------------------------------------------------
+// Find RBRRX menuItem
 //
 int CNGPCarMenu::RBRRX_FindMenuItemIdxByFolderName(PRBRRXMenuItem pMapMenuItemsRBRRX, int numOfItemsMenuItemsRBRRX, const std::string& folderName)
 {
@@ -85,6 +86,33 @@ int CNGPCarMenu::RBRRX_FindMenuItemIdxByMapName(PRBRRXMenuItem pMapMenuItemsRBRR
 	return -1;
 }
 
+
+//----------------------------------------------------------------------------------------
+// Find RBRRX track folder by mapName lookup key
+//
+std::string CNGPCarMenu::RBRRX_FindFolderNameByMapName(std::string mapName)
+{
+	std::string sResult;
+
+	PRBRRXPlugin pTmpRBRRXPlugin;
+
+	pTmpRBRRXPlugin = m_pRBRRXPlugin;
+	if (pTmpRBRRXPlugin == nullptr)
+		pTmpRBRRXPlugin = (PRBRRXPlugin)GetModuleBaseAddr("RBR_RX.DLL");
+
+	if (pTmpRBRRXPlugin != nullptr)
+	{
+		PRBRRXMenuItem pRBRMenuItems = (m_pOrigMapMenuItemsRBRRX != nullptr ? m_pOrigMapMenuItemsRBRRX : pTmpRBRRXPlugin->pMenuItems);
+		int mapMenuIdx = RBRRX_FindMenuItemIdxByMapName(pRBRMenuItems, (m_pOrigMapMenuItemsRBRRX != nullptr ? m_origNumOfItemsMenuItemsRBRRX : pTmpRBRRXPlugin->numOfItems), mapName);
+		if (mapMenuIdx >= 0)
+			sResult = pRBRMenuItems[mapMenuIdx].szTrackFolder;
+	}
+
+	return sResult;
+}
+
+
+//----------------------------------------------------------------------------------------
 int CNGPCarMenu::RBRRX_CalculateNumOfValidMapsInRecentList(PRBRRXMenuItem pMapMenuItemsRBRRX, int numOfItemsMenuItemsRBRRX)
 {
 	int numOfRecentMaps = 0;
@@ -647,7 +675,7 @@ BOOL CNGPCarMenu::RBRRX_PrepareLoadTrack(int mapMenuIdx)
 	tRBRRXLoadTrackSetup1 func_RBRRXLoadTrackSetup1 = (tRBRRXLoadTrackSetup1)((DWORD)pTmpRBRRXPlugin + 0x33A80);
 	func_RBRRXLoadTrackSetup1(&pTmpRBRRXPlugin->pMenuItems[mapMenuIdx]);
 
-	// Overrides CoreDArbox menu name in rbr menu (this is shown as a "Loading" map name in RBR)
+	// Overrides CoteDArbox menu name in rbr menu (this is shown as a "Loading" map name in RBR)
 	std::wstring swTrackName = _ToWString(std::string(pTmpRBRRXPlugin->pMenuItems[mapMenuIdx].szTrackName));
 	wcsncpy_s(pTmpRBRRXPlugin->wszTrackName, min(swTrackName.length() + 1, COUNT_OF_ITEMS(pTmpRBRRXPlugin->wszTrackName)), swTrackName.c_str(), COUNT_OF_ITEMS(pTmpRBRRXPlugin->wszTrackName));
 	WriteOpCodePtr((LPVOID)0x4A1123, (LPVOID)pTmpRBRRXPlugin->wszTrackName);
@@ -742,7 +770,7 @@ int CNGPCarMenu::RBRRX_CheckTrackLoadStatus(const std::string& mapName, std::str
 		if (RBRRX_ReadStartSplitsFinishPacenoteDistances(mapFolderName + "\\pacenotes.ini", &startDistance, &split1Distance, &split2Distance, &finishDistance)
 			&& ReadStartSplitFinishPacenoteDistances(&startDistanceRBR, &split1DistanceRBR, &split2DistanceRBR, &finishDistanceRBR))
 		{
-			DebugPrint("start=%lf %lf  split1=%lf %lf  split2=%lf %lf  finish=%lf %lf", startDistance, startDistanceRBR, split1Distance, split1DistanceRBR, split2Distance, split2DistanceRBR, finishDistance, finishDistanceRBR);
+			//DebugPrint("start=%lf %lf  split1=%lf %lf  split2=%lf %lf  finish=%lf %lf", startDistance, startDistanceRBR, split1Distance, split1DistanceRBR, split2Distance, split2DistanceRBR, finishDistance, finishDistanceRBR);
 
 			if (abs(startDistance - startDistanceRBR) > 0.5 || abs(split1Distance - split1DistanceRBR) > 0.5 || abs(split2Distance - split2DistanceRBR) > 0.5 || abs(finishDistance - finishDistanceRBR) > 0.5)
 				return -1;
@@ -1397,14 +1425,16 @@ void CNGPCarMenu::RBRRX_EndScene()
 		}
 
 		else if (/*!m_bRBRRXPluginActive &&*/ m_pRBRRXPlugin != nullptr
-			&& m_pRBRRXPlugin->pMenuItems != m_pOrigMapMenuItemsRBRRX && g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN])
+			&& m_pRBRRXPlugin->pMenuItems != m_pOrigMapMenuItemsRBRRX 
+			&& (g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN] || GetActivePluginName() != "RBR") 
+		)
 		{
 			//
 			// RBRRX is no longer active, but the custom menu is created. Clean it up and restore the original RBRRX menu obj
 			//
 			m_pRBRRXPlugin->pMenuData->selectedItemIdx = 0;
-			m_pRBRRXPlugin->numOfItems = m_origNumOfItemsMenuItemsRBRRX;
 			m_pRBRRXPlugin->pMenuItems = m_pOrigMapMenuItemsRBRRX;
+			m_pRBRRXPlugin->numOfItems = m_origNumOfItemsMenuItemsRBRRX;
 
 			if (m_pCustomMapMenuRBRRX != nullptr)
 			{
@@ -1412,91 +1442,6 @@ void CNGPCarMenu::RBRRX_EndScene()
 				m_pCustomMapMenuRBRRX = nullptr;
 			}
 		}		
-
-/*
-		if (m_bRBRRXReplayOrRacingEnding)
-		{
-			if (GetActiveReplayType() == 2)
-			{
-				//if (g_pRBRMenuSystem->currentMenuObj == nullptr || (m_bRBRRXReplayActive && g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->customPluginMenuObj))
-				if (g_pRBRMenuSystem->currentMenuObj == nullptr || (g_pRBRMenuSystem->currentMenuObj == g_pRBRPluginMenuSystem->customPluginMenuObj))
-				{
-					DebugPrint("RBRRXReplayOrRacingEnding. Replay ended");
-
-					//
-					// RBRRX replay was active, but now menu is back to mainmenu or a custom plugin menu or blank menu (RBRRX bug). 
-					// Complete the BTB replaying and jump back to RBR main menu if RBRRX bug left the game in blank menu
-					//
-					g_pRBRMenuSystem->currentMenuObj = g_pRBRMenuSystem->currentMenuObj2 = g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN];
-
-					m_bRBRRXReplayActive = m_bRBRRXRacingActive = FALSE;
-					m_bRBRRXReplayOrRacingEnding = FALSE;
-				}
-			}
-*/
-
-/*
-			else // if (GetActiveReplayType() == 1 || GetActiveRacingType() > 0)
-			{
-				// Sometimes RBRBRX may end up showing an empty menu. Fix it.
-				if (g_pRBRMenuSystem->currentMenuObj == nullptr)
-				{
-					DebugPrint("RBRRXReplayOrRacingEnding. Racing ended but menu is NULL. Jumping to main menu");
-
-					g_pRBRMenuSystem->currentMenuObj = g_pRBRMenuSystem->currentMenuObj2 = g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN];
-				}
-
-				// BTB racing ended
-				m_bRBRRXReplayActive = m_bRBRRXRacingActive = FALSE;
-				m_bRBRRXReplayOrRacingEnding = FALSE;
-			}
-		}
-*/
 	}
-
-/*
-	else if (g_pRBRGameMode->gameMode == 0x0C && (GetActiveRacingType() == 2 || GetActiveReplayType() == 2) )
-	{
-		m_bRBRRXReplayOrRacingEnding = TRUE;
-	}
-*/
-
-/*
-	else if (g_pRBRGameMode->gameMode == 0x0D)
-	{
-		// TODO. Move to OnMapLoaded handler (0D status is set after 05 map loading step is completed)?
-
-		if (m_bRecentMapsRBRRXModified && m_bRBRRXPluginActive)
-		{
-			if (!m_latestMapRBRRX.name.empty())
-			{
-				// RBR_RX has a bug where shorter track name is not null-terminated, so the remaining of the previous track name may be shown as a left over if the new track name is shorter
-				//memcpy(m_pRBRRXPlugin->wszTrackName, _ToWString(m_latestMapRBRRX.name).c_str(), min(m_latestMapRBRRX.name.length() + 1, COUNT_OF_ITEMS(m_pRBRRXPlugin->wszTrackName)) * sizeof(WCHAR) );
-
-				if (m_latestMapRBRRX.length < 0)
-				{
-					// BTB track track.ini file doesn't have the Length attribute yet. Store it now when the BTB track was loaded for the first time. Round meters down to one decimal km value
-					m_latestMapRBRRX.length = floor((g_pRBRCarInfo != nullptr ? g_pRBRCarInfo->distanceToFinish : 0) / 100.0f) / 10.0f;
-					if (m_latestMapRBRRX.length < 1.0f)
-						// For some reason the BTB track data doesn't have a valid length (some very short tracks have this issue). Use dummy value and let UpdateRBRRXINILengthOption method to decide if it can use pacenotes.ini to estimate the length
-						m_latestMapRBRRX.length = -1;
-
-					RBRRX_UpdateINILengthOption(m_latestMapRBRRX.folderName, m_latestMapRBRRX.length);
-				}
-
-				// Stage loading while RBRRX plugin is active. Add the latest map (=stage) to the top of the recent list and update RX_CONTENt\Tracks\myMap\track.ini Length parameter if it is missing
-				if (m_recentMapsMaxCountRBRRX > 0)
-				{
-					m_bRecentMapsRBRRXModified = FALSE;
-					RBRRX_AddMapToRecentList(m_latestMapRBRRX.folderName);
-					if (m_bRecentMapsRBRRXModified) SaveSettingsToRBRRXRecentMaps();
-				}
-			}
-
-			m_bRecentMapsRBRRXModified = FALSE;
-		}
-	}
-*/
-
 }
 

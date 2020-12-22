@@ -91,7 +91,7 @@ extern RECT g_rectRBRWndMapped;		// RBR client area re-mapped to screen points (
 extern LPVOID GetModuleBaseAddr(const char* szModuleName);
 extern LPVOID GetModuleOffsetAddr(const char* szModuleName, DWORD offset);
 
-inline float DWordBufferToFloat(DWORD dwValue) { BYTEBUFFER_FLOAT byteFloat; byteFloat.dwordBuffer = dwValue; return byteFloat.fValue; }
+inline float DWordBufferToFloat(DWORD dwValue) { BYTEBUFFER_FLOAT byteFloat{}; byteFloat.dwordBuffer = dwValue; return byteFloat.fValue; }
 
 extern BOOL WriteOpCodeHexString(const LPVOID writeAddr, LPCSTR sHexText);
 extern BOOL WriteOpCodeBuffer(const LPVOID writeAddr, const BYTE* buffer, const int iBufLen);
@@ -169,11 +169,11 @@ typedef struct {
 	float rpm;				 // 0x10
 	float temp;				 // 0x14 (water temp in celsius?)
 	float turbo;			 // 0x18. (pressure, in Pascals?)
-	__int32 unknown2;		 // 0x1C
+	__int32 unknown2;		 // 0x1C (always 0?)
 	float distanceFromStartControl; // 0x20
-	float distanceTravelled; // 0x24   ??? hmmmm.. maybe not because this keeps on counting up even when the car is stopped. What is it?
+	float distanceTravelled; // 0x24   ??? hmmmm.. maybe not distTravelled because this value is not very logical. What is it?
 	float distanceToFinish;  // 0x28   >0 Meters left to finish line, <0 Crossed the finish line (meters after finish line)
-
+							
 	BYTE  pad1[0x13C - 0x28 - sizeof(float)];
 	float stageProgress;	 // 0x13C  (meters, hundred meters, some map unit?. See RBRMapInfo.stageLength also)
 	float raceTime;			 // 0x140  Total race time (includes time penalties)  (or if gameMode=8 then the time is taken from replay video)
@@ -188,17 +188,18 @@ typedef struct {
 
 	BYTE  pad4[0x244 - 0x170 - sizeof(__int32)];
 	float stageStartCountdown; // 0x244 (7=Countdown not yet started, 6.999-0.1 Countdown running, 0=GO!, <0=Racing time since GO! command)
+	__int32 falseStart;		   // 0x248 (0=No false start, 1=False start)
 
-	BYTE pad5[0x254 - 0x244 - sizeof(float)];
+	BYTE pad5[0x254 - 0x248 - sizeof(__int32)];
 	__int32 splitReachedNo;  // 0x254 0=Start line passed if race is on, 1=Split#1 passed, 2=Split#2 passed
 	float split1Time;        // 0x258 Total elapsed time in secs up to split1
 	float split2Time;        // 0x25C Total elapsed time in secs up to split2  (split2-split1 would be the time between split1 and split2)
 	float unknown6;			 // 0x260
 
 	BYTE pad6[0x2C4 - 0x260 - sizeof(float)];
-	float unknown7;			 // 0x2C4	TODO: stageFinished?  0=Stage not started or running, 1=Stage finished (int or float?) (?)
+	__int32 finishLinePassed;	 // 0x2C4 1=stageFinished,  0=Stage not started or not finished yet
 
-	BYTE pad7[0x758 - 0x2C4 - sizeof(float)];
+	BYTE pad7[0x758 - 0x2C4 - sizeof(__int32)];
 	PRBRCamera1	pCamera;	 // 0x758  Pointer to camera data
 
 	BYTE pad8[0xEF8 - 0x758 - sizeof(PRBRCamera1)];
@@ -225,14 +226,7 @@ typedef struct {
 	float driveBrake;		// 0x860	0.0-1.0  (0=No brake, 1=full brake)
 	float driveHandbrake;	// 0x864	0.0-1.0  (0=No handbrake, 1=full handbrake)
 	float driveSteering;	// 0x868	<0.0 left, 0.0 center >0.0 right
-	float driveClutch;		// 0x86C	0.0-1.0  (0=clutch released, 1=clutch pedal pushed fully down)
-
-//    +0x085C float throttle value?
-//    +0x0860 float brake value?
-//    +0x0864 float handbrake value?
-//    +0x0868 float steering value?
-//    +0x086C float Clutch  >0.85 clutch On, otherwise Off?
-//    +0x1100 long. Current gear 0..7? There is already gear value in above shown structures. What is this one?
+	float driveClutch;		// 0x86C	0.0-1.0  (0=clutch released, 1=clutch pedal pushed fully down, values >=0.85 as clutch on)
 
 #pragma pack(pop)
 } RRBRCarMovement;
@@ -401,14 +395,41 @@ typedef struct {
 	__int32 unknown2;   // 0x0C
 	__int32 unknown3;   // 0x10
 	__int32 transmissionType; // 0x14  (0=Manual, 1=Automatic)
-	BYTE pad1[0x48 - 0x14 - sizeof(__int32)];
-	__int32 weatherType;	// 0x48   (0=Good, 1=Random, 3=Bad)
+	
+	BYTE pad1[0x30 - 0x14 - sizeof(__int32)];
+	__int32 racePaused; // 0x30 (0=Normal mode, 1=Racing in paused state)
+	
+	BYTE pad2[0x38 - 0x30 - sizeof(__int32)];
+	__int32 tyreType;	// 0x38 (0=Dry tarmac, 1=Intermediate tarmac, 2=Wet tarmac, 3=Dry gravel, 4=Inter gravel, 5=Wet gravel, 6=Snow)
+
+	BYTE pad3[0x48 - 0x38 - sizeof(__int32)];
+	__int32 weatherType;	// 0x48   (0=Good, 1=Random, 2=Bad)
 	__int32 unknown4;       // 0x4C
-	__int32 damageType;		// 0x50   (0=No damange, 1=Safe, 2=Reduced, 3=Realistic)
+	__int32 damageType;		// 0x50   (0=No damage, 1=Safe, 2=Reduced, 3=Realistic)
 	__int32 pacecarEnabled; // 0x54   (0=Pacecar disabled, 1=Pacecar enabled)
 #pragma pack(pop)
 } RBRMapSettings;
 typedef RBRMapSettings* PRBRMapSettings;
+
+
+// Fixed offset 0x8938F8. Additional map settings 
+typedef struct {
+#pragma pack(push,1)
+	__int32 unknown1;		// 0x00
+	__int32 unknown2;		// 0x04
+	__int32 trackID;		// 0x08
+	__int32 unknown3;		// 0x0C
+	__int32 skyCloudType;	// 0x10 (0=Clear, 1=PartCloud, 2=LightCloud, 3=HeavyCloud)
+	__int32 surfaceWetness; // 0x14 (0=Dry, 1=Damp, 2=Wet)
+	__int32 surfaceAge;     // 0x18 (0=New, 1=Normal, 2=Worn)
+
+	BYTE pad1[0x38 - 0x18 - sizeof(__int32)];
+	__int32 timeOfDay;		// 0x38 (0=Morning, 1=Noon, 2=Evening)
+	__int32 skyType;		// 0x3C (0=Crisp, 1=Hazy, 2=NoRain, 3=LightRain, 4=HeavyRain, 5=NoSnow, 6=LightSnow, 7=HeavySnow, 8=LightFog, 9=HeavyFog)
+#pragma pack(pop)
+} RBRMapSettingsEx;
+typedef RBRMapSettingsEx* PRBRMapSettingsEx;
+
 
 
 // Offset 0x0x7EA678->+0x70->
@@ -756,6 +777,7 @@ extern PRBRCameraInfo		g_pRBRCameraInfo;
 extern PRBRCarInfo			g_pRBRCarInfo;
 extern PRBRCarControls		g_pRBRCarControls;
 extern PRBRMapSettings		g_pRBRMapSettings;
+extern PRBRMapSettingsEx    g_pRBRMapSettingsEx;
 
 extern __int32*             g_pRBRGhostCarReplayMode; // 0=No ghost, 1=Saving ghost car movements (during racing), 2=Replying ghost car movements (0x892EEC)
 extern PRBRGhostCarMovement g_pRBRGhostCarMovement;
@@ -777,11 +799,6 @@ extern PRBRStatusText		g_pRBRStatusText;	   // Offset 0x007d1d50
 // TODO:
 //
 //  0x008EF660 
-//    +0x085C float throttle value?
-//    +0x0860 float brake value?
-//    +0x0864 float handbrake value?
-//    +0x0868 float steering value?
-//    +0x086C float Clutch  >0.85 clutch On, otherwise Off?
 //    +0x1100 long. Current gear 0..7? There is already gear value in above shown structures. What is this one?
 //   
 //  0x165F10F long. zero vs non-zero value. Clutch or gear related? Or engine started? What is this?

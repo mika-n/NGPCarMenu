@@ -63,6 +63,7 @@ PRBRCarControls		 g_pRBRCarControls = nullptr;
 PRBRCarMovement		 g_pRBRCarMovement = nullptr;
 PRBRMapInfo			 g_pRBRMapInfo = nullptr;
 PRBRMapSettings		 g_pRBRMapSettings = nullptr;
+PRBRMapSettingsEx    g_pRBRMapSettingsEx = nullptr;
 
 __int32*			 g_pRBRGhostCarReplayMode = nullptr; 
 PRBRGhostCarMovement g_pRBRGhostCarMovement = nullptr;
@@ -172,7 +173,7 @@ BOOL WriteOpCodeHexString(const LPVOID writeAddr, LPCSTR sHexText)
 
 BOOL WriteOpCodeInt32(const LPVOID writeAddr, const __int32 iValue)
 {
-	BYTEBUFFER_INT32 dataUnionInt32;
+	BYTEBUFFER_INT32 dataUnionInt32{};
 	dataUnionInt32.iValue = iValue;
 
 	return WriteOpCodeBuffer(writeAddr, dataUnionInt32.byteBuffer, sizeof(__int32));
@@ -180,7 +181,7 @@ BOOL WriteOpCodeInt32(const LPVOID writeAddr, const __int32 iValue)
 
 BOOL ReadOpCodeInt32(const LPVOID readAddr, __int32* iValue)
 {
-	BYTEBUFFER_INT32 dataUnionInt32;
+	BYTEBUFFER_INT32 dataUnionInt32{};
 	if (ReadOpCodeBuffer(readAddr, dataUnionInt32.byteBuffer, sizeof(__int32)))
 	{
 		*iValue = dataUnionInt32.iValue;
@@ -191,7 +192,7 @@ BOOL ReadOpCodeInt32(const LPVOID readAddr, __int32* iValue)
 
 BOOL WriteOpCodeFloat(const LPVOID writeAddr, const float fValue)
 {
-	BYTEBUFFER_FLOAT dataUnionFloat;
+	BYTEBUFFER_FLOAT dataUnionFloat{};
 	dataUnionFloat.fValue = fValue;
 
 	return WriteOpCodeBuffer(writeAddr, dataUnionFloat.byteBuffer, sizeof(float));
@@ -199,7 +200,7 @@ BOOL WriteOpCodeFloat(const LPVOID writeAddr, const float fValue)
 
 BOOL ReadOpCodeFloat(const LPVOID readAddr, float* fValue)
 {
-	BYTEBUFFER_FLOAT dataUnionFloat;
+	BYTEBUFFER_FLOAT dataUnionFloat{};
 	if (ReadOpCodeBuffer(readAddr, dataUnionFloat.byteBuffer, sizeof(float)))
 	{
 		*fValue = dataUnionFloat.fValue;
@@ -210,7 +211,7 @@ BOOL ReadOpCodeFloat(const LPVOID readAddr, float* fValue)
 
 BOOL WriteOpCodePtr(const LPVOID writeAddr, const LPVOID ptrValue)
 {
-	BYTEBUFFER_PTR dataUnionPtr;
+	BYTEBUFFER_PTR dataUnionPtr{};
 	dataUnionPtr.ptrValue = ptrValue;
 
 	return WriteOpCodeBuffer(writeAddr, dataUnionPtr.byteBuffer, sizeof(LPVOID));
@@ -218,7 +219,7 @@ BOOL WriteOpCodePtr(const LPVOID writeAddr, const LPVOID ptrValue)
 
 BOOL ReadOpCodePtr(const LPVOID readAddr, LPVOID* ptrValue)
 {
-	BYTEBUFFER_PTR dataUnionPtr;
+	BYTEBUFFER_PTR dataUnionPtr{};
 	if (ReadOpCodeBuffer(readAddr, dataUnionPtr.byteBuffer, sizeof(LPVOID)))
 	{
 		*ptrValue = dataUnionPtr.ptrValue;
@@ -240,7 +241,7 @@ BOOL ReadOpCodeByte(const LPVOID readAddr, BYTE byteValue)
 BOOL WriteOpCodeNearCallCmd(const LPVOID writeAddr, const LPVOID callTargetAddr)
 {
 	// TODO: Rel16 vs Rel32 logic based on the call distance?
-	BYTE buffer[5];
+	BYTE buffer[5]{};
 	DWORD callOffset = ((DWORD)callTargetAddr) - (((DWORD)writeAddr) + 5);
 	buffer[0] = 0xE8;
 	buffer[1] = (BYTE)((callOffset & 0x000000FF));
@@ -253,7 +254,7 @@ BOOL WriteOpCodeNearCallCmd(const LPVOID writeAddr, const LPVOID callTargetAddr)
 BOOL WriteOpCodeNearJmpCmd(const LPVOID writeAddr, const LPVOID jmpTargetAddr)
 {
 	// TODO: Rel8 vs Rel16 vs Rel32 logic based on the call distance?
-	BYTE buffer[2];
+	BYTE buffer[2]{};
 	DWORD callOffset = ((DWORD)jmpTargetAddr) - (((DWORD)writeAddr) + 2);
 	buffer[0] = 0xEB;
 	buffer[1] = (BYTE)((callOffset & 0x000000FF));
@@ -270,7 +271,7 @@ BOOL RBRAPI_InitializeObjReferences()
 	if (g_pRBRGameConfig == nullptr)  g_pRBRGameConfig = (PRBRGameConfig) * (DWORD*)(0x007EAC48);
 	if (g_pRBRGameMode == nullptr)    g_pRBRGameMode = (PRBRGameMode) * (DWORD*)(0x007EAC48);
 	if (g_pRBRGameModeExt == nullptr) g_pRBRGameModeExt = (PRBRGameModeExt) * (DWORD*)(0x00893634);
-	if (g_pRBRGameModeExt2 == nullptr) g_pRBRGameModeExt2 = (PRBRGameModeExt2) * (DWORD*)(0x007EA678) + 0x70;
+	if (g_pRBRGameModeExt2 == nullptr) g_pRBRGameModeExt2 = (PRBRGameModeExt2) (* (DWORD*)(( * (DWORD*)(0x007EA678)) + 0x70));
 
 	if (g_pRBRCarInfo == nullptr)     g_pRBRCarInfo = (PRBRCarInfo) * (DWORD*)(0x0165FC68);
 	if (g_pRBRCarControls == nullptr) g_pRBRCarControls = (PRBRCarControls) * (DWORD*)(0x007EAC48); // +0x738 + 0x5C;
@@ -283,6 +284,8 @@ BOOL RBRAPI_InitializeObjReferences()
 
 	// Fixed location to mapSettings struct (ie. not a pointer reference). 
 	g_pRBRMapSettings = (PRBRMapSettings)(0x1660800);
+	g_pRBRMapSettingsEx = (PRBRMapSettingsEx)(0x8938F8);
+
 	g_pRBRMapLocationName = (wchar_t*)(0x007D1D64);
 
 	// Fixed location to RBR profile pointer

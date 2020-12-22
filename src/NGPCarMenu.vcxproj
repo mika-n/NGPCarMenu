@@ -115,10 +115,10 @@
     <ClCompile Include="RBRAPI.cpp" />
     <ClCompile Include="RBRRX_Integration.cpp" />
     <ClCompile Include="RBRTM_Integration.cpp" />
-    <None Include="SQLite\CppSQLite3U.cpp" />
-    <None Include="SQLite\sqlite3.c">
+    <ClCompile Include="SQLite\CppSQLite3U.cpp" />
+    <ClCompile Include="SQLite\sqlite3.c">
       <FileType>CppCode</FileType>
-    </None>
+    </ClCompile>
     <ClCompile Include="RaceStatDB.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -141,12 +141,13 @@
     <ClInclude Include="FileWatcher.h" />
     <ClInclude Include="IPlugin.h" />
     <ClInclude Include="IRBRGame.h" />
+    <ClInclude Include="json\nlohmann\json.hpp" />
     <ClInclude Include="PluginHelpers.h" />
     <ClInclude Include="RBRAPI.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="SimpleINI\SimpleIni.h" />
-    <None Include="SQLite\CppSQLite3U.h" />
-    <None Include="SQLite\sqlite3.h" />
+    <ClInclude Include="SQLite\CppSQLite3U.h" />
+    <ClInclude Include="SQLite\sqlite3.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="NGPCarMenu.h" />
   </ItemGroup>

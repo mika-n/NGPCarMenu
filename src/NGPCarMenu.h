@@ -48,9 +48,7 @@
 #include "D3D9Helpers.h"			// Various text and D3D9 support functions created for this RBR plugin
 #include "RBRAPI.h"					// RBR memory addresses and data structures
 
-#if 0
 #include "SQLite/CppSQLite3U.h"
-#endif
 
 #define C_PLUGIN_TITLE_FORMATSTR "NGPCarMenu Plugin (%s) by MIKA-N"	// %s is replaced with version tag strign. Remember to tweak it in NGPCarMenu.rc when making a new release
 #define C_PLUGIN_FOOTER_STR      "https://github.com/mika-n/NGPCarMenu"
@@ -94,6 +92,8 @@ typedef struct {
 	char szCarMenuName[MAX_CARMENUNAME_ALLCHARS + 1]; // Max "normal width" chars to show is 27+null. But if the text has many I or 1 letters then two of those gives one extra char (max still 31+null);
 
 	WCHAR wszCarModel[64];			// carList.ini.Name   (WCHAR, rbr TechnicalSpec line)
+	WCHAR wszCarModelFolder[128];	// Folder of the car physics (rbrApp\Cars\carModelFolder\)
+
 	CHAR  szCarCategory[32];		// carList.ini.Cat    (CHAR, model pointer text)
 	WCHAR wszCarPower[32];			// carList.ini.Power  (WCHAR, Horsepower)
 	WCHAR wszCarYear[8];			// carList.ini.Year   (WCHAR, Torque)
@@ -106,10 +106,12 @@ typedef struct {
 	WCHAR wszCarPhysics3DModel[128];   // 3D model:
 	WCHAR wszCarPhysicsLivery[128];    // Livery (Liver and Livery credits)
 	WCHAR wszCarPhysicsCustomTxt[128]; // If physics/CARNAME file has a 5th text line, otherwise blank text. The 5th line in car model file can be used to show any custom text
-	WCHAR wszCarPhysics[128];		   // Car physics name (NGP physics folder name in practice)
+	WCHAR wszCarPhysics[128];		   // Car physics name (NGP physics folder name)
 
 	WCHAR wszCarFMODBank[128];		   // Custom FMOD sound bank
 	WCHAR wszCarFMODBankAuthors[128];  // Custom FMOD sound bank
+
+	WCHAR wszCarListSectionName[32];   // NGP carList.ini section name (Car_xxx or carID as string value if RSF installation)
 
 } RBRCarSelectionMenuEntry;
 typedef RBRCarSelectionMenuEntry* PRBRCarSelectionMenuEntry;
@@ -435,9 +437,8 @@ extern PRBRPluginMenuSystem g_pRBRPluginMenuSystem;
 
 extern std::vector<std::string>* g_pRBRRXTrackNameListAlreadyInitialized;
 
-#if 0
 extern CppSQLite3DB* g_pRaceStatDB;
-#endif
+
 
 //------------------------------------------------------------------------------------------------//
 // CRBRPluginIntegratorLink. Integrates the custom image drawing with a specified plugin.
@@ -586,6 +587,9 @@ protected:
 
 	bool m_bFirstTimeWndInitialization; // Do "first time RBR initializations" in EndScene
 
+	bool m_bMapLoadedCalled;	// TRUE-MapLoaded event handler already called for this racing or replying
+	bool m_bMapUnloadedCalled;  // TRUE-MapUnloaded event handler already called for this racing or replaying
+
 	bool m_bRenameDriverNameActive;		// TRUE=Renaming of driver profile process is active (NGPCarMenu checks if the creation succeeded and takes a backup of the prev profile before completing the renaming)
 	int  m_iProfileMenuPrevSelectedIdx; //
 	std::string m_sMenuPrevDriverName;	// Previous driver name
@@ -619,9 +623,9 @@ protected:
 	void InitCarSpecData_EASYRBR();
 	void InitCarSpecAudio();
 
-	std::wstring InitCarModelNameFromCarsFile(CSimpleIniW* stockCarListINIFile, int menuIdx);
+	bool InitCarModelNameFromCarsFile(CSimpleIniWEx* stockCarListINIFile, PRBRCarSelectionMenuEntry pRBRCarSelectionMenuEntry, int menuIdx);
 	bool InitCarSpecDataFromPhysicsFile(const std::string& folderName, PRBRCarSelectionMenuEntry pRBRCarSelectionMenuEntry, int* outNumOfGears);
-	bool InitCarSpecDataFromNGPFile(CSimpleIniW* ngpCarListINIFile, PRBRCarSelectionMenuEntry pRBRCarSelectionMenuEntry, int numOfGears);
+	bool InitCarSpecDataFromNGPFile(CSimpleIniWEx* ngpCarListINIFile, PRBRCarSelectionMenuEntry pRBRCarSelectionMenuEntry, int numOfGears);
 
 	void RefreshSettingsFromPluginINIFile(bool addMissingSections = false);
 	void SaveSettingsToPluginINIFile();
@@ -635,11 +639,11 @@ protected:
 	int InitAllNewCustomPluginIntegrations();
 
 	bool RaceStatDB_Initialize(); // Initialize and open raceStat DB
-	int	 RaceStatDB_GetMapKey(int mapID, const std::string& mapName);	// Return MapKey for the map (if this is BTB track then mapID is -1 and only mapName is set)
-
-#if 0
-	CppSQLite3Query RaceStatDB_ExecQuery(LPCSTR szQuery, LPCSTR param1 = nullptr, LPCSTR param2 = nullptr, LPCSTR param3 = nullptr, LPCSTR param4 = nullptr); // Helper routine to query parameterized qry
-#endif
+	int	 RaceStatDB_GetMapKey(int mapID, const std::string& mapName, int racingType);	// Return MapKey for the map or add new D_Map record
+	int	 RaceStatDB_GetCarKey(int carSlotID); // Return CarKey for the car defined in carSlotID or add new D_Car record
+	int	 RaceStatDB_AddMap(int mapID, const std::string& mapName, int racingType);		// Add a new map to D_Map table
+	int	 RaceStatDB_AddCar(int carSlotID); // Add a new car to D_Car table with details of the car in carSlotID
+	int  RaceStatDB_AddCurrentRallyResult(int mapKey, int mapID, int carKey, int carSlotID, const std::string& mapName); // Add the current rally data to raceStatDB
 
 	int GetNextScreenshotCarID(int currentCarID);
 	static bool PrepareScreenshotReplayFile(int carID);
@@ -677,6 +681,7 @@ protected:
 	void   RBRRX_UpdateMapInfo(int menuIdx, RBRRX_MapInfo* pRBRRXMapInfo);
 	double RBRRX_UpdateINILengthOption(const std::string& sFolderName, double newLength);
 
+	std::string RBRRX_FindFolderNameByMapName(std::string mapName);
 	int  RBRRX_FindMenuItemIdxByFolderName(PRBRRXMenuItem pMapMenuItemsRBRRX, int numOfItemsMenuItemsRBRRX, const std::string& folderName);
 	int  RBRRX_FindMenuItemIdxByMapName(PRBRRXMenuItem pMapMenuItemsRBRRX, int numOfItemsMenuItemsRBRRX, std::string mapName);
 	int  RBRRX_CalculateNumOfValidMapsInRecentList(PRBRRXMenuItem pMapMenuItemsRBRRX = nullptr, int numOfItemsMenuItemsRBRRX = 0);
@@ -816,9 +821,13 @@ public:
 	bool   m_bRBRRacingActive;					// TRUE=Racing active (if m_bRBRRXRacingActive is TRUE also then it is BTB racing and not standard RBR classic track racing)
 	bool   m_bRBRReplayActive;					// TRUE=Track loading for the replay purposes (if m_bRBRRXReplayActive is TRUE also then it is BTB replay and not standard track replay), FALSE=No active replay
 
+	float  m_prevRaceTimeClock;					// The previous value of race clock (used to check if there are new time penalties)
+	float  m_latestFalseStartPenaltyTime;		// If there was a false start then this has the false start penalty time (10 sec base penalty + extra time depending on how much early)
+	float  m_latestOtherPenaltyTime;			// Other penalties during the latest rally (not including false start penalty, but including callForHelp, cut penalties and so on...)
 
-	int    m_latestCarID;						// The latest carID in racing mode
+	int    m_latestCarID;						// The latest carID in racing mode (slot#, not menuIdx)
 	int    m_latestMapID;						// The latest mapID in racing mode
+	//int    m_latestMapLength;					// The latest map length in meters in racing mode
 	std::wstring m_latestMapName;				// The latest map (if the map is BTB then the value is NAME value from btb track.ini file, otherwise the classic map Tracks.ini name)
 
 	bool   m_bGenerateReplayMetadataFile;		// Generate replayFileName.ini metadata files
@@ -849,9 +858,11 @@ public:
 	void OnPluginActivated(const std::string& pluginName);
 	void OnPluginDeactivated(const std::string& pluginName);
 
-	void OnMapLoaded();			// Map (replay or racing) loading completed and countdown to zero starts soon
 	void OnRaceStarted();		// Race started
+	void OnMapLoaded();			// Map (replay or racing) loading completed and countdown to zero starts soon
+	void OnMapUnloaded();		// Map is about to be unloaded (if racing was active then the race is about to end also)
 	void OnRaceEnded();			// Race ended
+
 	void OnReplayStarted();		// Replay started
 	void OnReplayEnded();		// Replay ended
 

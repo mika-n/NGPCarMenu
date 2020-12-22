@@ -27,6 +27,7 @@
 
 #include "vector"
 #include "d3d9.h"
+
 #include "SimpleINI\SimpleIni.h"
 
 
@@ -108,6 +109,11 @@ extern std::string _ToBinaryBitString(BYTE byteValue); // Convert BYTE value to 
 
 extern std::string GetFileVersionInformationAsString(const std::wstring & fileName); // Return file version info as "major.minor.patch.build" string value
 extern BOOL GetFileVersionInformationAsNumber(const std::wstring & fileName, UINT* outMajorVer, UINT* outMinorVer, UINT* outPatchVer, UINT* outBuildVer); // Return file version info
+
+extern std::string GetGUIDAsString(); // Return GUID value as string
+extern void GetCurrentDateAndTimeAsYYYYMMDD_HHMISS(int *pCurrentDate, std::string* pCurrentTime = nullptr); // Return current YYYYMMDD and HHMISS
+extern double RoundFloatToDouble(float value, int decimals);
+extern double FloorFloatToDouble(float value, int decimals);
 
 inline bool _IsRectZero(const RECT& rect) { return (rect.bottom == 0 && rect.right == 0 && rect.left == 0 && rect.top == 0); } // Return TRUE if all rect coordinate values are zero
 
@@ -199,6 +205,21 @@ public:
 
 		return result;
 	}
+
+	float GetValueExFloat(const std::string& sSection1, const std::string& sSection2, const std::string& sKey, float iDefault)
+	{
+		float fResult;
+		double result = this->GetDoubleValue(sSection1.c_str(), sKey.c_str(), -9999.0);
+		if (result == -9999.0 && !sSection2.empty())
+			result = this->GetDoubleValue(sSection2.c_str(), sKey.c_str(), -9999.0);
+
+		if (result == -9999.0)
+			fResult = iDefault;
+		else
+			fResult = static_cast<float>(result);
+
+		return fResult;
+	}
 };
 
 class CSimpleIniWEx : public CSimpleIniW
@@ -255,6 +276,21 @@ public:
 			result = iDefault;
 
 		return result;
+	}
+
+	float GetValueExFloat(const std::wstring& sSection1, const std::wstring& sSection2, const std::wstring& sKey, float iDefault)
+	{
+		float fResult;
+		double result = this->GetDoubleValue(sSection1.c_str(), sKey.c_str(), -9999.0);
+		if (result == -9999.0 && !sSection2.empty())
+			result = this->GetDoubleValue(sSection2.c_str(), sKey.c_str(), -9999.0);
+
+		if (result == -9999.0)
+			fResult = iDefault;
+		else
+			fResult = static_cast<float>(result);
+
+		return fResult;
 	}
 };
 

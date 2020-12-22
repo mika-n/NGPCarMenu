@@ -267,8 +267,8 @@ bool CppSQLite3DB::tableExists(LPCTSTR szTable)
 {
 	TCHAR szSQL[128];
 	//_stprintf(szSQL, _T("select count(*) from sqlite_master where type='table' and name='%s'"),	szTable);
-	// Modified by MIKA-N 
-	sprintf_s(szSQL, COUNT_OF_ITEMS(szSQL), _T("select count(*) from sqlite_master where type='table' and name='%s'"), szTable);
+	// Modified by MIKA-N (sprintf_s safe version and added view exists support)
+	sprintf_s(szSQL, COUNT_OF_ITEMS(szSQL), _T("select count(*) from sqlite_master where (type='table' OR type='view') and name='%s'"), szTable);
 	int nRet = execScalar(szSQL);
 	return (nRet > 0);
 }
@@ -481,7 +481,7 @@ CppSQLite3Query CppSQLite3Statement::execQuery()
 		return CppSQLite3Query(mpDB, mpVM, false/*eof*/, false);
 	}
 
-	sqlite3_reset(mpVM);
+	nRet = sqlite3_reset(mpVM);
 	LPCTSTR szError = (LPCTSTR)_sqlite3_errmsg(mpDB);
 	throw CppSQLite3Exception(nRet, (LPTSTR)szError, DONT_DELETE_MSG);
 }
