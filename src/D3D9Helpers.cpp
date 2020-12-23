@@ -812,32 +812,33 @@ void GetCurrentDateAndTimeAsYYYYMMDD_HHMISS(int* pCurrentDate, std::string* pCur
 }
 
 // Return value in seconds as MI:SS,MS formatted string value (fex 145.23 secs -> 02:25,2)
-std::string GetSecondsAsMISSMS(float valueInSecs, bool padWithTwoDigits, bool prefixPlusSign) 
+std::string GetSecondsAsMISSMS(float valueSecs, bool padWithTwoDigits, bool prefixPlusSign) 
 {
 	std::string signChar;
-	if (valueInSecs < 0)
+	if (valueSecs < 0)
 	{
 		signChar = "-";
-		valueInSecs = fabs(valueInSecs);
+		valueSecs = abs(valueSecs);
 	}
 	else if (prefixPlusSign)
 		signChar = "+";
 
+	double valueInSecs = RoundFloatToDouble(valueSecs, 1);
+
 	// Minutes with padded to minimum of two chars
-	std::string min = std::to_string(static_cast<int>(floorf(valueInSecs / 60.0f)));
+	std::string min = std::to_string(static_cast<int>(floor(valueInSecs / 60.0)));
 	if(padWithTwoDigits && min.length() < 2) min = std::string(2 - min.length(), '0') + min;
 
-	float secWithDecimals = fmod(valueInSecs, 60.0f);
-	float secPart, msecPart;
+	double secWithDecimals = fmod(valueInSecs, 60.0);
+	double secPart, msecPart;
 	msecPart = std::modf(secWithDecimals, &secPart);
 
-	//if (!padWithTwoDigits)
-	//	DebugPrint("valueInSecs=%lf  secWithDecimals=%lf  secPart=%lf  msecPart=%lf", valueInSecs, secWithDecimals, secPart, msecPart);
+	//DebugPrint("valueInSecs=%lf  secWithDecimals=%lf  secPart=%lf  msecPart=%lf", valueInSecs, secWithDecimals, secPart, msecPart);
 
 	// Seconds (with one decimal precision)
 	std::string sec = std::to_string(static_cast<int>(secPart));
 	if (padWithTwoDigits && sec.length() < 2) sec = std::string(2 - sec.length(), '0') + sec;
-	sec += std::to_string(RoundFloatToDouble(msecPart,1)).substr(1,2);
+	sec += std::to_string(msecPart).substr(1,2);
 
 	if (min == "00" || min == "0") return signChar + sec;
 	else return signChar + min + ":" + sec;
