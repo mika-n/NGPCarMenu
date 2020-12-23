@@ -22,6 +22,7 @@ Good news! **NGPCarMenu plugin solves these issues** by doing following enhancem
 - "AutoLogon" feature opens automatically the menu screen of your favorite plugin when RBR is launched (for example takes you to RBRTM, RBR_RX or RallySimFans menu screen).
 - "Rename profile" feature renames the driver profile while preserving profile settings (ie. you no longer have to call yourself as MULLIGATAWNY. Now you can rename the driver via NGPCarMenu plugin and still keep all maps and cars unlocked).
 - Inverted pedals behave correctly right away without going through the hassle of pressing all pedals at least once while waiting for a countdown.
+- RallyStatsDB feature to store a detailed history of all rallies in one place (RBR original stages, RBRTM stages, RSF stages, BTB stages).
 
 The plugin supports **RBRTM Czech Tournament** plugin (V0.88) integration. Use NGPCarMenu in-game menu or INI file to enable/disable this integration. 
 **RBR_RX** plugin (RBR_RX.dll with 417792 bytes, the file doesn't have version tag) integration. Use NGPCarMenu in-game menu or INI file to enable/disable this integration. 
@@ -65,6 +66,10 @@ rbr\Plugins\NGPCarMenu.ini options (see the NGPCarMenu.ini.sample file for more 
 | AutoLogonWaitProfileSelection | 0 (disabled) or 1 (enabled). If autologon is set and you have multiple profiles in RBR then setting this option to value 1 lets you to select a profile before autologon sequence does it job. If set to value 0, NGPCarMenu autologon selects automatically the first profile. |
 | AutoLogonParam1        | Additional parameter for AutoLogon command. At the moment only AutoLogon=Replay uses this option and the value should be RBR replay RPL filename. See NGPCarMenu.ini.sample for examples. |
 | RallySchoolMenuReplacement | Replace the RallySchool menu with a custom menu shortcut (Plugins or a custom plugin menu shortcut). See NGPCarMenu in-game menu. |
+| RaceStatDB             | The path of raceStatDB storage file. RaceStatDB=0 option value disables the feature. |
+| RecentResultsPosition  | The location of "Recent results" data on RBR main screen. If the option is missing or empty then the plugin uses default location. RecentResultsPosition=0 option hides this information. |
+| RBRTM_RecentResultsPosition | The location of "Recent results" data on RBRTM main menu. RBRTM_RecentResultsPosition=0 hides the information. |
+| RBRRX_RecentResultsPosition | The location of "Recent results" data on RBRRX stages menu. RBRRB_RecentResultsPosition=0 hides the information. |
 | InvertedPedalsStartupFix | 0 or 1. If enabled (default) then NGPCarMenu fixes the notorious "inverted pedals" RBR bug when the car is at starting line (ie. throttle goes to 100% until a driver presses the inverted pedal at least once). |
 | ScreenshotPath         | Path of car preview images (relative to RBR executable location or absolute path). Supports various runtime variables (see NGPCarMenu.ini.sample for more details) |
 | ScreenshotReplay       | Replay filename the plugin uses to generate preview images. |
@@ -126,6 +131,7 @@ rbr\Plugins\NGPCarMenu.ini options (see the NGPCarMenu.ini.sample file for more 
 - **Why autologon feature doesn't seem to work?** Check Plugins\NGPCarMenu\NGPCarMenu.log logfile for more information. Maybe the name of the custom plugin has been changed? Or if you press some menu navigation keys during the autologon sequence then automation is aborted, so don't mess with keyboard while autologon does its job (couple seconds after RBR startup).
 - **I have multiple profiles, but autologon selects automatically the first profile. How to select another profile with autologon?** See Plugins\NGPCarMenu.ini and AutoLogonWaitProfileSelection option. Set it to value 1 and autologon waits until you select a profile.
 - **I cannot replay my old BTB replay files, only new ones. What to do?** Take a look at one of the new replay files and rbr\Replays\myRepayFileName.ini file. This INI file is required to link a BTB replay file to a certain BTB track. Create this replay metadata file in Notepad for your old BTB replay files (TYPE and NAME options required).
+- **I have multiple separate RBR installations (for whatever reasons). Can I share the same raceStatDB in all this RBR instances?** Yes you can. Just set the RaceStatDB option to point to the same file in all RBR installations.
 
 - **What is the folder structure used by this plugin?** The DLL and INI plugin files must be in the Plugins directory under the RBR game root folder. Replays RBR folder should have a replay file set in *ScreenshotReplay* option. The file hierarchy is something like this:
    c:\apps\richardBurnsRally\plugins\NGPCarMenu.dll
