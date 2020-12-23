@@ -1151,7 +1151,6 @@ void CNGPCarMenu::RBRRX_EndScene()
 				else if (m_pRBRRXPlugin->menuID == 1 && m_pRBRRXPlugin->pMenuData->selectedItemIdx >= 0 && m_pRBRRXPlugin->pMenuData->selectedItemIdx < m_pRBRRXPlugin->numOfItems)
 				{
 					// RBRRX tracks menu 
-					//m_pRBRRXPluginFirstTimeInitialization = FALSE;
 
 					if (m_pCustomMapMenuRBRRX == nullptr)
 					{
@@ -1273,6 +1272,10 @@ void CNGPCarMenu::RBRRX_EndScene()
 								if (!SUCCEEDED(hResult))
 									SAFE_RELEASE(m_latestMapRBRRX.imageTexture.pTexture);
 							}
+
+							// Read stage records for this RBRRX stage							
+							if(m_recentResultsPosition_RBRRX.y != -1)
+								RaceStatDB_QueryLastestStageResults(-1, m_latestMapRBRRX.name, 2, m_latestMapRBRRX.latestStageResults);
 						}
 					}
 
@@ -1320,6 +1323,30 @@ void CNGPCarMenu::RBRRX_EndScene()
 					if (!m_latestMapRBRRX.comment.empty())
 						g_pFontCarSpecCustom->DrawText(posX, posY + (iMapInfoPrintRow++ * iFontHeight), C_CARSPECTEXT_COLOR, m_latestMapRBRRX.comment.c_str(), 0);
 
+					if (m_latestMapRBRRX.latestStageResults.size() > 0)
+					{
+						g_pFontCarSpecCustom->DrawText(posX, posY + (iMapInfoPrintRow++ * iFontHeight), C_CARSPECTEXT_COLOR,
+							(GetLangWString(L"SS record", true) +
+								_ToWString(GetSecondsAsMISSMS(m_latestMapRBRRX.latestStageResults[0].stageRecord, 0))
+								+ L" ("
+								+ _ToWString(GetSecondsAsKMh(m_latestMapRBRRX.latestStageResults[0].stageRecord, static_cast<float>(m_latestMapRBRRX.length), true))
+								+ L")").c_str()
+						);
+						
+						iMapInfoPrintRow += 1;
+					}
+
+					
+					// Draw the list of recent race results
+					if (!(m_recentResultsPosition_RBRRX.x == 0 && m_recentResultsPosition_RBRRX.y == 0))
+					{
+						// Position is explicitly set instead of relative to BTB metadata title texts
+						posX = m_recentResultsPosition_RBRRX.x;
+						posY = m_recentResultsPosition_RBRRX.y;
+						iMapInfoPrintRow = 0;
+					}
+
+					DrawRecentResultsTable(posX, posY + (iMapInfoPrintRow++ * iFontHeight), m_latestMapRBRRX.latestStageResults);
 
 					// Author, version, date printed on bottom of the screen and map preview image
 					iMapInfoPrintRow = 0;

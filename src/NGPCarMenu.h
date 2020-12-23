@@ -118,6 +118,21 @@ typedef RBRCarSelectionMenuEntry* PRBRCarSelectionMenuEntry;
 
 //------------------------------------------------------------------------------------------------
 
+typedef struct RaceStatDBStageResult {
+	std::string mapName;
+	std::string carModel;
+	std::string carFIACategory;
+	float totalPenaltyTime;
+	float finishTime;
+	float carStageRecord;
+	float fiaCatStageRecord;
+	float stageRecord;
+} RaceStatDBStageResult;
+typedef RaceStatDBStageResult* PRaceStatDBStageResult;
+
+
+//------------------------------------------------------------------------------------------------
+
 #define RBRTMMENUIDX_CARSELECTION		0x15978614	// RBRTMMenuObj.menuID values. RBRTM car selection screen (either below Shakedown or OnlineTournament menu tree)
 #define RBRTMMENUIDX_MAIN				0x159785F8  // RBRTM main menu, so the RBRTM menu is no longer below Shakedown or OnlineTournament menu tree
 #define RBRTMMENUIDX_ONLINEOPTION1		0x159786F8	// RBRTM OnlineTournament options 1 menu (options for online rally lookups)
@@ -188,7 +203,10 @@ struct RBRTM_MapInfo {
 
 	std::wstring  previewImageFile;
 	IMAGE_TEXTURE imageTexture;
+
 	BOOL          shakedownOptionsFirstTimeSetup;  // Shakedown map selection shows a map preview. The shakedown options screen after the map selection shows also a map preview image. When this is TRUE then the option image is re-initialized.
+
+	std::vector<RaceStatDBStageResult> latestStageResults;
 
 	RBRTM_MapInfo() 
 	{
@@ -288,6 +306,9 @@ struct RBRRX_MapInfo {
 	std::wstring  previewImageFile;
 	IMAGE_TEXTURE imageTexture;
 	IMAGE_TEXTURE imageTextureLoadTrack;
+
+	std::vector<RaceStatDBStageResult> latestStageResults;
+
 	BOOL          trackOptionsFirstTimeSetup;  // Map selection shows a map preview. The track options screen after the map selection shows also a map preview image. When this is TRUE then the option image is re-initialized.
 
 	RBRRX_MapInfo()
@@ -321,6 +342,7 @@ struct RBRRX_MapInfo {
 		author.clear();
 		version.clear();
 		date.clear();
+		latestStageResults.clear();
 	}
 };
 
@@ -531,6 +553,7 @@ public:
 
 //------------------------------------------------------------------------------------------------
 //
+/*
 typedef struct {
 	int  MapKey;
 	std::string StageName;	// len 128
@@ -554,6 +577,7 @@ typedef struct {
 	int NGPCarID;
 } RaceStat_Car;
 typedef RaceStat_Car* PRaceStat_Car;
+*/
 
 
 //------------------------------------------------------------------------------------------------
@@ -606,6 +630,10 @@ protected:
 
 	std::string m_raceStatDBFilePath;	// Path to race stat DB folder or empty if feature is disabled
 
+	POINT m_recentResultsPosition;
+	POINT m_recentResultsPosition_RBRRX;
+	POINT m_recentResultsPosition_RBRTM;
+
 	DetourXS* gtcDirect3DBeginScene;
 	DetourXS* gtcDirect3DEndScene;
 	DetourXS* gtcRBRReplay;
@@ -644,6 +672,9 @@ protected:
 	int	 RaceStatDB_AddMap(int mapID, const std::string& mapName, int racingType);		// Add a new map to D_Map table
 	int	 RaceStatDB_AddCar(int carSlotID); // Add a new car to D_Car table with details of the car in carSlotID
 	int  RaceStatDB_AddCurrentRallyResult(int mapKey, int mapID, int carKey, int carSlotID, const std::string& mapName); // Add the current rally data to raceStatDB
+	int  RaceStatDB_QueryLastestStageResults(int mapID, const std::string& mapName, int racingType, std::vector<RaceStatDBStageResult>& latestStageResults);
+
+	void DrawRecentResultsTable(int posX, int posY, std::vector<RaceStatDBStageResult>& latestStageResults, bool drawStageRecordTitleRow = false);
 
 	int GetNextScreenshotCarID(int currentCarID);
 	static bool PrepareScreenshotReplayFile(int carID);
@@ -824,6 +855,9 @@ public:
 	float  m_prevRaceTimeClock;					// The previous value of race clock (used to check if there are new time penalties)
 	float  m_latestFalseStartPenaltyTime;		// If there was a false start then this has the false start penalty time (10 sec base penalty + extra time depending on how much early)
 	float  m_latestOtherPenaltyTime;			// Other penalties during the latest rally (not including false start penalty, but including callForHelp, cut penalties and so on...)
+
+	LPDIRECT3DVERTEXBUFFER9 m_rbrLatestStageResultsBackground;
+	std::vector<RaceStatDBStageResult> m_rbrLatestStageResults;
 
 	int    m_latestCarID;						// The latest carID in racing mode (slot#, not menuIdx)
 	int    m_latestMapID;						// The latest mapID in racing mode

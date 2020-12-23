@@ -472,6 +472,7 @@ void CNGPCarMenu::RBRTM_EndScene()
 
 					case RBRTMMENUIDX_ONLINEOPTION2:
 						m_iRBRTMCarSelectionType = 1;
+						m_latestMapRBRTM.latestStageResults.clear();
 						break;
 
 					case RBRTMMENUIDX_SHAKEDOWNSTAGES:						// Shakedown - Stage selection screen. Let to fall through to the next case to flag the shakedown menu type
@@ -480,6 +481,7 @@ void CNGPCarMenu::RBRTM_EndScene()
 
 					case RBRTMMENUIDX_SHAKEDOWNOPTION1:						// RBRTM Shakedown menu tree
 						m_iRBRTMCarSelectionType = 2;
+						m_latestMapRBRTM.latestStageResults.clear();
 						break;
 					}
 
@@ -831,6 +833,28 @@ void CNGPCarMenu::RBRTM_EndScene()
 
 					// Draw minimap in RBRTM shakedown stages menu list
 					RBRTM_DrawMinimap(m_latestMapRBRTM.mapID, 1);
+				}
+				else if (m_pRBRTMPlugin->pCurrentRBRTMMenuObj != nullptr && m_pRBRTMPlugin->pCurrentRBRTMMenuObj->menuID == RBRTMMENUIDX_MAIN)
+				{
+					//
+					// RBRTM main menu
+					//
+
+					// Hide the annoying "moving background box" on the bottom right corner in RBRTM main menu
+					g_pRBRMenuSystem->menuImageHeight = g_pRBRMenuSystem->menuImageWidth = 0;
+
+					// Refresh the list of latest stages if the vector list doesn't have any results
+					if(m_latestMapRBRTM.latestStageResults.size() <= 0 && m_recentResultsPosition_RBRTM.y != -1)
+						RaceStatDB_QueryLastestStageResults(-1, "", 1, m_latestMapRBRTM.latestStageResults);
+
+					// Draw the list of recent race results on RBRTM main menu screen
+					if (m_latestMapRBRTM.latestStageResults.size() > 0)
+					{
+						int posX = m_recentResultsPosition_RBRTM.x;
+						int posY = m_recentResultsPosition_RBRTM.y;
+
+						DrawRecentResultsTable(posX, posY, m_latestMapRBRTM.latestStageResults);
+					}
 				}
 			}
 		}

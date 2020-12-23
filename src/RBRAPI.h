@@ -112,6 +112,7 @@ extern BOOL RBRAPI_Replay(const std::string rbrAppFolder, LPCSTR szReplayFileNam
 
 extern void RBRAPI_MapRBRPointToScreenPoint(const float srcX, const float srcY, int* trgX, int* trgY);
 extern void RBRAPI_MapRBRPointToScreenPoint(const float srcX, const float srcY, float* trgX, float* trgY);
+extern void RBRAPI_MapRBRPointToScreenPoint(const float srcX, const float srcY, POINT* trgPoint);
 
 extern void RBRAPI_RefreshWndRect();
 extern BOOL RBRAPI_MapRBRColorToRGBA(IRBRGame::EMenuColors colorType, int* outRed, int* outGreen, int* outBlue, int* outAlpha); // TRUE=Changed values, could not use cached values, FALSE=The same value, used cached values

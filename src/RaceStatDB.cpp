@@ -122,6 +122,8 @@ bool CNGPCarMenu::RaceStatDB_Initialize()
 				//"DamagesOnStart char(64),"			// Damages on the start line (not yet implemented)
 				//"DamagesOnFinish char(64)"			// Damages on the finish line (not yet implemented)
 				");") == SQLITE_OK;
+
+			g_pRaceStatDB->execDML("CREATE INDEX idx_F_RallyResult_CarMap ON F_RallyResult(CarKey, MapKey)");
 		}
 
 		if (bResult && !g_pRaceStatDB->tableExists("D_Car"))
@@ -154,23 +156,26 @@ bool CNGPCarMenu::RaceStatDB_Initialize()
 				");") == SQLITE_OK;
 		}
 
+		g_pRaceStatDB->execDML("drop view V_RallyResultSummary");
+
 		if (bResult && !g_pRaceStatDB->tableExists("V_RallyResultSummary"))
 		{
 			LogPrint("InitializeRaceStatDB. Creating V_RallyResultSummary view");
 
-			g_pRaceStatDB->execDML("CREATE VIEW IF NOT EXISTS V_RallyResultSummary(RaceDate, RaceDateTime, StageName, CarModel, FIACat, TotalPenaltyTime, FinishTime, StageRecord, StageDelta, CarStageRecord, CarStageDelta, FIACatStageRecord, FIACatStageDelta)"
-				" AS SELECT FRR.RaceDate, FRR.RaceDateTime, M.StageName, C.ModelName as CarModel, C.FIACategory as FIACat"
-				", (FRR.FalseStartPenaltyTime + FRR.OtherPenaltyTime) as TotalPenaltyTime"
-				", FRR.FinishTime"
-				", MapBest.FinishTime as StageRecord"
-				", round(FRR.FinishTime - MapBest.FinishTime, 1) as StageDelta"
-				", CarBest.FinishTime as CarStageRecord"
-				", round(FRR.FinishTime - CarBest.FinishTime, 1) as CarStageDelta"
-				", FIACatBest.FinishTime as FIACatStageRecord"
-				", round(FRR.FinishTime - FIACatBest.FinishTime, 1) as FIACatStageDelta"
+			bResult = g_pRaceStatDB->execDML(
+				"CREATE VIEW IF NOT EXISTS V_RallyResultSummary (RaceDate, RaceDateTime, StageName, StageFormat, CarModel, FIACat, TotalPenaltyTime, FinishTime, StageRecord, StageDelta, CarStageRecord, CarStageDelta, FIACatStageRecord, FIACatStageDelta)"
+				" AS SELECT FRR.RaceDate, FRR.RaceDateTime, M.StageName, M.Format as StageFormat, C.ModelName as CarModel, C.FIACategory as FIACat"
+				",(FRR.FalseStartPenaltyTime + FRR.OtherPenaltyTime) as TotalPenaltyTime"
+				",FRR.FinishTime"
+				",MapBest.FinishTime as StageRecord"
+				",round(FRR.FinishTime - MapBest.FinishTime, 1) as StageDelta"
+				",CarBest.FinishTime as CarStageRecord"
+				",round(FRR.FinishTime - CarBest.FinishTime, 1) as CarStageDelta"
+				",FIACatBest.FinishTime as FIACatStageRecord"
+				",round(FRR.FinishTime - FIACatBest.FinishTime, 1) as FIACatStageDelta"
 				" FROM F_RallyResult FRR"
-				", D_Map M"
-				", D_Car C"
+				",D_Map M"
+				",D_Car C"
 				",(SELECT MapKey, MIN(FinishTime) as FinishTime FROM F_RallyResult WHERE FinishTime IS NOT NULL GROUP BY MapKey) MapBest"
 				",(SELECT MapKey, CarKey, MIN(FinishTime) as FinishTime FROM F_RallyResult WHERE FinishTime IS NOT NULL GROUP BY MapKey, CarKey) CarBest"
 				",(SELECT F.MapKey, C.FIACategory, MIN(F.FinishTime) as FinishTime FROM F_RallyResult F, D_Car C WHERE F.FinishTime IS NOT NULL AND F.CarKey = C.CarKey GROUP BY F.MapKey, C.FIACategory) FIACatBest"
@@ -180,9 +185,8 @@ bool CNGPCarMenu::RaceStatDB_Initialize()
 				" AND FRR.MapKey = MapBest.MapKey"
 				" AND FRR.MapKey = CarBest.MapKey AND FRR.CarKey = CarBest.CarKey"
 				" AND FRR.MapKey = FIACatBest.MapKey AND C.FIACategory = FIACatBest.FIACategory"
-				" ORDER BY FRR.RaceDate DESC, FRR.RaceDateTime DESC");
+				" ORDER BY FRR.RaceKey DESC") == SQLITE_OK;
 		}
-
 	}
 	catch (CppSQLite3Exception ex)
 	{
@@ -535,6 +539,14 @@ int CNGPCarMenu::RaceStatDB_AddCurrentRallyResult(int mapKey, int mapID, int car
 			"?, ?, ?, ?, ?, ?, "
 			"?, ?, ?, ?)";
 
+		// If the race didn't reach the first split then don't add the result because the race was retired "too early"
+		if (g_pRBRCarInfo->splitReachedNo == 0 && g_pRBRCarInfo->split1Time == 0.0f && g_pRBRCarInfo->finishLinePassed == 0 && g_pRBRCarInfo->distanceTravelled < 30.0f)
+		{
+			LogPrint("WARNING. Did not add a new race result to raceStatDB because the race was retired too early (the car didn't reach even the split1 or finish line)");
+			DebugPrint("Split1=%f (%d) Finish=%f (%d) DistTravelled=%f", g_pRBRCarInfo->split1Time, g_pRBRCarInfo->splitReachedNo, g_pRBRCarInfo->raceTime, g_pRBRCarInfo->finishLinePassed, g_pRBRCarInfo->distanceTravelled);
+			return 0;
+		}
+
 		CppSQLite3Statement qryStmt = g_pRaceStatDB->compileStatement(sQuery.c_str());
 
 		GetCurrentDateAndTimeAsYYYYMMDD_HHMISS(&raceDate, &sTextValue);
@@ -548,7 +560,7 @@ int CNGPCarMenu::RaceStatDB_AddCurrentRallyResult(int mapKey, int mapID, int car
 		else qryStmt.bindNull(5);
 		if (g_pRBRCarInfo->split2Time != 0 && g_pRBRCarInfo->splitReachedNo >= 2) qryStmt.bind(6, RoundFloatToDouble(g_pRBRCarInfo->split2Time, 3));
 		else qryStmt.bindNull(6);		
-		if (g_pRBRCarInfo->finishLinePassed > 0 || (g_pRBRCarInfo->raceTime != 0 && g_pRBRCarInfo->distanceToFinish <= 0.0) ) qryStmt.bind(7, RoundFloatToDouble(g_pRBRCarInfo->raceTime, 3));
+		if (g_pRBRCarInfo->finishLinePassed > 0 || (g_pRBRCarInfo->raceTime != 0.0f && g_pRBRCarInfo->distanceToFinish <= 0.0f) ) qryStmt.bind(7, RoundFloatToDouble(g_pRBRCarInfo->raceTime, 3));
 		else qryStmt.bindNull(7);
 
 		qryStmt.bind(8, FloorFloatToDouble(m_latestFalseStartPenaltyTime, 1));
@@ -617,5 +629,79 @@ int CNGPCarMenu::RaceStatDB_AddCurrentRallyResult(int mapKey, int mapID, int car
 	}
 
 	return iResult;
+}
+
+
+//------------------------------------------------------------------------------------------------------------------------------------
+// Query the last 5 rally results and stage records for a specific map
+//
+int CNGPCarMenu::RaceStatDB_QueryLastestStageResults(int /*mapID*/, const std::string& mapName, int racingType, std::vector<RaceStatDBStageResult>& latestStageResults)
+{
+	int numOfRows = 0;
+	
+	m_latestMapRBRRX.latestStageResults.clear();
+
+	if (g_pRaceStatDB == nullptr)
+		return 0;
+
+	try
+	{
+		CppSQLite3Statement qryStmt;
+		
+		if (!mapName.empty())
+		{
+			// Results for a specific map
+			qryStmt = g_pRaceStatDB->compileStatement("SELECT CarModel, FIACat, TotalPenaltyTime, FinishTime, CarStageRecord, FIACatStageRecord, StageRecord FROM V_RallyResultSummary WHERE StageName = ? LIMIT 5");
+			qryStmt.bind(1, mapName.c_str());
+		}
+		else if(racingType > 0)
+		{
+			// Results for a specific map format (BTB or RBR)
+			qryStmt = g_pRaceStatDB->compileStatement("SELECT CarModel, FIACat, TotalPenaltyTime, FinishTime, CarStageRecord, FIACatStageRecord, StageRecord, StageName FROM V_RallyResultSummary WHERE StageFormat = ? LIMIT 5");
+			qryStmt.bind(1, (racingType == 2 ? "BTB" : "RBR"));
+		}
+		else
+		{
+			// All recent results (all maps and map formats)
+			qryStmt = g_pRaceStatDB->compileStatement("SELECT CarModel, FIACat, TotalPenaltyTime, FinishTime, CarStageRecord, FIACatStageRecord, StageRecord, StageName FROM V_RallyResultSummary LIMIT 5");
+		}
+
+		CppSQLite3Query qryData = qryStmt.execQuery();
+
+		if (qryData.numFields() >= 7)
+		{
+			latestStageResults.reserve(5);
+
+			while (!qryData.eof())
+			{
+				numOfRows++;
+				latestStageResults.push_back( {
+					(mapName.empty() ? qryData.getStringField(7, "") : ""), // MapName set only when the data was not for a specific map
+					qryData.getStringField(0, ""), 
+					qryData.getStringField(1, ""),
+					static_cast<float>(qryData.getFloatField(2, 0.0)),
+					static_cast<float>(qryData.getFloatField(3, 0.0)),
+					static_cast<float>(qryData.getFloatField(4, 0.0)),
+					static_cast<float>(qryData.getFloatField(5, 0.0)),
+					static_cast<float>(qryData.getFloatField(6, 0.0))
+					}
+				);
+
+				qryData.nextRow();
+			}
+		}
+	}
+	catch (CppSQLite3Exception ex)
+	{
+		numOfRows = 0;
+		LogPrint("ERROR. RaceStatDB_QueryLastestStageResults. %s", ex.errorMessage());
+	}
+	catch (...)
+	{
+		numOfRows = 0;
+		LogPrint("ERROR. RaceStatDB_QueryLastestStageResults exception");
+	}
+
+	return numOfRows;
 }
 

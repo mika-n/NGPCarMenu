@@ -385,6 +385,12 @@ void RBRAPI_MapRBRPointToScreenPoint(const float srcX, const float srcY, float* 
 		*trgY = static_cast<float>(srcY * (g_rectRBRWndClient.bottom / 480.0f));
 }
 
+void RBRAPI_MapRBRPointToScreenPoint(const float srcX, const float srcY, POINT* trgPoint)
+{
+	if (trgPoint != nullptr)
+		RBRAPI_MapRBRPointToScreenPoint(srcX, srcY, (int*)&trgPoint->x, (int*)&trgPoint->y);
+}
+
 
 // Update RBR wnd rectangle values up-to-date (in windowed mode the window may have been moved around). 
 void RBRAPI_RefreshWndRect()

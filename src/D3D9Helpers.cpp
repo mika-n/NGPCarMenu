@@ -793,8 +793,15 @@ void GetCurrentDateAndTimeAsYYYYMMDD_HHMISS(int* pCurrentDate, std::string* pCur
 	std::tm* timeinfo;
 	char buffer[80]{};
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable:4996)
+#endif
 	std::time(&rawtime);
-	timeinfo = std::localtime(&rawtime); // TODO. Change to localtime_s safe version
+	timeinfo = std::localtime(&rawtime);
+#if defined(_MSC_VER) 
+#pragma warning(pop)
+#endif
 
 	std::strftime(buffer, 80, "%Y%m%d %H%M%S", timeinfo);
 	std::puts(buffer);
@@ -803,6 +810,53 @@ void GetCurrentDateAndTimeAsYYYYMMDD_HHMISS(int* pCurrentDate, std::string* pCur
 	if (pCurrentDate) *pCurrentDate = atoi(buffer);
 	if (pCurrentTime) *pCurrentTime = &buffer[9];
 }
+
+// Return value in seconds as MI:SS,MS formatted string value (fex 145.23 secs -> 02:25,2)
+std::string GetSecondsAsMISSMS(float valueInSecs, bool padWithTwoDigits, bool prefixPlusSign) 
+{
+	std::string signChar;
+	if (valueInSecs < 0)
+	{
+		signChar = "-";
+		valueInSecs = fabs(valueInSecs);
+	}
+	else if (prefixPlusSign)
+		signChar = "+";
+
+	// Minutes with padded to minimum of two chars
+	std::string min = std::to_string(static_cast<int>(floorf(valueInSecs / 60.0f)));
+	if(padWithTwoDigits && min.length() < 2) min = std::string(2 - min.length(), '0') + min;
+
+	float secWithDecimals = fmod(valueInSecs, 60.0f);
+	float secPart, msecPart;
+	msecPart = std::modf(secWithDecimals, &secPart);
+
+	//if (!padWithTwoDigits)
+	//	DebugPrint("valueInSecs=%lf  secWithDecimals=%lf  secPart=%lf  msecPart=%lf", valueInSecs, secWithDecimals, secPart, msecPart);
+
+	// Seconds (with one decimal precision)
+	std::string sec = std::to_string(static_cast<int>(secPart));
+	if (padWithTwoDigits && sec.length() < 2) sec = std::string(2 - sec.length(), '0') + sec;
+	sec += std::to_string(RoundFloatToDouble(msecPart,1)).substr(1,2);
+
+	if (min == "00" || min == "0") return signChar + sec;
+	else return signChar + min + ":" + sec;
+}
+
+// Return valueInSecs+lengthInKm as km/h string
+std::string GetSecondsAsKMh(float valueInSecs, float lengthInKm, bool postfixKmh)
+{
+	std::string sResult;
+	int kmh;
+
+	if (valueInSecs == 0.0f || lengthInKm == 0.0f)
+		return sResult;
+	
+	kmh = static_cast<int>(floorf((lengthInKm / valueInSecs) * 3600.0f));
+	sResult = std::to_string(kmh) + (postfixKmh ? " km/h" : "");
+	return sResult;
+}
+
 
 // Round float to nearest X decimals
 double RoundFloatToDouble(float value, int decimals)
@@ -823,6 +877,12 @@ double FloorFloatToDouble(float value, int decimals)
 	return (static_cast<int>(value * d0)) / d0;
 }
 
+// Round float down to nearest X decimals
+float FloorFloat(float value, int decimals)
+{
+	double dValue = FloorFloatToDouble(value, decimals);
+	return static_cast<float>(dValue);
+}
 
 //---------------------------------------------------------------------------------------------------------------
 

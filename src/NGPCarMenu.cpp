@@ -846,6 +846,8 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_bGenerateReplayMetadataFile = TRUE;
 
 	m_rbrWindowPosition.x = m_rbrWindowPosition.y = -1;
+	m_recentResultsPosition.x = m_recentResultsPosition.y = m_recentResultsPosition_RBRRX.x = m_recentResultsPosition_RBRRX.y = m_recentResultsPosition_RBRTM.x = m_recentResultsPosition_RBRTM.y = 0;
+	m_rbrLatestStageResultsBackground = nullptr;
 
 	m_iPhysicsNGMajorVer = m_iPhysicsNGMinorVer = m_iPhysicsNGPatchVer = m_iPhysicsNGBuildVer = 0;
 
@@ -891,6 +893,8 @@ CNGPCarMenu::~CNGPCarMenu(void)
 		SAFE_RELEASE(m_minimapVertexBuffer);
 		SAFE_RELEASE(m_screenshotCroppingRectVertexBuffer);
 		ClearCachedCarPreviewImages();
+
+		SAFE_RELEASE(m_rbrLatestStageResultsBackground);
 
 		SAFE_DELETE(g_pRBRPluginMenuSystem);
 		SAFE_DELETE(m_pLangIniFile);
@@ -1477,6 +1481,51 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 			}
 
 			RaceStatDB_Initialize();
+		}
+
+		// Default location for "recent results" data table (if the option is "0 -1" (or just "0") then the result list is disabled)
+		pluginINIFile.GetValueEx(szResolutionText, L"Default", L"RecentResultsPosition", L"-1 -1", &m_recentResultsPosition, -1);
+		if (!(m_recentResultsPosition.x == 0 && m_recentResultsPosition.y == -1))
+		{
+			SIZE textSize;
+			g_pFontCarSpecCustom->GetTextExtent(std::wstring(45, L'X').c_str(), &textSize);
+
+			if (m_recentResultsPosition.x == -1 && m_recentResultsPosition.y == -1)
+			{
+				RBRAPI_MapRBRPointToScreenPoint(330.0f, 5.0f, &m_recentResultsPosition);
+				LogPrint("RecentResultsPosition value is empty. Using the default value RecentResultsPosition=%d %d", m_recentResultsPosition.x, m_recentResultsPosition.y);
+			}
+
+			D3D9CreateRectangleVertexBuffer(g_pRBRIDirect3DDevice9,
+				static_cast<float>(m_recentResultsPosition.x - 5),
+				static_cast<float>(m_recentResultsPosition.y - 5),
+				min(static_cast<float>(g_rectRBRWndClient.right - (m_recentResultsPosition.x - 5)), static_cast<float>(textSize.cx)),
+				static_cast<float>(textSize.cy * 14),
+				&m_rbrLatestStageResultsBackground, D3DCOLOR_ARGB(0xF0, 0x30, 0x30, 0x30));
+		}
+
+		pluginINIFile.GetValueEx(szResolutionText, L"Default", L"RBRTM_RecentResultsPosition", L"-1 -1", &m_recentResultsPosition_RBRTM, -1);
+		if (!(m_recentResultsPosition_RBRTM.x == 0 && m_recentResultsPosition_RBRTM.y == -1))
+		{
+			if (m_recentResultsPosition_RBRTM.x == -1 && m_recentResultsPosition_RBRTM.y == -1)
+			{
+				RBRAPI_MapRBRPointToScreenPoint(340.0f, 150.0f, &m_recentResultsPosition_RBRTM);
+				LogPrint("RBRTM_RecentResultsPosition value is empty. Using the default value RBRTM_RecentResultsPosition=%d %d", m_recentResultsPosition_RBRTM.x, m_recentResultsPosition_RBRTM.y);
+			}
+		}
+
+		pluginINIFile.GetValueEx(szResolutionText, L"Default", L"RBRRX_RecentResultsPosition", L"-1 -1", &m_recentResultsPosition_RBRRX, -1);
+		if (!(m_recentResultsPosition_RBRRX.x == 0 && m_recentResultsPosition_RBRRX.y == -1))
+		{
+			if (m_recentResultsPosition_RBRRX.x == -1 && m_recentResultsPosition_RBRRX.y == -1)
+			{
+				RBRAPI_MapRBRPointToScreenPoint(390.0f, 22.0f, &m_recentResultsPosition_RBRRX);
+				LogPrint("RBRRX_RecentResultsPosition value is empty. Using the default value RBRRX_RecentResultsPosition=%d %d", m_recentResultsPosition_RBRRX.x, m_recentResultsPosition_RBRRX.y);
+
+				// Actually, the default location is based on the BTB metadata title text location
+				m_recentResultsPosition_RBRRX.x = 0;
+				m_recentResultsPosition_RBRRX.y = 0;
+			}
 		}
 
 
@@ -3501,6 +3550,112 @@ int CNGPCarMenu::RescaleDrivelineToFitOutputRect(CDrivelineSource& drivelineSour
 
 
 //------------------------------------------------------------------------------------------------
+// Draw the recent results table
+//
+void CNGPCarMenu::DrawRecentResultsTable(int posX, int posY, std::vector<RaceStatDBStageResult>& latestStageResults, bool drawStageRecordTitleRow)
+{
+	int iMapInfoPrintRow = 0;
+	int iFontHeight = g_pFontCarSpecCustom->GetTextHeight();
+
+	if (latestStageResults.size() <= 0)
+		return;
+
+	size_t iMapNameLen, iCarNameLen;
+	std::string mapName;
+	std::string carName;
+	std::string carGroup;
+
+	std::wstringstream sStrStream;
+	sStrStream << std::fixed << std::setprecision(1);
+
+	if (drawStageRecordTitleRow)
+	{
+		g_pFontCarSpecCustom->DrawText(posX, posY + (iMapInfoPrintRow++ * iFontHeight), C_CARSPECTEXT_COLOR,
+			(GetLangWString(L"SS record", true) + 
+				_ToWString(GetSecondsAsMISSMS(latestStageResults[0].stageRecord, 0))
+				+ L" (" 
+				+ _ToWString(GetSecondsAsKMh(latestStageResults[0].stageRecord, static_cast<float>(m_latestMapRBRRX.length), true)) 
+				+ L")").c_str()
+		);
+
+		iMapInfoPrintRow += 1;
+	}
+
+	SIZE textSize{ 8, 21 };
+	SIZE timeTextSize{ 8, 21 };
+	g_pFontCarSpecCustom->GetTextExtent(L"00:00:00,0", &timeTextSize);
+
+	g_pFontCarSpecCustom->DrawText(posX, posY + (iMapInfoPrintRow++ * iFontHeight), C_CARMODELTITLETEXT_COLOR,
+		(GetLangWString(L"Recent results") + L" / " + GetLangWString(L"Diff record by car (group)")).c_str(), 0);
+
+	for (auto& item : latestStageResults)
+	{
+		mapName = item.mapName;
+		carName = item.carModel;
+
+		// Clean up map and car names (remove extra grp tags because the FIACategory is shown as a separate value)
+		if (_iEnds_With(carName, " grpa", true) || _iEnds_With(carName, " grpb", true) || _iEnds_With(carName, " grpn", true))
+			carName = carName.substr(0, carName.length() - 5);
+		else if (_iEnds_With(carName, " wrc", true) || _iEnds_With(carName, " rgt", true))
+			carName = carName.substr(0, carName.length() - 4);
+		else if (_iEnds_With(carName, " r1", true) || _iEnds_With(carName, " r2", true) || _iEnds_With(carName, " r3", true) || _iEnds_With(carName, " r4", true) || _iEnds_With(carName, " r5", true))
+			carName = carName.substr(0, carName.length() - 3);
+
+		iMapNameLen = mapName.length();
+		iCarNameLen = carName.length();
+
+		if (iMapNameLen + iCarNameLen > 45)
+		{
+			mapName = mapName.substr(0, 20);
+			iMapNameLen = mapName.length();
+		}
+		if (iMapNameLen + iCarNameLen > 45)
+			carName = carName.substr(0, 45 - iMapNameLen);
+
+		// Cleanup category value (Group R5 -> R5, Super 1600 -> S1600)
+		if(_iStarts_With(item.carFIACategory, "group ", true))
+			carGroup = item.carFIACategory.substr(6);
+		else if(_iStarts_With(item.carFIACategory, "super ", true))
+			carGroup = "S" + item.carFIACategory.substr(6);
+		else
+			carGroup = item.carFIACategory;
+
+		sStrStream.clear();
+		sStrStream.str(std::wstring());
+		sStrStream << _ToWString(mapName) << (!mapName.empty() ? L": " : L"") << _ToWString(carName) << L" (" << _ToWString(carGroup) << L")";
+		g_pFontCarSpecCustom->DrawText(posX, posY + (iMapInfoPrintRow++ * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), 0);
+
+		sStrStream.clear();
+		sStrStream.str(std::wstring());
+		sStrStream << _ToWString(GetSecondsAsMISSMS(item.finishTime));
+		g_pFontCarSpecCustom->DrawText(posX, posY + (iMapInfoPrintRow * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), 0);
+
+		if (item.totalPenaltyTime != 0)
+		{
+			g_pFontCarSpecCustom->GetTextExtent(sStrStream.str().c_str(), &textSize);
+
+			sStrStream.clear();
+			sStrStream.str(std::wstring());
+			sStrStream << L" " << _ToWString(GetSecondsAsMISSMS(item.totalPenaltyTime, false, true));
+			g_pFontCarSpecCustom->DrawText(posX + textSize.cx + 4, posY + (iMapInfoPrintRow * iFontHeight), C_REDSEPARATORLINE_COLOR, sStrStream.str().c_str(), 0);
+		}
+
+		sStrStream.clear();
+		sStrStream.str(std::wstring());
+		sStrStream << _ToWString(GetSecondsAsMISSMS(item.finishTime - item.carStageRecord, false, true));
+		g_pFontCarSpecCustom->DrawText(posX + (timeTextSize.cx * 2), posY + (iMapInfoPrintRow * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), 0);
+
+		sStrStream.clear();
+		sStrStream.str(std::wstring());
+		sStrStream << L"(" << _ToWString(GetSecondsAsMISSMS(item.finishTime - item.fiaCatStageRecord, false, true)) << L")";
+		g_pFontCarSpecCustom->DrawText(posX + (timeTextSize.cx * 3), posY + (iMapInfoPrintRow++ * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), 0);
+
+		posY += g_pFontCarSpecCustom->GetTextHeight() / 2;
+	}
+}
+
+
+//------------------------------------------------------------------------------------------------
 //
 BOOL CALLBACK CNGPCarMenu::MonitorEnumCallback(HMONITOR hMon, HDC hdc, LPRECT lprcMonitor, LPARAM pData)
 {
@@ -4362,6 +4517,8 @@ void CNGPCarMenu::OnMapUnloaded()
 
 void CNGPCarMenu::OnRaceStarted()
 {
+	m_rbrLatestStageResults.clear(); // Notify rbr recent list to update the list of recent races when the RBR returns to the main screen
+
 	m_bRBRRacingActive = TRUE;
 	m_bMapLoadedCalled = m_bMapUnloadedCalled = FALSE;
 
@@ -4782,7 +4939,7 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 		if(!m_bMapLoadedCalled) OnMapLoaded();
 	}
 
-	if (g_pRBRGameMode->gameMode == 0x09)
+	if (g_pRBRGameMode->gameMode == 0x09 || g_pRBRGameMode->gameMode == 0x06)
 	{
 		if (!m_bMapUnloadedCalled) OnMapUnloaded();
 	}
@@ -4969,6 +5126,20 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 		{
 			RBRTM_EndScene();
 			RBRRX_EndScene();
+
+			if (g_pRBRMenuSystem->currentMenuObj == g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN])
+			{
+				if (m_rbrLatestStageResults.size() <= 0 && m_recentResultsPosition.y != -1)
+					RaceStatDB_QueryLastestStageResults(-1, "", 0, m_rbrLatestStageResults);
+
+				if (m_rbrLatestStageResults.size() > 0)
+				{
+					if (m_rbrLatestStageResultsBackground != nullptr)
+						D3D9DrawVertex2D(g_pRBRIDirect3DDevice9, m_rbrLatestStageResultsBackground);
+
+					DrawRecentResultsTable(m_recentResultsPosition.x, m_recentResultsPosition.y, m_rbrLatestStageResults);
+				}
+			}
 		}
 
 
@@ -5535,8 +5706,7 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 #if USE_DEBUG == 1
 	static int iPrevMode = -1;
 	wchar_t szTxtBuf[512];
-	//swprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, L"%d / %d / %d", g_pRBRGameMode->gameMode, RBRAPI_MapRBRMenuObjToID(g_pRBRMenuSystem->currentMenuObj), rand());
-	swprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, L"Mode=%d RaceType=%d RplType=%d Time=%f", g_pRBRGameMode->gameMode, g_pRBRPlugin->GetActiveRacingType(), g_pRBRPlugin->GetActiveReplayType(), (g_pRBRCarInfo != nullptr ? g_pRBRCarInfo->stageStartCountdown : 0.0f) );
+	swprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, L"Mode=%d RaceType=%d RplType=%d", g_pRBRGameMode->gameMode, g_pRBRPlugin->GetActiveRacingType(), g_pRBRPlugin->GetActiveReplayType());
 	g_pFontDebug->DrawText(5, 0 * 15, C_DEBUGTEXT_COLOR, szTxtBuf, D3DFONT_CLEARTARGET);
 
 	if (iPrevMode != g_pRBRGameMode->gameMode)
@@ -5544,14 +5714,6 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 		iPrevMode = g_pRBRGameMode->gameMode;
 		DebugPrint(szTxtBuf);
 	}
-
-	swprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, L"distToFin=%f", g_pRBRCarInfo->distanceToFinish);
-	g_pFontDebug->DrawText(5, 1 * 15, C_DEBUGTEXT_COLOR, szTxtBuf, D3DFONT_CLEARTARGET);
-	swprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, L"distTrav=%f", g_pRBRCarInfo->distanceTravelled);
-	g_pFontDebug->DrawText(5, 2 * 15, C_DEBUGTEXT_COLOR, szTxtBuf, D3DFONT_CLEARTARGET);
-	swprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, L"distFromStart=%f", g_pRBRCarInfo->distanceFromStartControl);
-	g_pFontDebug->DrawText(5, 3 * 15, C_DEBUGTEXT_COLOR, szTxtBuf, D3DFONT_CLEARTARGET);
-
 	//swprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, L"CurMenu=%08x  CustPlugin=%08x", (DWORD)g_pRBRMenuSystem->currentMenuObj, (DWORD)g_pRBRPluginMenuSystem->customPluginMenuObj );
 	//g_pFontDebug->DrawText(5, 1 * 15, C_DEBUGTEXT_COLOR, szTxtBuf, D3DFONT_CLEARTARGET);
 #endif

@@ -1,0 +1,61 @@
+TransmissionType	EN	M	Manual
+TransmissionType	EN	A	Automatic
+TransmissionType	EN	U	Unknown
+
+TyreType	EN	T	Tarmac
+TyreType	EN	G	Gravel
+TyreType	EN	S	Snow
+TyreType	EN	U	Unknown
+
+TyreSubType	EN	D	Dry
+TyreSubType	EN	I	Intermediate
+TyreSubType	EN	W	Wet
+TyreSubType	EN	S	Snow
+TyreSubType	EN	U	Unknown
+
+DamageType	EN	0	None
+DamageType	EN	1	Safe
+DamageType	EN	2	Reduced
+DamageType	EN	3	Realistic
+
+TimeOfDay	EN	0	Morning
+TimeOfDay	EN	1	Noon
+TimeOfDay	EN	2	Evening
+
+WeatherType	EN	G	Good
+WeatherType	EN	B	Bad
+WeatherType	EN	U	Unknown
+
+SkyCloudType	EN	0	Clear
+SkyCloudType	EN	1	Partly cloud
+SkyCloudType	EN	2	Light cloud
+SkyCloudType	EN	3	Heavy cloud
+
+SkyType	EN	0	Crisp
+SkyType	EN	1	Hazy
+SkyType	EN	2	No rain
+SkyType	EN	3	Light rain
+SkyType	EN	4	Heavy rain
+SkyType	EN	5	No snow
+SkyType	EN	6	Light snow
+SkyType	EN	7	Heavy snow
+SkyType	EN	8	Light fog
+SkyType	EN	9	Heavy fog
+
+SurfaceWetness	EN	0	Dry
+SurfaceWetness	EN	1	Damp
+SurfaceWetness	EN	2	Wet
+
+SurfaceAge	EN	0	New
+SurfaceAge	EN	1	Normal
+SurfaceAge	EN	2	Worn
+
+PluginType	EN	RBR	Original RBR game mode
+PluginType	EN	TM	TM Tournament
+PluginType	EN	RSF	RallysimFans.hu
+PluginType	EN	RX	RBRRX
+PluginType	EN	UNK	Unknown
+
+PluginSubType	EN	SD	Shakedown
+PluginSubType	EN	ONL	Online
+PluginSubType	EN	UNK	Unknown

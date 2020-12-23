@@ -112,8 +112,13 @@ extern BOOL GetFileVersionInformationAsNumber(const std::wstring & fileName, UIN
 
 extern std::string GetGUIDAsString(); // Return GUID value as string
 extern void GetCurrentDateAndTimeAsYYYYMMDD_HHMISS(int *pCurrentDate, std::string* pCurrentTime = nullptr); // Return current YYYYMMDD and HHMISS
+
+extern std::string GetSecondsAsMISSMS(float valueInSecs, bool padWithTwoDigits = true, bool prefixPlusSign = false); // Return value in secs as MI:SS,MS formatted string
+extern std::string GetSecondsAsKMh(float valueInSecs, float lengthInKm, bool postfixKmh = true); // Return value in secs and length in KM as km/h formatted string
+
 extern double RoundFloatToDouble(float value, int decimals);
 extern double FloorFloatToDouble(float value, int decimals);
+extern float FloorFloat(float value, int decimals);
 
 inline bool _IsRectZero(const RECT& rect) { return (rect.bottom == 0 && rect.right == 0 && rect.left == 0 && rect.top == 0); } // Return TRUE if all rect coordinate values are zero
 
