@@ -38,6 +38,7 @@
 
 namespace fs = std::filesystem;
 
+#define C_RACESTATDB_SCHEMA_VERSION 2
 
 //-------------------------------------------------------------------------------------------------------------------
 // Initialize race stat DB if it is missing
@@ -67,13 +68,13 @@ bool CNGPCarMenu::RaceStatDB_Initialize()
 		{
 			LogPrint("InitializeRaceStatDB. Creating StatInfo");
 			bResult = g_pRaceStatDB->execDML("CREATE TABLE StatInfo(AttribName char(16) PRIMARY KEY not null, AttribValue char(64) not null)") == SQLITE_OK;
-			if (bResult) bResult = g_pRaceStatDB->execDML("INSERT INTO StatInfo VALUES ('Version', '1')") == SQLITE_OK;
+			if (bResult) bResult = g_pRaceStatDB->execDML((std::string("INSERT INTO StatInfo VALUES ('Version', '") + std::to_string(C_RACESTATDB_SCHEMA_VERSION) + "')").c_str()) == SQLITE_OK;
 		}
 
 		// Insert statDB instance identifier if the row is missing
 		g_pRaceStatDB->execDML((std::string("INSERT INTO StatInfo (AttribName, AttribValue) SELECT 'Instance', '") + GetGUIDAsString() + "' WHERE NOT EXISTS (SELECT AttribName FROM StatInfo WHERE AttribName = 'Instance')").c_str());
 
-		// TODO. Read the Version attribute from StatInfo table and check if the table structure needs DDL changes
+		RaceStatDB_UpgradeSchema();
 
 		if (bResult && !g_pRaceStatDB->tableExists("ValueText"))
 		{
@@ -156,15 +157,13 @@ bool CNGPCarMenu::RaceStatDB_Initialize()
 				");") == SQLITE_OK;
 		}
 
-		g_pRaceStatDB->execDML("drop view V_RallyResultSummary");
-
 		if (bResult && !g_pRaceStatDB->tableExists("V_RallyResultSummary"))
 		{
 			LogPrint("InitializeRaceStatDB. Creating V_RallyResultSummary view");
 
 			bResult = g_pRaceStatDB->execDML(
-				"CREATE VIEW IF NOT EXISTS V_RallyResultSummary (RaceDate, RaceDateTime, StageName, StageFormat, CarModel, FIACat, TotalPenaltyTime, FinishTime, StageRecord, StageDelta, CarStageRecord, CarStageDelta, FIACatStageRecord, FIACatStageDelta)"
-				" AS SELECT FRR.RaceDate, FRR.RaceDateTime, M.StageName, M.Format as StageFormat, C.ModelName as CarModel, C.FIACategory as FIACat"
+				"CREATE VIEW IF NOT EXISTS V_RallyResultSummary (RaceDate, RaceDateTime, StageName, StageFormat, StageLength, CarModel, FIACat, TotalPenaltyTime, FinishTime, StageRecord, StageDelta, CarStageRecord, CarStageDelta, FIACatStageRecord, FIACatStageDelta)"
+				" AS SELECT FRR.RaceDate, FRR.RaceDateTime, M.StageName, M.Format as StageFormat, M.Length as StageLength, C.ModelName as CarModel, C.FIACategory as FIACat"
 				",(FRR.FalseStartPenaltyTime + FRR.OtherPenaltyTime) as TotalPenaltyTime"
 				",FRR.FinishTime"
 				",MapBest.FinishTime as StageRecord"
@@ -208,6 +207,37 @@ bool CNGPCarMenu::RaceStatDB_Initialize()
 	return bResult;
 }
 
+int CNGPCarMenu::RaceStatDB_GetVersion()
+{
+	CppSQLite3Statement qryStmt = g_pRaceStatDB->compileStatement("SELECT AttribValue FROM StatInfo WHERE AttribName='Version'");
+	CppSQLite3Query qryData = qryStmt.execQuery();
+	if (!qryData.eof() && qryData.numFields() >= 1)
+		return std::stoi(qryData.getStringField(0, "0"));
+	else
+		return 0;
+
+}
+
+bool CNGPCarMenu::RaceStatDB_UpgradeSchema()
+{
+	int currentDBVersion = RaceStatDB_GetVersion();
+	if (currentDBVersion < C_RACESTATDB_SCHEMA_VERSION)
+	{
+		LogPrint("RaceStatDB_UpgradeSchema. OldVersion=%d  NewVersion=%d", currentDBVersion, C_RACESTATDB_SCHEMA_VERSION);
+
+		//Schema updates:
+		// Version 1 -> 2: F_RallyResultSummary view updated. Drop the old view to force it to be re-created
+		if(currentDBVersion <= 1)
+			g_pRaceStatDB->execDML("drop view if exists V_RallyResultSummary");
+
+		// Update version tag
+		g_pRaceStatDB->execDML((std::string("UPDATE StatInfo SET AttribValue='") + std::to_string(C_RACESTATDB_SCHEMA_VERSION) + "' WHERE AttribName='Version'").c_str());
+		return true;
+	}
+
+	// No need to upgrade
+	return false;
+}
 
 //-------------------------------------------------------------------------------------------------------------------
 // Prepare a query, bind parameters and return the qry dataset
@@ -651,24 +681,24 @@ int CNGPCarMenu::RaceStatDB_QueryLastestStageResults(int /*mapID*/, const std::s
 		if (!mapName.empty())
 		{
 			// Results for a specific map
-			qryStmt = g_pRaceStatDB->compileStatement("SELECT CarModel, FIACat, TotalPenaltyTime, FinishTime, CarStageRecord, FIACatStageRecord, StageRecord FROM V_RallyResultSummary WHERE StageName = ? LIMIT 5");
+			qryStmt = g_pRaceStatDB->compileStatement("SELECT CarModel, FIACat, TotalPenaltyTime, FinishTime, CarStageRecord, FIACatStageRecord, StageRecord, StageLength FROM V_RallyResultSummary WHERE StageName = ? LIMIT 5");
 			qryStmt.bind(1, mapName.c_str());
 		}
 		else if(racingType > 0)
 		{
-			// Results for a specific map format (BTB or RBR)
-			qryStmt = g_pRaceStatDB->compileStatement("SELECT CarModel, FIACat, TotalPenaltyTime, FinishTime, CarStageRecord, FIACatStageRecord, StageRecord, StageName FROM V_RallyResultSummary WHERE StageFormat = ? LIMIT 5");
+			// All recent results from stages in a specific map format (BTB or RBR)
+			qryStmt = g_pRaceStatDB->compileStatement("SELECT CarModel, FIACat, TotalPenaltyTime, FinishTime, CarStageRecord, FIACatStageRecord, StageRecord, StageLength, StageName FROM V_RallyResultSummary WHERE StageFormat = ? LIMIT 5");
 			qryStmt.bind(1, (racingType == 2 ? "BTB" : "RBR"));
 		}
 		else
 		{
 			// All recent results (all maps and map formats)
-			qryStmt = g_pRaceStatDB->compileStatement("SELECT CarModel, FIACat, TotalPenaltyTime, FinishTime, CarStageRecord, FIACatStageRecord, StageRecord, StageName FROM V_RallyResultSummary LIMIT 5");
+			qryStmt = g_pRaceStatDB->compileStatement("SELECT CarModel, FIACat, TotalPenaltyTime, FinishTime, CarStageRecord, FIACatStageRecord, StageRecord, StageLength, StageName FROM V_RallyResultSummary LIMIT 5");
 		}
 
 		CppSQLite3Query qryData = qryStmt.execQuery();
 
-		if (qryData.numFields() >= 7)
+		if (qryData.numFields() >= 8)
 		{
 			latestStageResults.reserve(5);
 
@@ -676,14 +706,15 @@ int CNGPCarMenu::RaceStatDB_QueryLastestStageResults(int /*mapID*/, const std::s
 			{
 				numOfRows++;
 				latestStageResults.push_back( {
-					(mapName.empty() ? qryData.getStringField(7, "") : ""), // MapName set only when the data was not for a specific map
-					qryData.getStringField(0, ""), 
+					(mapName.empty() ? qryData.getStringField(8, "") : ""), // MapName set only when the data was not for a specific map
+					qryData.getStringField(0, ""),                       // carModel
 					qryData.getStringField(1, ""),
 					static_cast<float>(qryData.getFloatField(2, 0.0)),
 					static_cast<float>(qryData.getFloatField(3, 0.0)),
 					static_cast<float>(qryData.getFloatField(4, 0.0)),
 					static_cast<float>(qryData.getFloatField(5, 0.0)),
-					static_cast<float>(qryData.getFloatField(6, 0.0))
+					static_cast<float>(qryData.getFloatField(6, 0.0)),	// stageRecord
+					static_cast<float>(qryData.getFloatField(7, 0.0))   // stageLength (in meters)
 					}
 				);
 

@@ -1329,7 +1329,7 @@ void CNGPCarMenu::RBRRX_EndScene()
 							(GetLangWString(L"SS record", true) +
 								_ToWString(GetSecondsAsMISSMS(m_latestMapRBRRX.latestStageResults[0].stageRecord, 0))
 								+ L" ("
-								+ _ToWString(GetSecondsAsKMh(m_latestMapRBRRX.latestStageResults[0].stageRecord, static_cast<float>(m_latestMapRBRRX.length), true))
+								+ _ToWString(GetSecondsAsKMh(m_latestMapRBRRX.latestStageResults[0].stageRecord, m_latestMapRBRRX.latestStageResults[0].stageLength /*static_cast<float>(m_latestMapRBRRX.length * 1000)*/, true, 1))
 								+ L")").c_str()
 						);
 						

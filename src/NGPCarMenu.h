@@ -127,6 +127,7 @@ typedef struct RaceStatDBStageResult {
 	float carStageRecord;
 	float fiaCatStageRecord;
 	float stageRecord;
+	float stageLength;
 } RaceStatDBStageResult;
 typedef RaceStatDBStageResult* PRaceStatDBStageResult;
 
@@ -667,11 +668,17 @@ protected:
 	int InitAllNewCustomPluginIntegrations();
 
 	bool RaceStatDB_Initialize(); // Initialize and open raceStat DB
+	
+	int  RaceStatDB_GetVersion();  // Return the version tag of the existing DB. Upgrade schema if the version is older
+	bool RaceStatDB_UpgradeSchema();
+
 	int	 RaceStatDB_GetMapKey(int mapID, const std::string& mapName, int racingType);	// Return MapKey for the map or add new D_Map record
 	int	 RaceStatDB_GetCarKey(int carSlotID); // Return CarKey for the car defined in carSlotID or add new D_Car record
+	
 	int	 RaceStatDB_AddMap(int mapID, const std::string& mapName, int racingType);		// Add a new map to D_Map table
 	int	 RaceStatDB_AddCar(int carSlotID); // Add a new car to D_Car table with details of the car in carSlotID
 	int  RaceStatDB_AddCurrentRallyResult(int mapKey, int mapID, int carKey, int carSlotID, const std::string& mapName); // Add the current rally data to raceStatDB
+	
 	int  RaceStatDB_QueryLastestStageResults(int mapID, const std::string& mapName, int racingType, std::vector<RaceStatDBStageResult>& latestStageResults);
 
 	void DrawRecentResultsTable(int posX, int posY, std::vector<RaceStatDBStageResult>& latestStageResults, bool drawStageRecordTitleRow = false);

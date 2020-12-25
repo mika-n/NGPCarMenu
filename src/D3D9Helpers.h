@@ -114,7 +114,7 @@ extern std::string GetGUIDAsString(); // Return GUID value as string
 extern void GetCurrentDateAndTimeAsYYYYMMDD_HHMISS(int *pCurrentDate, std::string* pCurrentTime = nullptr); // Return current YYYYMMDD and HHMISS
 
 extern std::string GetSecondsAsMISSMS(float valueInSecs, bool padWithTwoDigits = true, bool prefixPlusSign = false); // Return value in secs as MI:SS,MS formatted string
-extern std::string GetSecondsAsKMh(float valueInSecs, float lengthInKm, bool postfixKmh = true); // Return value in secs and length in KM as km/h formatted string
+extern std::string GetSecondsAsKMh(float valueInSecs, float lengthInMeters, bool postfixKmh = true, int outputPrecision = 0); // Return value in secs and length in meters as km/h formatted string
 
 extern double RoundFloatToDouble(float value, int decimals);
 extern double FloorFloatToDouble(float value, int decimals);

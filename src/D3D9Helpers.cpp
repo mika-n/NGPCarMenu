@@ -845,17 +845,25 @@ std::string GetSecondsAsMISSMS(float valueSecs, bool padWithTwoDigits, bool pref
 }
 
 // Return valueInSecs+lengthInKm as km/h string
-std::string GetSecondsAsKMh(float valueInSecs, float lengthInKm, bool postfixKmh)
+std::string GetSecondsAsKMh(float valueInSecs, float lengthInMeters, bool postfixKmh, int outputPrecision)
 {
 	std::string sResult;
-	int kmh;
+	double kmh;
 
-	if (valueInSecs == 0.0f || lengthInKm == 0.0f)
+	if (valueInSecs == 0.0f || lengthInMeters == 0.0f)
 		return sResult;
-	
-	kmh = static_cast<int>(floorf((lengthInKm / valueInSecs) * 3600.0f));
-	sResult = std::to_string(kmh) + (postfixKmh ? " km/h" : "");
-	return sResult;
+
+	//kmh = static_cast<int>(floorf( ((lengthInMeters / 1000.0f) / valueInSecs) * 3600.0f ));
+	//sResult = std::to_string(kmh) + (postfixKmh ? " km/h" : "");
+	//return sResult;
+
+	kmh = RoundFloatToDouble(((lengthInMeters / 1000.0f) / valueInSecs) * 3600.0f, 1);
+	double deciPart, intPart;
+	deciPart = std::modf(kmh, &intPart);
+
+	sResult = std::to_string(static_cast<int>(intPart));
+	if (outputPrecision > 0) sResult += std::to_string(deciPart).substr(1, outputPrecision + 1);
+	return sResult + (postfixKmh ? " km/h" : "");
 }
 
 

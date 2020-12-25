@@ -1501,7 +1501,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool addMissingSections)
 				static_cast<float>(m_recentResultsPosition.y - 5),
 				min(static_cast<float>(g_rectRBRWndClient.right - (m_recentResultsPosition.x - 5)), static_cast<float>(textSize.cx)),
 				static_cast<float>(textSize.cy * 14),
-				&m_rbrLatestStageResultsBackground, D3DCOLOR_ARGB(0xF0, 0x30, 0x30, 0x30));
+				&m_rbrLatestStageResultsBackground, D3DCOLOR_ARGB(0xF0, 0x10, 0x10, 0x10));
 		}
 
 		pluginINIFile.GetValueEx(szResolutionText, L"Default", L"RBRTM_RecentResultsPosition", L"-1 -1", &m_recentResultsPosition_RBRTM, -1);
@@ -3574,7 +3574,7 @@ void CNGPCarMenu::DrawRecentResultsTable(int posX, int posY, std::vector<RaceSta
 			(GetLangWString(L"SS record", true) + 
 				_ToWString(GetSecondsAsMISSMS(latestStageResults[0].stageRecord, 0))
 				+ L" (" 
-				+ _ToWString(GetSecondsAsKMh(latestStageResults[0].stageRecord, static_cast<float>(m_latestMapRBRRX.length), true)) 
+				+ _ToWString(GetSecondsAsKMh(latestStageResults[0].stageRecord, latestStageResults[0].stageLength, true, 1))
 				+ L")").c_str()
 		);
 
@@ -3582,8 +3582,6 @@ void CNGPCarMenu::DrawRecentResultsTable(int posX, int posY, std::vector<RaceSta
 	}
 
 	SIZE textSize{ 8, 21 };
-	SIZE timeTextSize{ 8, 21 };
-	g_pFontCarSpecCustom->GetTextExtent(L"00:00:00,0", &timeTextSize);
 
 	g_pFontCarSpecCustom->DrawText(posX, posY + (iMapInfoPrintRow++ * iFontHeight), C_CARMODELTITLETEXT_COLOR,
 		(GetLangWString(L"Recent results") + L" / " + GetLangWString(L"Diff record by car (group)")).c_str(), 0);
@@ -3628,6 +3626,7 @@ void CNGPCarMenu::DrawRecentResultsTable(int posX, int posY, std::vector<RaceSta
 		sStrStream.clear();
 		sStrStream.str(std::wstring());
 		sStrStream << _ToWString(GetSecondsAsMISSMS(item.finishTime));
+		if(item.finishTime != 0.0f && item.stageLength != 0.0f) sStrStream << L" (" << _ToWString(GetSecondsAsKMh(item.finishTime, item.stageLength, true, 1)) << L")";
 		g_pFontCarSpecCustom->DrawText(posX, posY + (iMapInfoPrintRow * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), 0);
 
 		if (item.totalPenaltyTime != 0)
@@ -3637,18 +3636,25 @@ void CNGPCarMenu::DrawRecentResultsTable(int posX, int posY, std::vector<RaceSta
 			sStrStream.clear();
 			sStrStream.str(std::wstring());
 			sStrStream << L" " << _ToWString(GetSecondsAsMISSMS(item.totalPenaltyTime, false, true));
-			g_pFontCarSpecCustom->DrawText(posX + textSize.cx + 4, posY + (iMapInfoPrintRow * iFontHeight), C_REDSEPARATORLINE_COLOR, sStrStream.str().c_str(), 0);
+			
+			g_pFontCarSpecCustom->DrawText(posX + textSize.cx, posY + (iMapInfoPrintRow * iFontHeight), C_REDSEPARATORLINE_COLOR, sStrStream.str().c_str(), 0);
 		}
+
+		g_pFontCarSpecCustom->GetTextExtent(L"00:00,0 (000,0 km/h) +00:00,0   ", &textSize);
 
 		sStrStream.clear();
 		sStrStream.str(std::wstring());
 		sStrStream << _ToWString(GetSecondsAsMISSMS(item.finishTime - item.carStageRecord, false, true));
-		g_pFontCarSpecCustom->DrawText(posX + (timeTextSize.cx * 2), posY + (iMapInfoPrintRow * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), 0);
+		g_pFontCarSpecCustom->DrawText(posX + textSize.cx, posY + (iMapInfoPrintRow * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), 0);
+
+		int prevColumnX = textSize.cx;
+		g_pFontCarSpecCustom->GetTextExtent(L"+00:00,0 ", &textSize);
+		textSize.cx += prevColumnX;
 
 		sStrStream.clear();
 		sStrStream.str(std::wstring());
 		sStrStream << L"(" << _ToWString(GetSecondsAsMISSMS(item.finishTime - item.fiaCatStageRecord, false, true)) << L")";
-		g_pFontCarSpecCustom->DrawText(posX + (timeTextSize.cx * 3), posY + (iMapInfoPrintRow++ * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), 0);
+		g_pFontCarSpecCustom->DrawText(posX + textSize.cx, posY + (iMapInfoPrintRow++ * iFontHeight), C_CARSPECTEXT_COLOR, sStrStream.str().c_str(), 0);
 
 		posY += g_pFontCarSpecCustom->GetTextHeight() / 2;
 	}
