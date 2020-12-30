@@ -549,14 +549,24 @@ void CNGPCarMenu::RBRRX_CustomLoadTrackScreen()
 			if (!m_latestMapRBRRX.surface.empty())
 				sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << GetLangStr(m_latestMapRBRRX.surface.c_str());
 
-			if (m_latestMapRBRRX.numOfPacenotes >= 15)
-				sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << GetLangStr(L"pacenotes");
+			//if (m_latestMapRBRRX.numOfPacenotes >= 15)
+			//	sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << GetLangStr(L"pacenotes");
 
 			//if (!m_latestMapRBRRX.comment.empty())
 			//	sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" " : L"") << _ToWString(m_latestMapRBRRX.comment);
 
 			g_pFontRBRRXLoadTrackSpec->DrawText(posx, posy + (iFontHeight * iPrintRow++), C_CARMODELTITLETEXT_COLOR, sStrStream.str().c_str(), 0);
-			g_pFontRBRRXLoadTrackSpec->DrawText(posx, posy + (iFontHeight * iPrintRow++), C_CARMODELTITLETEXT_COLOR, m_latestMapRBRRX.author.c_str(), 0);
+
+			sStrStream.clear();
+			sStrStream.str(std::wstring());
+			if (!m_latestMapRBRRX.author.empty())
+				sStrStream << _ToWString(m_latestMapRBRRX.author);
+
+			if(!m_latestMapRBRRX.comment.empty())
+				sStrStream << (sStrStream.tellp() != std::streampos(0) ? L" | " : L"") << _ToWString(m_latestMapRBRRX.comment);
+
+			//g_pFontRBRRXLoadTrackSpec->DrawText(posx, posy + (iFontHeight * iPrintRow++), C_CARMODELTITLETEXT_COLOR, m_latestMapRBRRX.author.c_str(), 0);
+			g_pFontRBRRXLoadTrackSpec->DrawText(posx, posy + (iFontHeight * iPrintRow++), C_CARMODELTITLETEXT_COLOR, sStrStream.str().c_str(), 0);
 
 			// Draw RBRRX minimap on LoadTrack screen
 			RBRRX_DrawMinimap(m_latestMapRBRRX.folderName, 2, pOutputD3DDevice);

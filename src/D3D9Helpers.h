@@ -77,6 +77,9 @@ extern bool _iEnds_With(std::string s1, std::string s2, bool s2AlreadyInLowercas
 extern bool _iEqual(const std::string& s1, const std::string& s2, bool s2AlreadyInLowercase = FALSE);   // Case-insensitive string comparison
 extern bool _iEqual(const std::wstring& s1, const std::wstring& s2, bool s2AlreadyInLowercase = FALSE); // Case-insensitive string comparison
 
+extern size_t _iFind(std::wstring s1, std::wstring s2, bool s2AlreadyInLowercase = FALSE); // Case-insensitive "find s2 from s1" (contains)
+
+
 extern void _Trim(std::wstring & s);  // Trim wstring (in-place, modify the s)
 extern void _Trim(std::string & s);  // Trim string (in-place, modify the s)
 //extern std::wstring _TrimCopy(std::wstring s);  // Trim wstring (return new string, the s unmodified)

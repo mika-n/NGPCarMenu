@@ -50,6 +50,9 @@
 
 #include "SQLite/CppSQLite3U.h"
 
+#include "rapidjson/document.h"		// RapidJSON json handling (uses https://github.com/Tencent/rapidjson library)
+#include "rapidjson/istreamwrapper.h"
+
 #define C_PLUGIN_TITLE_FORMATSTR "NGPCarMenu Plugin (%s) by MIKA-N"	// %s is replaced with version tag strign. Remember to tweak it in NGPCarMenu.rc when making a new release
 #define C_PLUGIN_FOOTER_STR      "https://github.com/mika-n/NGPCarMenu"
 
@@ -115,6 +118,16 @@ typedef struct {
 
 } RBRCarSelectionMenuEntry;
 typedef RBRCarSelectionMenuEntry* PRBRCarSelectionMenuEntry;
+
+
+// If RBRCIT carList.ini file is missing then NGPCarMenu reads the car details from RSF json files
+typedef struct {
+	rapidjson::Document carsJson;
+	rapidjson::Document carGroupMapJson;
+	rapidjson::Document carGroupsJson;
+} RSFJsonData;
+typedef RSFJsonData* PRSFJsonData;
+
 
 //------------------------------------------------------------------------------------------------
 
@@ -655,8 +668,9 @@ protected:
 	bool InitCarModelNameFromCarsFile(CSimpleIniWEx* stockCarListINIFile, PRBRCarSelectionMenuEntry pRBRCarSelectionMenuEntry, int menuIdx);
 	bool InitCarSpecDataFromPhysicsFile(const std::string& folderName, PRBRCarSelectionMenuEntry pRBRCarSelectionMenuEntry, int* outNumOfGears);
 	bool InitCarSpecDataFromNGPFile(CSimpleIniWEx* ngpCarListINIFile, PRBRCarSelectionMenuEntry pRBRCarSelectionMenuEntry, int numOfGears);
+	bool InitCarSpecDataFromRSFFile(PRSFJsonData rsfJsonData, PRBRCarSelectionMenuEntry pRBRCarSelectionMenuEntry, int numOfGears);
 
-	void RefreshSettingsFromPluginINIFile(bool addMissingSections = false);
+	void RefreshSettingsFromPluginINIFile(bool fistTimeRefresh = false);
 	void SaveSettingsToPluginINIFile();
 	void SaveSettingsToRBRTMRecentMaps();
 	void SaveSettingsToRBRRXRecentMaps();
@@ -677,7 +691,7 @@ protected:
 	
 	int	 RaceStatDB_AddMap(int mapID, const std::string& mapName, int racingType);		// Add a new map to D_Map table
 	int	 RaceStatDB_AddCar(int carSlotID); // Add a new car to D_Car table with details of the car in carSlotID
-	int  RaceStatDB_AddCurrentRallyResult(int mapKey, int mapID, int carKey, int carSlotID, const std::string& mapName); // Add the current rally data to raceStatDB
+	int  RaceStatDB_AddCurrentRallyResult(int mapKey, int mapID, int carKey, int carSlotID, const std::string& mapName, int customRaceType); // Add the current rally data to raceStatDB
 	
 	int  RaceStatDB_QueryLastestStageResults(int mapID, const std::string& mapName, int racingType, std::vector<RaceStatDBStageResult>& latestStageResults);
 
@@ -769,6 +783,8 @@ public:
 	bool m_bAutoExitAfterReplay;				// TRUE=Auto-exit RBR when focus returns to RBR main menu (used only in AutoLogon=ReplayAndExit replay mode, not really relevant in other cases)
 
 	std::wstring m_screenshotPath;				// Path to car preview screenshot images (by default AppPath + \plugins\NGPCarMenu\preview\XResxYRes\)
+	std::wstring m_screenshotPathRSF;			// Path to RSF specific car preview screenshot images (by default AppPath + \rsfdata\images\car_images\)
+
 	int m_screenshotAPIType;					// Uses DIRECTX or GDI API technique to generate a new screenshot file. 0=DirectX (default), 1=GDI. No GUI option, so tweak this in NGPCarMenu.ini file.
 	std::wstring m_screenshotReplayFileName;	// Name of the RBR replay file used when car preview images are generated
 
@@ -777,6 +793,8 @@ public:
 
 	RECT  m_screenshotCroppingRect;				// Cropping rect of a screenshot (in RBR window coordinates)
 	int   m_screenshotCarPosition;				// 0=The default screenshot location for a car (on the road), 1=The car is moved "out-of-scope" in the middle of nowhere (night mode of RBR can be used to create screenshots with black background)
+
+	RECT  m_screenshotCroppingRectRSF;			// Cropping rect of a RSF car screenshot (in RBR window coordinates)
 
 	RECT  m_carSelectLeftBlackBarRect;			// Black bar on the left and right side of the "Select Car" menu (used to hide the default background image)
 	RECT  m_carSelectRightBlackBarRect;			// (see above)
@@ -790,7 +808,8 @@ public:
 	//POINT m_carRBRTM3DModelInfoPosition;		// X Y position of the car info textbox (FIA Category, HP, Transmission, Weight, Year)
 	BOOL  m_carRBRTMPictureUseTransparent;		// 0=Do not try to draw alpha channel (transparency), 1=If PNG file has an alpha channel then draw the image using the alpha channel blending
 
-	LPDIRECT3DVERTEXBUFFER9 m_screenshotCroppingRectVertexBuffer; // Screeshot rect vertex to highlight the current capture area on screen while capturing preview img
+	LPDIRECT3DVERTEXBUFFER9 m_screenshotCroppingRectVertexBuffer;	 // Screeshot rect vertex to highlight the current capture area on screen while capturing preview img
+	LPDIRECT3DVERTEXBUFFER9 m_screenshotCroppingRectVertexBufferRSF; // RSF screenshot croppign rect
 
 	LPDIRECT3DVERTEXBUFFER9 m_minimapVertexBuffer; // Minimap rect vertex to visualize map layout as 2D overview map
 
@@ -858,6 +877,7 @@ public:
 	bool   m_bRBRReplayOrRacingEnding;
 	bool   m_bRBRRacingActive;					// TRUE=Racing active (if m_bRBRRXRacingActive is TRUE also then it is BTB racing and not standard RBR classic track racing)
 	bool   m_bRBRReplayActive;					// TRUE=Track loading for the replay purposes (if m_bRBRRXReplayActive is TRUE also then it is BTB replay and not standard track replay), FALSE=No active replay
+	int    m_iRBRCustomRaceType;				// Custom racing type (0=default)
 
 	float  m_prevRaceTimeClock;					// The previous value of race clock (used to check if there are new time penalties)
 	float  m_latestFalseStartPenaltyTime;		// If there was a false start then this has the false start penalty time (10 sec base penalty + extra time depending on how much early)
@@ -899,6 +919,7 @@ public:
 	void OnPluginActivated(const std::string& pluginName);
 	void OnPluginDeactivated(const std::string& pluginName);
 
+	BOOL OnPrepareTrackLoad(const std::string& pluginName, int rallyType, const std::string& rallyName, DWORD rallyOptions);
 	void OnRaceStarted();		// Race started
 	void OnMapLoaded();			// Map (replay or racing) loading completed and countdown to zero starts soon
 	void OnMapUnloaded();		// Map is about to be unloaded (if racing was active then the race is about to end also)

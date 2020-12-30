@@ -43,7 +43,7 @@ typedef BOOL  (APIENTRY* tAPI_DrawTextW)(DWORD pluginID, int textID, int posX, i
 
 typedef BOOL  (APIENTRY* tAPI_PrepareBTBTrackLoad)(DWORD pluginID, LPCSTR szBTBTrackName, LPCSTR szBTBTrackFolderName);     // Prepare track #41 (CortezArbroz) for a BTB track loading. Custom plugin should call m_pGame->StartGame(...) IRBR method to start a rally after calling this prepare function
 typedef BOOL  (APIENTRY* tAPI_CheckBTBTrackLoadStatus)(DWORD pluginID, LPCSTR szBTBTrackName, LPCSTR szBTBTrackFolderName); // Check the status of BTB track loading to make sure driver didn't end up in #41 (CortezArbroz) original track
-
+typedef BOOL  (APIENTRY* tAPI_PrepareTrackLoad)(DWORD pluginID, int rallyType, LPCSTR szRallyName, DWORD rallyOptions);     // Send a notification to NGPCarMenu that a new rally is about to begin
 
 #define C_NGPCARMENU_DLL_FILENAME "\\Plugins\\NGPCarMenu.dll"
 
@@ -103,6 +103,7 @@ protected:
 
 	tAPI_PrepareBTBTrackLoad     fp_API_PrepareBTBTrackLoad;
 	tAPI_CheckBTBTrackLoadStatus fp_API_CheckBTBTrackLoadStatus;
+	tAPI_PrepareTrackLoad        fp_API_PrepareTrackLoad;
 
 	void Cleanup()
 	{
@@ -117,6 +118,7 @@ protected:
 		fp_API_DrawTextW = nullptr;
 		fp_API_PrepareBTBTrackLoad = nullptr;
 		fp_API_CheckBTBTrackLoadStatus = nullptr;
+		fp_API_PrepareTrackLoad = nullptr;
 
 		if (hDLLModule) ::FreeLibrary(hDLLModule);
 		hDLLModule = nullptr;
@@ -173,6 +175,7 @@ public:
 				fp_API_DrawTextW = (tAPI_DrawTextW)GetProcAddress(hDLLModule, "API_DrawTextW");
 				fp_API_PrepareBTBTrackLoad = (tAPI_PrepareBTBTrackLoad)GetProcAddress(hDLLModule, "API_PrepareBTBTrackLoad");
 				fp_API_CheckBTBTrackLoadStatus = (tAPI_CheckBTBTrackLoadStatus)GetProcAddress(hDLLModule, "API_CheckBTBTrackLoadStatus");
+				fp_API_PrepareTrackLoad = (tAPI_PrepareTrackLoad)GetProcAddress(hDLLModule, "API_PrepareTrackLoad");
 			}
 		}
 
@@ -300,6 +303,15 @@ public:
 	{
 		if (fp_API_PrepareBTBTrackLoad != nullptr && fp_API_CheckBTBTrackLoadStatus != nullptr)
 			return fp_API_CheckBTBTrackLoadStatus(pluginID, szBTBTrackName, szBTBTrackFolderName);
+		else
+			return FALSE;
+	}
+
+	// Notify NGPCarMenu that a new rally is about to begin
+	BOOL PrepareTrackLoad(DWORD pluginID, int rallyType, LPCSTR szRallyName, DWORD rallyOptions)
+	{
+		if (fp_API_PrepareTrackLoad != nullptr)
+			return fp_API_PrepareTrackLoad(pluginID, rallyType, szRallyName, rallyOptions);
 		else
 			return FALSE;
 	}

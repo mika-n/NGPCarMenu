@@ -68,7 +68,8 @@ PRBRMapSettingsEx    g_pRBRMapSettingsEx = nullptr;
 __int32*			 g_pRBRGhostCarReplayMode = nullptr; 
 PRBRGhostCarMovement g_pRBRGhostCarMovement = nullptr;
 
-PRBRMenuSystem		 g_pRBRMenuSystem = nullptr;		// Pointer to RBR menu system (all standard menu objects)
+PRBRMenuSystem		 g_pRBRMenuSystem = nullptr;		      // Pointer to RBR menu system (all standard menu objects)
+PRBRMenuSystem		 g_pRBRRaceTimePauseMenuSystem = nullptr; // Pointer to RBR raceTime pause menu
 
 PRBRPacenotes		 g_pRBRPacenotes = nullptr;
 
@@ -281,6 +282,7 @@ BOOL RBRAPI_InitializeObjReferences()
 	if (g_pRBRGhostCarReplayMode == nullptr) g_pRBRGhostCarReplayMode = (__int32*)(0x892EEC);
 
 	if (g_pRBRMenuSystem == nullptr)  g_pRBRMenuSystem = (PRBRMenuSystem) * (DWORD*)(0x0165FA48);
+	if (g_pRBRRaceTimePauseMenuSystem == nullptr)  g_pRBRRaceTimePauseMenuSystem = (PRBRMenuSystem) * (DWORD*)(0x0165FC48);
 
 	// Fixed location to mapSettings struct (ie. not a pointer reference). 
 	g_pRBRMapSettings = (PRBRMapSettings)(0x1660800);

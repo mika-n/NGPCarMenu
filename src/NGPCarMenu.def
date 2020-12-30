@@ -12,3 +12,4 @@ API_DrawTextA
 API_DrawTextW
 API_PrepareBTBTrackLoad
 API_CheckBTBTrackLoadStatus
+API_PrepareTrackLoad

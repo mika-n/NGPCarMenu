@@ -558,7 +558,9 @@ typedef RBRPluginMenuItemObj3* PRBRPluginMenuItemObj3;
 // MenuObj->pItemObj pointer (fex main menu options)
 typedef struct {
 #pragma pack(push,1)
-	BYTE pad1[0x24];          // 0x00
+	BYTE pad1[0x08];          // 0x00
+	__int32 menuItemStatus;	  // 0x08 (bitflags bit0=Enabled/Disabled)
+	BYTE pad2[0x24 - 0x08 - sizeof(__int32)];          
 	LPCSTR  szMenuTitleID;    // 0x24
 	LPCWSTR wszMenuTitleName; // 0x28
 #pragma pack(pop)
@@ -682,6 +684,7 @@ struct RBRMenuObj {
 
 
 // Offset 0x165FA48  Master menuSystem object
+// Offset 0x165FC48  RaceTime pause menuSystem object
 typedef struct {
 #pragma pack(push,1)
 	LPVOID unknown1;						   // 0x00 (Pointer to unknown RBR object)
@@ -786,6 +789,7 @@ extern PRBRCarMovement		g_pRBRCarMovement;	// Valid only when racing or replay i
 extern PRBRMapInfo			g_pRBRMapInfo;		// Valid only when racing or replay is on
 
 extern PRBRMenuSystem		g_pRBRMenuSystem;
+extern PRBRMenuSystem		g_pRBRRaceTimePauseMenuSystem;
 
 extern PRBRPacenotes		g_pRBRPacenotes;	// Array of pacenotes. Valid only at racetime.
 

@@ -38,7 +38,7 @@
 
 namespace fs = std::filesystem;
 
-#define C_RACESTATDB_SCHEMA_VERSION 2
+#define C_RACESTATDB_SCHEMA_VERSION 3
 
 //-------------------------------------------------------------------------------------------------------------------
 // Initialize race stat DB if it is missing
@@ -119,9 +119,10 @@ bool CNGPCarMenu::RaceStatDB_Initialize()
 				"PluginType char(4) not null,"		// Plugin or RBR game mode used in this race (RBR, TM, RX, RSF, UNK=Unknown)
 				"PluginSubType char(4) not null,"	// RBR: QR, MP | TM: SHA, OFF, ONL | RX: SHA | RSF: SHA, OFF, ONL | UNK=Unknown
 				"CarSlot integer not null"			// Car slot# 0..7
+
 				//"SetupFile char(64),"				// Name of the setup file (empty str at the moment, not yet implemented)
-				//"DamagesOnStart char(64),"			// Damages on the start line (not yet implemented)
-				//"DamagesOnFinish char(64)"			// Damages on the finish line (not yet implemented)
+				//"DamagesOnStart char(64),"		// Damages on the start line (not yet implemented)
+				//"DamagesOnFinish char(64)"		// Damages on the finish line (not yet implemented)
 				");") == SQLITE_OK;
 
 			g_pRaceStatDB->execDML("CREATE INDEX idx_F_RallyResult_CarMap ON F_RallyResult(CarKey, MapKey)");
@@ -176,13 +177,13 @@ bool CNGPCarMenu::RaceStatDB_Initialize()
 				",D_Map M"
 				",D_Car C"
 				",(SELECT MapKey, MIN(FinishTime) as FinishTime FROM F_RallyResult WHERE FinishTime IS NOT NULL GROUP BY MapKey) MapBest"
-				",(SELECT MapKey, CarKey, MIN(FinishTime) as FinishTime FROM F_RallyResult WHERE FinishTime IS NOT NULL GROUP BY MapKey, CarKey) CarBest"
+				",(SELECT F.MapKey, C.ModelName, MIN(F.FinishTime) as FinishTime FROM F_RallyResult F, D_Car C WHERE F.FinishTime IS NOT NULL AND F.CarKey = C.CarKey GROUP BY F.MapKey, C.ModelName) CarBest"
 				",(SELECT F.MapKey, C.FIACategory, MIN(F.FinishTime) as FinishTime FROM F_RallyResult F, D_Car C WHERE F.FinishTime IS NOT NULL AND F.CarKey = C.CarKey GROUP BY F.MapKey, C.FIACategory) FIACatBest"
 				" WHERE FRR.CarKey = C.CarKey"
 				" AND FRR.MapKey = M.MapKey"
 				" AND FRR.FinishTime IS NOT NULL"
 				" AND FRR.MapKey = MapBest.MapKey"
-				" AND FRR.MapKey = CarBest.MapKey AND FRR.CarKey = CarBest.CarKey"
+				" AND FRR.MapKey = CarBest.MapKey AND C.ModelName = CarBest.ModelName"
 				" AND FRR.MapKey = FIACatBest.MapKey AND C.FIACategory = FIACatBest.FIACategory"
 				" ORDER BY FRR.RaceKey DESC") == SQLITE_OK;
 		}
@@ -226,9 +227,19 @@ bool CNGPCarMenu::RaceStatDB_UpgradeSchema()
 		LogPrint("RaceStatDB_UpgradeSchema. OldVersion=%d  NewVersion=%d", currentDBVersion, C_RACESTATDB_SCHEMA_VERSION);
 
 		//Schema updates:
-		// Version 1 -> 2: F_RallyResultSummary view updated. Drop the old view to force it to be re-created
-		if(currentDBVersion <= 1)
+		// Version 1 -> 2
+		if (currentDBVersion <= 1)
+		{
+			// F_RallyResultSummary view updated. Drop the old view to force it to be re - created with new fields
 			g_pRaceStatDB->execDML("drop view if exists V_RallyResultSummary");
+		}
+
+		// Version 2 -> 3
+		if (currentDBVersion <= 2)
+		{
+			// F_RallyResultSummary view updated (CarRecord group by CarModel name to group together results from different NGP version)
+			g_pRaceStatDB->execDML("drop view if exists V_RallyResultSummary");
+		}
 
 		// Update version tag
 		g_pRaceStatDB->execDML((std::string("UPDATE StatInfo SET AttribValue='") + std::to_string(C_RACESTATDB_SCHEMA_VERSION) + "' WHERE AttribName='Version'").c_str());
@@ -531,7 +542,7 @@ int CNGPCarMenu::RaceStatDB_AddCar(int carSlotID)
 //-------------------------------------------------------------------------------------------------------------------
 // Add the current race result to statDB
 //
-int CNGPCarMenu::RaceStatDB_AddCurrentRallyResult(int mapKey, int mapID, int carKey, int carSlotID, const std::string& mapName)
+int CNGPCarMenu::RaceStatDB_AddCurrentRallyResult(int mapKey, int mapID, int carKey, int carSlotID, const std::string& mapName, int customRaceType)
 {
 	static char* tyreTypeArray[]    = { "T", "T", "T", "G", "G", "G", "S" }; // 0=Dry tarmac, 1=Intermediate tarmac, 2=Wet tarmac, 3=Dry gravel, 4=Inter gravel, 5=Wet gravel, 6=Snow
 	static char* tyreSubTypeArray[] = { "D", "I", "W", "D", "I", "W", "S" }; // D=Dry, I=Intermediate, W=Wet, S=Snow
@@ -637,8 +648,7 @@ int CNGPCarMenu::RaceStatDB_AddCurrentRallyResult(int mapKey, int mapID, int car
 		if (_iEqual(sActivePluginName, "rallysimfans.hu", true)) sActivePluginName = "RSF";
 		qryStmt.bind(23, sActivePluginName.substr(0, 4).c_str());
 		
-		if (sActivePluginName == "RSF") sTextValue = "SD"; // TODO. Not yet implemented "RSF race type" identification
-		else if (sActivePluginName == "TM" && m_iRBRTMCarSelectionType == 1) sTextValue = "ONL";
+		if (customRaceType == 2) sTextValue = "ONL";
 		else sTextValue = "SD";
 		qryStmt.bind(24, sTextValue.c_str());
 

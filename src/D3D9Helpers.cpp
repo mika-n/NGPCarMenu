@@ -135,6 +135,13 @@ inline bool _iEqual(const std::string& s1, const std::string& s2, bool s2Already
 }
 
 
+size_t _iFind(std::wstring s1, std::wstring s2, bool s2AlreadyInLowercase)
+{
+	std::transform(s1.begin(), s1.end(), s1.begin(), ::tolower);
+	if (!s2AlreadyInLowercase) std::transform(s2.begin(), s2.end(), s2.begin(), ::tolower);
+	return s1.find(s1);
+}
+
 //
 // Trim/LTrim/RTrim wstring objects (the string obj is trimmed in-place, the original string modified)
 //
