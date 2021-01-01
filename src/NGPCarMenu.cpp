@@ -57,6 +57,7 @@ tRBRSaveReplay        Func_OrigRBRSaveReplay = nullptr;		    //
 
 tRBRControllerAxisData Func_OrigRBRControllerAxisData = nullptr;// Controller axis data, the custom method is used to fix inverted pedal RBR bug
 
+tRBRCallForHelp Func_OrigRBRCallForHelp = nullptr; // CallForHelp handler
 
 //------------------------------------------------------------------------------------------------
 
@@ -845,6 +846,8 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 
 	m_latestMapID = m_latestCarID = -1;
 	m_latestFalseStartPenaltyTime = m_latestOtherPenaltyTime = m_prevRaceTimeClock = 0.0f;
+	m_latestCallForHelpCount = 0;
+	m_latestCallForHelpTick = 0;
 
 	m_bGenerateReplayMetadataFile = TRUE;
 
@@ -860,6 +863,7 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	gtcRBRReplay = nullptr;
 	gtcRBRSaveReplay = nullptr;
 	gtcRBRControllerAxisData = nullptr;
+	gtcRBRCallForHelp = nullptr;
 
 	//RefreshSettingsFromPluginINIFile();
 
@@ -883,6 +887,7 @@ CNGPCarMenu::~CNGPCarMenu(void)
 		SAFE_DELETE(gtcRBRReplay);
 		SAFE_DELETE(gtcRBRSaveReplay);
 		SAFE_DELETE(gtcRBRControllerAxisData);
+		SAFE_DELETE(gtcRBRCallForHelp);
 
 #if USE_DEBUG == 1
 		SAFE_DELETE(g_pFontDebug);
@@ -4066,6 +4071,9 @@ const char* CNGPCarMenu::GetName(void)
 			Func_OrigRBRControllerAxisData = (tRBRControllerAxisData)gtcRBRControllerAxisData->GetTrampoline();
 		}
 
+		gtcRBRCallForHelp = new DetourXS((LPVOID)0x56E6D0, ::CustomRBRCallForHelp, TRUE);
+		Func_OrigRBRCallForHelp = (tRBRCallForHelp)gtcRBRCallForHelp->GetTrampoline();
+
 		// Override the gray RBRRX "loading track debug msg screen" with a real map preview img. Do this only one time when this plugin was initialized for the first time
 		if (m_iMenuRBRRXOption && m_bShowCustomLoadTrackScreenRBRRX)
 			RBRRX_OverrideLoadTrackScreen();
@@ -4676,7 +4684,11 @@ void CNGPCarMenu::OnMapLoaded()
 	m_latestMapID = g_pRBRGameModeExt2->trackID;
 	//m_latestMapID = g_pRBRMapSettings->trackID;
 
+	// TODO: Move these to "latest" struct
 	m_latestFalseStartPenaltyTime = m_latestOtherPenaltyTime = 0.0f;
+	m_latestCallForHelpCount = 0;
+	m_latestCallForHelpTick = 0;
+
 	m_prevRaceTimeClock = g_pRBRCarInfo->raceTime;
 
 	if (GetActivePluginName() == "TM")
@@ -5904,6 +5916,15 @@ void CNGPCarMenu::CompleteSaveReplayProcess(const std::string& replayFileName)
 
 
 //--------------------------------------------------------------------------------------------
+// If call for help was called then set the tick when it was called (increases the callForHelp counter on the next penalty)
+//
+void CNGPCarMenu::CustomRBRCallForHelp()
+{
+	m_latestCallForHelpTick = GetTickCount32();
+}
+
+
+//--------------------------------------------------------------------------------------------
 // D3D9 BeginScene callback handler. 
 // If current menu is "SelectCar" then show custom car details or if custom replay video is playing then generate preview images.
 //
@@ -5975,12 +5996,20 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 	if (g_pRBRPlugin->GetActiveRacingType() > 0)
 	{
 		float timeDelta = g_pRBRCarInfo->raceTime - g_pRBRPlugin->m_prevRaceTimeClock;
-		if (timeDelta > 2.0f)
+		if (timeDelta >= 1.0f)
 		{
 			if (g_pRBRCarInfo->falseStart && g_pRBRCarInfo->stageStartCountdown > -1.0f && g_pRBRPlugin->m_latestFalseStartPenaltyTime == 0.0f)
 				g_pRBRPlugin->m_latestFalseStartPenaltyTime = timeDelta;
 			else
+			{
 				g_pRBRPlugin->m_latestOtherPenaltyTime += timeDelta;
+
+				if (g_pRBRPlugin->m_latestCallForHelpTick != 0 && timeDelta >= 20.0f && (GetTickCount32() - g_pRBRPlugin->m_latestCallForHelpTick) < 3000)
+				{
+					g_pRBRPlugin->m_latestCallForHelpTick = 0;
+					g_pRBRPlugin->m_latestCallForHelpCount++;
+				}
+			}
 		}
 
 		g_pRBRPlugin->m_prevRaceTimeClock = g_pRBRCarInfo->raceTime;
@@ -6045,5 +6074,18 @@ float __fastcall CustomRBRControllerAxisData(void* objPointer, DWORD /*ignoreEDX
 	default:
 		return Func_OrigRBRControllerAxisData(objPointer, axisID);
 	}
+}
+
+
+//----------------------------------------------------------------------------------------------------------------------------
+// RBR CallForHelp
+//
+void __fastcall CustomRBRCallForHelp(void* objPointer, DWORD /*ignoreEDX*/)
+{
+	if (!g_bRBRHooksInitialized)
+		return;
+	
+	g_pRBRPlugin->CustomRBRCallForHelp();
+	Func_OrigRBRCallForHelp(objPointer);
 }
 

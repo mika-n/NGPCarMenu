@@ -456,6 +456,7 @@ int CNGPCarMenu::RaceStatDB_GetCarKey(int carSlotID)
 	int carMenuIdx = RBRAPI_MapCarIDToMenuIdx(carSlotID);
 	int iNGPVersion = std::stoi(std::to_string(m_iPhysicsNGMajorVer) + std::to_string(m_iPhysicsNGMinorVer) + std::to_string(m_iPhysicsNGPatchVer) + std::to_string(m_iPhysicsNGBuildVer));
 
+	std::string sModelName = _ToString(g_RBRCarSelectionMenuEntry[carMenuIdx].wszCarModel);
 	std::string sRevision = _ToString(g_RBRCarSelectionMenuEntry[carMenuIdx].wszCarPhysicsRevision);
 	if (sRevision.empty())
 		sRevision = "UNK";
@@ -464,13 +465,37 @@ int CNGPCarMenu::RaceStatDB_GetCarKey(int carSlotID)
 	{
 		CppSQLite3Query qryData;
 
-
-		iResult = queryGetIntValue("SELECT CarKey FROM D_Car WHERE ModelName = ? AND Revision = ? AND NGPVersion = ?", 
+/*		iResult = queryGetIntValue("SELECT CarKey FROM D_Car WHERE ModelName = ? AND Revision = ? AND NGPVersion = ?", 
 			_ToString(g_RBRCarSelectionMenuEntry[carMenuIdx].wszCarModel).c_str(),
 			sRevision.c_str(),
 			iNGPVersion
 		);
+*/
+		CppSQLite3Statement qryStmt = g_pRaceStatDB->compileStatement("SELECT CarKey, FIACategory FROM D_Car WHERE ModelName = ? AND Revision = ? AND NGPVersion = ?");
+		qryStmt.bind(1, sModelName.c_str());
+		qryStmt.bind(2, sRevision.c_str());
+		qryStmt.bind(3, iNGPVersion);
+		qryData = qryStmt.execQuery();
 
+		if (!qryData.eof() && qryData.numFields() >= 2)
+		{
+			// Get existing carKey and FIACategory. If the existing category is UNK, but the current value has a valid category then update it
+			iResult = qryData.getIntField(0, -1);
+			if (iResult > 0 && g_RBRCarSelectionMenuEntry[carMenuIdx].szCarCategory[0] != '\0' && _iEqual(qryData.getStringField(1, "unk"), "unk", true))
+			{
+				// Update existing UNK=unknown category with a new valid FIACategory value
+				LogPrint("Updating FIACategory of %s (%s)", sModelName.c_str(), g_RBRCarSelectionMenuEntry[carMenuIdx].szCarCategory);
+
+				qryData.finalize();
+				qryStmt.finalize();
+
+				qryStmt = g_pRaceStatDB->compileStatement("UPDATE D_Car SET FIACategory=? WHERE ModelName=?");
+				qryStmt.bind(1, g_RBRCarSelectionMenuEntry[carMenuIdx].szCarCategory);
+				qryStmt.bind(2, sModelName.c_str());
+				qryStmt.execDML();
+			}
+		}
+		
 		if (iResult < 0)
 			iResult = RaceStatDB_AddCar(carSlotID);
 	}
@@ -608,7 +633,7 @@ int CNGPCarMenu::RaceStatDB_AddCurrentRallyResult(int mapKey, int mapID, int car
 		qryStmt.bind(9, FloorFloatToDouble(m_latestOtherPenaltyTime, 1));
 
 		qryStmt.bind(10, g_pRBRCarInfo->falseStart);
-		qryStmt.bind(11, 0); // TODO. The num of CallForHelp calls not yet implemented (the value is always zero at the moment)
+		qryStmt.bind(11, m_latestCallForHelpCount);
 
 		qryStmt.bind(12, g_pRBRMapSettings->transmissionType == 0 ? "M": g_pRBRMapSettings->transmissionType == 1 ? "A" : "U" );
 

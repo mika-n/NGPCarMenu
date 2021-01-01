@@ -454,6 +454,8 @@ extern int     __fastcall CustomRBRSaveReplay(void* objPointer, DWORD dummyEDX, 
 
 extern float   __fastcall CustomRBRControllerAxisData(void* objPointer, DWORD dummyEDX, __int32 axisID);
 
+extern void    __fastcall CustomRBRCallForHelp(void* objPointer, DWORD dummyEDX);
+
 extern RBRCarSelectionMenuEntry g_RBRCarSelectionMenuEntry[];
 
 extern wchar_t* g_pOrigLoadReplayStatusText;
@@ -653,6 +655,7 @@ protected:
 	DetourXS* gtcRBRReplay;
 	DetourXS* gtcRBRSaveReplay;
 	DetourXS* gtcRBRControllerAxisData;
+	DetourXS* gtcRBRCallForHelp;
 
 	static BOOL CALLBACK MonitorEnumCallback(HMONITOR hMon, HDC hdc, LPRECT lprcMonitor, LPARAM pData);
 
@@ -882,6 +885,8 @@ public:
 	float  m_prevRaceTimeClock;					// The previous value of race clock (used to check if there are new time penalties)
 	float  m_latestFalseStartPenaltyTime;		// If there was a false start then this has the false start penalty time (10 sec base penalty + extra time depending on how much early)
 	float  m_latestOtherPenaltyTime;			// Other penalties during the latest rally (not including false start penalty, but including callForHelp, cut penalties and so on...)
+	int    m_latestCallForHelpCount;			// Num of callForHelps during the current race
+	DWORD  m_latestCallForHelpTick;				// The tick count when the previous callForHelp was called. If the time penalty is >=20secs and it was given within 2 secs then the penalty was because of callForHelp
 
 	LPDIRECT3DVERTEXBUFFER9 m_rbrLatestStageResultsBackground;
 	std::vector<RaceStatDBStageResult> m_rbrLatestStageResults;
@@ -965,6 +970,7 @@ public:
 
 	BOOL CustomRBRReplay(const char* szReplayFileName);
 	BOOL CustomRBRSaveReplay(const char* szReplayFileName);
+	void CustomRBRCallForHelp();
 
 	//void CompleteSaveReplayProcess(const std::list<std::wstring>& replayFileQueue);
 	void CompleteSaveReplayProcess(const std::string& replayFileName);

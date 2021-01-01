@@ -129,6 +129,9 @@ typedef int(__thiscall* tRBRSaveReplay)(void* objPointer, const char* szReplayFi
 // Overloaded dinput controller axis (digital button/steering analog axis) handler method
 typedef float(__thiscall* tRBRControllerAxisData)(void* objPointer, __int32 axisID);
 
+// Overloaded CallForHelp handler
+typedef void(__thiscall* tRBRCallForHelp)(void* objPointer);
+
 
 //----------------------------------------------------------------------------------
 // Note! The formula of PAD size = Start idx of the next item - Idx of the prev item - sizeof of the previous item
