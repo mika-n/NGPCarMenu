@@ -333,11 +333,15 @@ BOOL APIENTRY API_LoadCustomImage(DWORD pluginID, int imageID, LPCSTR szFileName
 {
 	BOOL bRetValue = TRUE;
 
-	if (pImagePos == nullptr || pImageSize == nullptr)
+	CRBRPluginIntegratorLink* pPluginIntegrationLink = ::GetPluginIDIntegrationLink(pluginID);
+	if (pPluginIntegrationLink == nullptr || g_pRBRPlugin == nullptr)
 		return FALSE;
 
-	CRBRPluginIntegratorLink* pPluginIntegrationLink = ::GetPluginIDIntegrationLink(pluginID);
-	if (pPluginIntegrationLink == nullptr)
+	// ImageID -100 is the custom trackLoad img (pre-defined imageID, not to be used with any of the other custom images)
+	if (imageID == -100)
+		return g_pRBRPlugin->SetupCustomTrackLoadImage(_ToWString(szFileName), pImagePos, pImageSize, dwImageFlags);
+
+	if (pImagePos == nullptr || pImageSize == nullptr)
 		return FALSE;
 
 	CRBRPluginIntegratorLinkImage* pPluginLinkImage = nullptr;
@@ -783,6 +787,8 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	
 	ZeroMemory(&m_screenshotCroppingRectRSF, sizeof(m_screenshotCroppingRectRSF));
 
+	ZeroMemory(&m_customTrackLoadImg, sizeof(m_customTrackLoadImg));
+
 	// Default is the old behaviour not doing any scaling or stretching (the built-in RBR car selection
 	// screen has a different default than RBRTM_CarPictureScale option because of historical reasons. Don't want to break anything in old INI settings)
 	m_carPictureScale = -1;
@@ -901,7 +907,9 @@ CNGPCarMenu::~CNGPCarMenu(void)
 		SAFE_RELEASE(m_minimapVertexBuffer);
 		SAFE_RELEASE(m_screenshotCroppingRectVertexBuffer);
 		SAFE_RELEASE(m_screenshotCroppingRectVertexBufferRSF);
+		
 		ClearCachedCarPreviewImages();
+		ClearCustomTrackLoadImage();
 
 		SAFE_RELEASE(m_rbrLatestStageResultsBackground);
 
@@ -2869,7 +2877,7 @@ bool CNGPCarMenu::InitCarSpecDataFromRSFFile(PRSFJsonData rsfJsonData, PRBRCarSe
 	try
 	{
 		// If rsfJsonData is not yet read and parsed then do it now
-		if (rsfJsonData->carsJson.IsNull())
+/*		if (rsfJsonData->carsJson.IsNull())
 		{
 			std::ifstream jsonFile(m_sRBRRootDir + "\\rsfdata\\cache\\cars.json");
 			rapidjson::IStreamWrapper isw(jsonFile);
@@ -2877,6 +2885,10 @@ bool CNGPCarMenu::InitCarSpecDataFromRSFFile(PRSFJsonData rsfJsonData, PRBRCarSe
 		}
 
 		if (rsfJsonData->carsJson.HasParseError() || !rsfJsonData->carsJson.IsArray())
+			return FALSE;
+*/
+		rsfCarID = GetCarIDFromRSFFile(rsfJsonData, pRBRCarSelectionMenuEntry->szCarMenuName);
+		if (rsfCarID <= 0)
 			return FALSE;
 
 		if (rsfJsonData->carGroupMapJson.IsNull())
@@ -2900,7 +2912,7 @@ bool CNGPCarMenu::InitCarSpecDataFromRSFFile(PRSFJsonData rsfJsonData, PRBRCarSe
 			return FALSE;
 
 		// Find the rsf carID
-		for (rapidjson::Value::ConstValueIterator itr = rsfJsonData->carsJson.Begin(); itr != rsfJsonData->carsJson.End(); ++itr)
+/*		for (rapidjson::Value::ConstValueIterator itr = rsfJsonData->carsJson.Begin(); itr != rsfJsonData->carsJson.End(); ++itr)
 		{
 			if ((*itr).HasMember("name") && _iEqual(((*itr)["name"].GetString()), pRBRCarSelectionMenuEntry->szCarMenuName))
 			{
@@ -2911,6 +2923,7 @@ bool CNGPCarMenu::InitCarSpecDataFromRSFFile(PRSFJsonData rsfJsonData, PRBRCarSe
 
 		if (rsfCarID == 0)
 			return FALSE;
+*/
 
 		// Find groups of the car (one or more)
 		rsfCarGroupMap.reserve(5);
@@ -2948,10 +2961,54 @@ bool CNGPCarMenu::InitCarSpecDataFromRSFFile(PRSFJsonData rsfJsonData, PRBRCarSe
 	}
 	catch (...)
 	{
-		DebugPrint("ERROR. Failed to read car spec details from RSF car json files");
+		LogPrint("ERROR. Failed to read car spec details from RSF car json files");
 	}
 	
 	return FALSE;
+}
+
+int CNGPCarMenu::GetCarIDFromRSFFile(PRSFJsonData rsfJsonData, std::string carModelName)
+{
+	int rsfCarID = 0;
+
+	if (carModelName.empty())
+		return 0;
+
+	try
+	{
+		RSFJsonData tempRsfJsonData;
+
+		if (rsfJsonData == nullptr)
+			rsfJsonData = &tempRsfJsonData;
+
+		// If rsfJsonData is not yet read and parsed then do it now
+		if (rsfJsonData->carsJson.IsNull())
+		{
+			std::ifstream jsonFile(m_sRBRRootDir + "\\rsfdata\\cache\\cars.json");
+			rapidjson::IStreamWrapper isw(jsonFile);
+			rsfJsonData->carsJson.ParseStream(isw);
+		}
+
+		if (rsfJsonData->carsJson.HasParseError() || !rsfJsonData->carsJson.IsArray())
+			return 0;
+
+		// Find the rsf carID
+		_ToLowerCase(carModelName);
+		for (rapidjson::Value::ConstValueIterator itr = rsfJsonData->carsJson.Begin(); itr != rsfJsonData->carsJson.End(); ++itr)
+		{
+			if ((*itr).HasMember("name") && _iEqual(((*itr)["name"].GetString()), carModelName, true))
+			{
+				if ((*itr).HasMember("id")) rsfCarID = atoi((*itr)["id"].GetString());
+				break;
+			}
+		}
+	}
+	catch (...)
+	{
+		LogPrint("ERROR. Failed to read carID from RSF car json files");
+	}
+
+	return rsfCarID;
 }
 
 
@@ -3541,6 +3598,56 @@ bool CNGPCarMenu::ReadCarPreviewImageFromFile(int selectedCarIdx, float x, float
 	if (!SUCCEEDED(hResult)) pOutImageTexture->imgSize.cx = -1;
 
 	return pOutImageTexture->imgSize.cx != -1;
+}
+
+
+//-----------------------------------------------------------------------------------------------
+// Initialize custom track load image
+//
+BOOL CNGPCarMenu::SetupCustomTrackLoadImage(std::wstring& sFileName, const POINT* pImagePos, const SIZE* pImageSize, DWORD dwImageFlags)
+{
+	float x, y, cx, cy;
+	if (pImagePos == nullptr)
+	{
+		x = y = 0.0f;
+	}
+	else
+	{
+		x = static_cast<float>(pImagePos->x);
+		y = static_cast<float>(pImagePos->y);
+	}
+
+	if (pImageSize == nullptr)
+	{
+		cx = static_cast<float>(g_rectRBRWndClient.right);
+		RBRAPI_MapRBRPointToScreenPoint(0, 390.0f, nullptr, &cy);
+	}
+	else
+	{
+		cx = static_cast<float>(pImageSize->cx);
+		cy = static_cast<float>(pImageSize->cy);
+	}
+
+	DebugPrint(L"SetupCustomTrackLoadImage. File=%s (%f, %f)(%f, %f)", sFileName.c_str(), x, y, cx, cy);
+
+	try
+	{
+		std::vector<std::wstring> fileNameList;
+		if (_FindMatchingFileNames(sFileName, fileNameList, true, 1) > 0)
+		{
+			if(!SUCCEEDED(D3D9CreateRectangleVertexTexBufferFromFile(g_pRBRIDirect3DDevice9, fileNameList[0], x, y, cx, cy, &m_customTrackLoadImg, dwImageFlags)))
+				SAFE_RELEASE(m_customTrackLoadImg.pTexture);
+		}
+		else
+			SAFE_RELEASE(m_customTrackLoadImg.pTexture);
+	}
+	catch (...)
+	{
+		// Eat all exceptions
+		SAFE_RELEASE(m_customTrackLoadImg.pTexture);
+	}
+
+	return m_customTrackLoadImg.pTexture != nullptr;
 }
 
 
@@ -4738,6 +4845,8 @@ void CNGPCarMenu::OnRaceStarted()
 {
 	m_rbrLatestStageResults.clear(); // Notify rbr recent list to update the list of recent races when the RBR returns to the main screen
 
+	//SetupCustomTrackLoadImage(std::wstring(L"c:\\apps\\rbr\\Textures\\splash\\121-*.dds"), nullptr, nullptr, IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER | IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO);
+
 	m_bRBRRacingActive = TRUE;
 	m_bMapLoadedCalled = m_bMapUnloadedCalled = FALSE;
 
@@ -4782,6 +4891,7 @@ void CNGPCarMenu::OnRaceEnded()
 	DebugPrint("OnRaceEnded. RBRRacingActive=%d  RBRRXRacingActive=%d  Map=%s (%d %d)", m_bRBRRacingActive, m_bRBRRXRacingActive, _ToString(m_latestMapName).c_str(), m_latestMapID, g_pRBRGameModeExt->trackID);
 	m_bRBRRacingActive = m_bRBRRXRacingActive = m_bRBRReplayOrRacingEnding = FALSE;
 	m_iRBRCustomRaceType = 0;
+	ClearCustomTrackLoadImage();
 }
 
 void CNGPCarMenu::OnReplayStarted()
@@ -5173,6 +5283,21 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 			// If this was a restart then call MapUnloaded to "finalize" the previous race before restarting the new race
 			if(!m_bMapUnloadedCalled) OnMapUnloaded();
 			m_bMapLoadedCalled = FALSE;
+		}
+
+		// Draw custom track loading img if it was set
+		if (GetActiveRacingType() == 1 && m_customTrackLoadImg.pTexture != nullptr)
+		{
+			if (!(m_customTrackLoadImg.dwImageFlags & IMAGE_TEXTURE_ALPHA_BLEND))
+			{
+				D3DRECT rect = { static_cast<long>(m_customTrackLoadImg.x), static_cast<long>(m_customTrackLoadImg.y), static_cast<long>(m_customTrackLoadImg.x + m_customTrackLoadImg.cx), static_cast<long>(m_customTrackLoadImg.y + m_customTrackLoadImg.cy) };
+				g_pRBRIDirect3DDevice9->Clear(1, &rect, D3DCLEAR_TARGET, D3DCOLOR_ARGB(255, 0, 0, 0), 0, 0);
+			}
+			else 
+				m_pD3D9RenderStateCache->EnableTransparentAlphaBlending();
+
+			D3D9DrawVertexTex2D(g_pRBRIDirect3DDevice9, m_customTrackLoadImg.pTexture, m_customTrackLoadImg.vertexes2D, m_pD3D9RenderStateCache);
+			m_pD3D9RenderStateCache->RestoreState();
 		}
 	}
 
@@ -5750,7 +5875,7 @@ void CNGPCarMenu::CompleteSaveReplayProcess(const std::string& replayFileName)
 {
 	std::wstring fileNameWithoutExt;
 	std::wstring fileNameMapIDPart;
-	bool bWriteMapName = true;
+	//bool bWriteMapName = true;
 	bool bBTBReplayFile;
 
 	std::string sReplayINIFileName;
@@ -5759,6 +5884,7 @@ void CNGPCarMenu::CompleteSaveReplayProcess(const std::string& replayFileName)
 	CSimpleIniWEx stockCarListINIFile;
 	WCHAR wszStockCarINISection[8];
 	
+	std::string sCarModelName;
 	//std::string sCarModelFolder;
 	std::string sCarPhysicsFolder;
 
@@ -5805,9 +5931,15 @@ void CNGPCarMenu::CompleteSaveReplayProcess(const std::string& replayFileName)
 		{
 			replayINIFile.SetValue("Replay", "Name",        m_latestMapRBRRX.name.c_str());
 			replayINIFile.SetValue("Replay", "TrackFolder", m_latestMapRBRRX.folderName.c_str());
-			bWriteMapName = FALSE;
+			//bWriteMapName = FALSE;
+		}
+		else
+		{
+			std::wstring wsStageName = GetMapNameByMapID(m_latestMapID);
+			if (!wsStageName.empty()) replayINIFile.SetValue("Replay", "Name", _ToString(wsStageName).c_str());
 		}
 
+/*
 		if (m_bRallySimFansPluginInstalled)
 		{
 			// Hotlap and Online rallies in RSF replay file has the map name in the filename already (and the RBR runtime mapID is often just a stub placeholer)
@@ -5834,6 +5966,7 @@ void CNGPCarMenu::CompleteSaveReplayProcess(const std::string& replayFileName)
 			std::wstring wsStageName = GetMapNameByMapID(m_latestMapID);
 			if (!wsStageName.empty()) replayINIFile.SetValue("Replay", "Name", _ToString(wsStageName).c_str());
 		}
+*/
 
 		replayINIFile.SetValue("Replay", "MapID", std::to_string(m_latestMapID).c_str());
 
@@ -5854,12 +5987,14 @@ void CNGPCarMenu::CompleteSaveReplayProcess(const std::string& replayFileName)
 				sCarPhysicsFolder = _ToString(g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(m_latestCarID)].wszCarPhysics);
 
 			ptrValue = *((DWORD*)g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(m_latestCarID)].ptrCarDescription);
-			if(/*!m_bRallySimFansPluginInstalled &&*/ ptrValue != 0 && ((const char*)ptrValue)[0] != '\0')
-				replayINIFile.SetValue("Replay", "CarModel", (const char*)ptrValue);
+			if (/*!m_bRallySimFansPluginInstalled &&*/ ptrValue != 0 && ((const char*)ptrValue)[0] != '\0')
+				//replayINIFile.SetValue("Replay", "CarModel", (const char*)ptrValue);
+				sCarModelName = (const char*)ptrValue;
 			else
 				// If the RBR carMenuDescription is missing then take the CarModel directly from the local data structure (well, usually it is the same as ptrCarDescription name)
-				replayINIFile.SetValue("Replay", "CarModel", _ToString(g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(m_latestCarID)].wszCarModel).c_str());
+				sCarModelName = _ToString(g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(m_latestCarID)].wszCarModel);
 
+			replayINIFile.SetValue("Replay", "CarModel", sCarModelName.c_str());
 			replayINIFile.SetLongValue("Replay", "CarSlot", m_latestCarID);
 
 			replayINIFile.SetValue("Replay", "CarModelFolder", _ToString(g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(m_latestCarID)].wszCarModelFolder).c_str() /*sCarModelFolder.c_str()*/ );
@@ -5903,6 +6038,7 @@ void CNGPCarMenu::CompleteSaveReplayProcess(const std::string& replayFileName)
 		{
 			replayINIFile.SetValue("Replay", "RSF", m_sRSFVersion.c_str());
 			//replayINIFile.SetValue("Replay", "RSFCarPhysics", sCarPhysicsFolder.c_str());
+			replayINIFile.SetLongValue("Replay", "RSFCarID", GetCarIDFromRSFFile(nullptr, sCarModelName));
 		}
 
 		replayINIFile.SaveFile(sReplayINIFileName.c_str());
@@ -5985,7 +6121,9 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 		iPrevMode = g_pRBRGameMode->gameMode;
 		DebugPrint(szTxtBuf);
 	}
+	
 	//swprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, L"CurMenu=%08x  CustPlugin=%08x", (DWORD)g_pRBRMenuSystem->currentMenuObj, (DWORD)g_pRBRPluginMenuSystem->customPluginMenuObj );
+	//swprintf_s(szTxtBuf, COUNT_OF_ITEMS(szTxtBuf) - 1, L"Mode=%d", g_pRBRGameMode->gameMode);
 	//g_pFontDebug->DrawText(5, 1 * 15, C_DEBUGTEXT_COLOR, szTxtBuf, D3DFONT_CLEARTARGET);
 #endif
 

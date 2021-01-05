@@ -630,6 +630,8 @@ protected:
 	bool m_bMapLoadedCalled;	// TRUE-MapLoaded event handler already called for this racing or replying
 	bool m_bMapUnloadedCalled;  // TRUE-MapUnloaded event handler already called for this racing or replaying
 
+	IMAGE_TEXTURE m_customTrackLoadImg; // Custom image on a track load screen (tracks in classic format, BTB trackLoading uses track.ini.SplashScreen image as a load screen)
+
 	bool m_bRenameDriverNameActive;		// TRUE=Renaming of driver profile process is active (NGPCarMenu checks if the creation succeeded and takes a backup of the prev profile before completing the renaming)
 	int  m_iProfileMenuPrevSelectedIdx; //
 	std::string m_sMenuPrevDriverName;	// Previous driver name
@@ -671,7 +673,9 @@ protected:
 	bool InitCarModelNameFromCarsFile(CSimpleIniWEx* stockCarListINIFile, PRBRCarSelectionMenuEntry pRBRCarSelectionMenuEntry, int menuIdx);
 	bool InitCarSpecDataFromPhysicsFile(const std::string& folderName, PRBRCarSelectionMenuEntry pRBRCarSelectionMenuEntry, int* outNumOfGears);
 	bool InitCarSpecDataFromNGPFile(CSimpleIniWEx* ngpCarListINIFile, PRBRCarSelectionMenuEntry pRBRCarSelectionMenuEntry, int numOfGears);
+
 	bool InitCarSpecDataFromRSFFile(PRSFJsonData rsfJsonData, PRBRCarSelectionMenuEntry pRBRCarSelectionMenuEntry, int numOfGears);
+	int  GetCarIDFromRSFFile(PRSFJsonData rsfJsonData, std::string carModelName);
 
 	void RefreshSettingsFromPluginINIFile(bool fistTimeRefresh = false);
 	void SaveSettingsToPluginINIFile();
@@ -974,6 +978,9 @@ public:
 
 	//void CompleteSaveReplayProcess(const std::list<std::wstring>& replayFileQueue);
 	void CompleteSaveReplayProcess(const std::string& replayFileName);
+
+	BOOL SetupCustomTrackLoadImage(std::wstring& sFileName, const POINT* pImagePos, const SIZE* pImageSize, DWORD dwImageFlags);
+	void ClearCustomTrackLoadImage() { SAFE_RELEASE(m_customTrackLoadImg.pTexture); ZeroMemory(&m_customTrackLoadImg, sizeof(m_customTrackLoadImg)); }
 
 	void RBRRX_CustomLoadTrackScreen();
 	BOOL RBRRX_PrepareLoadTrack(const std::string& mapName, std::string mapFolderName);

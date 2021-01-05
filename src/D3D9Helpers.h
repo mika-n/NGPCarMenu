@@ -138,6 +138,9 @@ extern bool _IsFileInUTF16Format(const std::wstring& fileName); //
 
 extern std::string  _ConvertUTF16FileContentToUTF8(const std::string& fileName);  // Read UTF16 file content and convert it to UTF8 string
 
+extern int _FindMatchingFileNames(const std::string& fileSearchPath, std::vector<std::string>& resultList, bool resultWithFullPath = true, int maxResults = -1); // Find filenames using wildchar logic and return the list of matching filenames (maxResults=-1 returns all matches, maxResults=1 would return only the first match)
+extern int _FindMatchingFileNames(const std::wstring& fileSearchPath, std::vector<std::wstring>& resultList, bool resultWithFullPath = true, int maxResults = -1); // Find filenames using wildchar logic and return the list of matching filenames (maxResults=-1 returns all matches, maxResults=1 would return only the first match)
+
 // Define sub function to call 32bit GetTickCount WinAPI method and to eliminate the VC++ warning about wrapping timer if the PC runs 49 days without a reboot.
 // Another way to avoid the warning would be to us GetTickCount64 but it is not available in older WinOS versions.
 inline DWORD GetTickCount32()
@@ -506,6 +509,9 @@ typedef struct
 	IDirect3DTexture9* pTexture;		//   D3D9 texture (fex loaded from a PNG or BMP file)
 	CUSTOM_VERTEX_TEX_2D vertexes2D[4];	//   Rectangle vertex at specified pixel position and size
 	SIZE imgSize;						//   The original size of the loaded PNG file image
+
+	float x, y, cx, cy;					// Requested image position and size
+	DWORD dwImageFlags;					// Requested image options
 } IMAGE_TEXTURE;						// RBR car preview picture (texture and rect vertex)
 typedef IMAGE_TEXTURE* PIMAGE_TEXTURE;
 

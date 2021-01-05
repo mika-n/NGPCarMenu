@@ -703,6 +703,61 @@ bool _IsFileInUTF16Format(const std::wstring& fileName)
 	return _IsFileInUTF16Format(_ToString(fileName));
 }
 
+int _FindMatchingFileNames(const std::string& fileSearchPath, std::vector<std::string>& resultList, bool resultWithFullPath, int maxResults)
+{
+	WIN32_FIND_DATA fd {0};
+	HANDLE hFindFile = ::FindFirstFile(fileSearchPath.c_str(), &fd);
+	int iFoundFiles = 0;
+
+	if (hFindFile == INVALID_HANDLE_VALUE)
+		return 0;
+
+	std::string sPath;
+	if (resultWithFullPath) sPath = fs::path(fileSearchPath).parent_path().string();
+
+	resultList.reserve(5);
+	while (TRUE)
+	{
+		if (fd.cFileName[0] != '\0')
+		{
+			resultList.push_back((resultWithFullPath ? sPath + "\\" + fd.cFileName : fd.cFileName));
+			iFoundFiles++;
+		}
+
+		if (iFoundFiles <= maxResults || ::FindNextFile(hFindFile, &fd) == FALSE)
+			break;
+	}
+	return iFoundFiles;
+}
+
+int _FindMatchingFileNames(const std::wstring& fileSearchPath, std::vector<std::wstring>& resultList, bool resultWithFullPath, int maxResults)
+{
+	WIN32_FIND_DATAW fd{ 0 };
+	HANDLE hFindFile = ::FindFirstFileW(fileSearchPath.c_str(), &fd);
+	int iFoundFiles = 0;
+
+	if (hFindFile == INVALID_HANDLE_VALUE)
+		return 0;
+
+	std::wstring sPath;
+	if(resultWithFullPath) sPath = fs::path(fileSearchPath).parent_path().wstring();
+
+	resultList.reserve(5);
+	while (TRUE)
+	{
+		if (fd.cFileName[0] != L'\0')
+		{
+			resultList.push_back((resultWithFullPath ? sPath + L"\\" + fd.cFileName : fd.cFileName));
+			iFoundFiles++;
+		}
+
+		if (iFoundFiles <= maxResults || ::FindNextFileW(hFindFile, &fd) == FALSE)
+			break;
+	}
+	return iFoundFiles;
+}
+
+
 // Read UTF16 file content and convert it to multibyte UTF8 string
 std::string _ConvertUTF16FileContentToUTF8(const std::string& fileName)
 {
@@ -1634,6 +1689,12 @@ HRESULT D3D9CreateRectangleVertexTexBufferFromFile(const LPDIRECT3DDEVICE9 pD3De
 
 	if (!fs::exists(fileName))
 		return E_INVALIDARG;
+
+	pOutImageTexture->x = x;
+	pOutImageTexture->y = y;
+	pOutImageTexture->cx = cx;
+	pOutImageTexture->cy = cy;
+	pOutImageTexture->dwImageFlags = dwFlags;
 
 	HRESULT hResult = D3D9LoadTextureFromFile(pD3Device, fileName, &pTempTexture, &pOutImageTexture->imgSize);
 	if (SUCCEEDED(hResult))
