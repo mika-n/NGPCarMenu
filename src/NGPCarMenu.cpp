@@ -95,11 +95,24 @@ WCHAR* g_pOrigCarSpecTitleHorsepower = nullptr;
 
 std::vector<std::string>* g_pRBRRXTrackNameListAlreadyInitialized = nullptr; // List of RBRRX track folder names with a missing track.ini splashscreen option and already scanned for default JPG/PNG preview image during this RBR process life time
 
+
 int g_iInvertedPedalsStartupFixFlag = 0;               // Bit1=Throttle (0x01), Bit2=Brake (0x02), Bit3=Clutch (0x04), Bit4=Handbrake (0x08). Fix the inverted pedal bug in RBR when the game is started or alt-tabbed to desktop
 
 int g_iXInputSplitThrottleBrakeAxis = -1; // -1=disabled, 0>=Split xinput controller# left and right analog triggers (by default RBR sees xbox xinput triggers as one axis)
 int g_iXInputThrottle = 1;				  // 1=Right trigger
 int g_iXInputBrake = 0;                   // 0=Left trigger
+
+float g_fControllerAxisDeadzone[] =
+{   0.0f,    // idx 0 = steering
+    0, 0,
+	0.0f,    // idx 3 = throttle
+	0,
+	0.0f,    // idx 5 = brake
+	0.0f,    // idx 6 = clutch
+	0, 0, 0, 0,
+	0.0f     // idx 11 = handbrake
+};
+
 
 CppSQLite3DB* g_pRaceStatDB = nullptr;	// Race statistics database
 
@@ -1518,6 +1531,17 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool fistTimeRefresh)
 		else
 			g_iXInputSplitThrottleBrakeAxis = -1;
 
+
+		// Deadzone value for steering, throttle, brake, clutch, handbrake
+		g_fControllerAxisDeadzone[0] = static_cast<float>(pluginINIFile.GetValueEx(L"Default", L"", L"DeadzoneSteering", 0)) / 100.0f;
+		g_fControllerAxisDeadzone[3] = static_cast<float>(pluginINIFile.GetValueEx(L"Default", L"", L"DeadzoneThrottle", 0)) / 100.0f;
+		g_fControllerAxisDeadzone[5] = static_cast<float>(pluginINIFile.GetValueEx(L"Default", L"", L"DeadzoneBrake", 0)) / 100.0f;
+		g_fControllerAxisDeadzone[6] = static_cast<float>(pluginINIFile.GetValueEx(L"Default", L"", L"DeadzoneHandbrake", 0)) / 100.0f;
+		g_fControllerAxisDeadzone[11] = static_cast<float>(pluginINIFile.GetValueEx(L"Default", L"", L"DeadzoneClutch", 0)) / 100.0f;
+
+		LogPrint("DEBUG: DeadzoneThrottle=%f", g_fControllerAxisDeadzone[3]);
+		LogPrint("DEBUG: DeadzoneBrake=%f", g_fControllerAxisDeadzone[5]);
+		LogPrint("DEBUG: DeadzoneSteering=%f", g_fControllerAxisDeadzone[0]);
 
 		if (fistTimeRefresh)
 		{
@@ -4204,8 +4228,15 @@ const char* CNGPCarMenu::GetName(void)
 			Func_OrigRBRSaveReplay = (tRBRSaveReplay)gtcRBRSaveReplay->GetTrampoline();
 		}
 
-		if (g_iInvertedPedalsStartupFixFlag != 0)
+		if (g_iInvertedPedalsStartupFixFlag != 0 
+			|| g_iXInputSplitThrottleBrakeAxis >= 0 
+			|| g_fControllerAxisDeadzone[0] > 0.0f 
+			|| g_fControllerAxisDeadzone[3] > 0.0f 
+			|| g_fControllerAxisDeadzone[5] > 0.0f
+			|| g_fControllerAxisDeadzone[6] > 0.0f 
+			|| g_fControllerAxisDeadzone[11] > 0.0f)
 		{
+			// Inverted pedal bugfix, combined Throttle&Brake axis split or deadzone set. Enable custom handle of controller events
 			gtcRBRControllerAxisData = new DetourXS((LPVOID)0x4C2610, ::CustomRBRControllerAxisData, TRUE);
 			Func_OrigRBRControllerAxisData = (tRBRControllerAxisData)gtcRBRControllerAxisData->GetTrampoline();
 		}
@@ -6272,8 +6303,12 @@ int __fastcall CustomRBRSaveReplay(void* objPointer, DWORD /*ignoreEDX*/, const 
 //----------------------------------------------------------------------------------------------------------------------------
 // RBR controller axis data handler. Workaround the RBR bug with inverted pedals (ie. throttle goes to 100% at starting line until user presses the inverted pedal at least once)
 //
+#define RBRAXIS_DEADZONE(axisValue, deadZoneValue) (axisValue - deadZoneValue <= 0.0f ? 0.0f : RANGE_REMAP(axisValue - deadZoneValue, 0.0f, 1.0f - deadZoneValue, 0.0f, 1.0f))
+#define RBRAXIS_DEADZONE_NEGATIVE(axisValue, deadZoneValue) (axisValue + deadZoneValue >= 0.0f ? 0.0f : -1.0f * RANGE_REMAP(fabs(axisValue) - deadZoneValue, 0.0f, 1.0f - deadZoneValue, 0.0f, 1.0f))
+
 float __fastcall CustomRBRControllerAxisData(void* objPointer, DWORD /*ignoreEDX*/, __int32 axisID)
 {
+/*
 #if USE_DEBUG == 1
 	static float prevThrottle = 0, prevBrake = 0, prevCombined = 0, currentAxisValue;
 	bool bPrintDebug = false;
@@ -6298,50 +6333,136 @@ float __fastcall CustomRBRControllerAxisData(void* objPointer, DWORD /*ignoreEDX
 	}
 
 	if(bPrintDebug)
-		DebugPrint("axisID=%d  Throttle=%f  Brake=%f  Combined=%f", axisID, prevThrottle, prevBrake, prevCombined );
+		DebugPrint("axisID=%d  Throttle=%f  Brake=%f  Combined=%f.  Throttle3=%f  Brake5=%f  Combined4=%f", axisID, prevThrottle, prevBrake, prevCombined,
+			FloorFloat(((PRBRControllerAxis)objPointer)[3].controllerAxisData->axisValue, 2),
+			FloorFloat(((PRBRControllerAxis)objPointer)[5].controllerAxisData->axisValue, 2),
+			FloorFloat(((PRBRControllerAxis)objPointer)[4].controllerAxisData->axisValue, 2)
+		);
 #endif
+*/
+
+	const static int invertedPedalBitFlag[] = 
+	{   0,0,0, 
+		0x01,    // idx 3 = throttle bit1
+		0, 
+		0x02,    // idx 5 = brake bit2
+		0x08,    // idx 6 = clutch bit4
+		0,0,0,0,
+		0x04     // idx 11 = handbrake bit3
+	};
 
 	switch (axisID)
 	{
-	case 3: // Throttle
-		if (g_iInvertedPedalsStartupFixFlag & 0x01 && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData != nullptr && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->dinputStatus != 0)
-			return 1.0f;//@0x795e14 max value. Could it be something else than 1.0f?
-		return Func_OrigRBRControllerAxisData(objPointer, axisID);
-
-	case 4: // Combined Throttle+Brake. If the source is xbox gamepad then RBR see analog triggers combined. Handle those xinput triggers as separate throttle and brake
-		if(g_iXInputSplitThrottleBrakeAxis >= 0 && ((PRBRControllerAxis)objPointer)[4].controllerAxisData != nullptr)
+	case 0: // Steering
+		if (((PRBRControllerAxis)objPointer)[0].controllerAxisData != nullptr)
 		{ 
-			XINPUT_STATE state;
-			ZeroMemory(&state, sizeof(XINPUT_STATE));
-			if (XInputGetState(g_iXInputSplitThrottleBrakeAxis, &state) == ERROR_SUCCESS)
+			if (g_fControllerAxisDeadzone[0] > 0.0f)
 			{
-				// Clear combinedThrottleBrake activity and then set separate throttle and brake values
-				((PRBRControllerAxis)objPointer)[4].controllerAxisData->axisValue = 0.0f;
-				((PRBRControllerAxis)objPointer)[4].controllerAxisData->axisRawValue = 0;
+				if(((PRBRControllerAxis)objPointer)[0].controllerAxisData->axisValue < 0.0f)
+					((PRBRControllerAxis)objPointer)[0].controllerAxisData->axisValue = RBRAXIS_DEADZONE_NEGATIVE(((PRBRControllerAxis)objPointer)[0].controllerAxisData->axisValue, g_fControllerAxisDeadzone[0]);
+				else
+					((PRBRControllerAxis)objPointer)[0].controllerAxisData->axisValue = RBRAXIS_DEADZONE(((PRBRControllerAxis)objPointer)[0].controllerAxisData->axisValue, g_fControllerAxisDeadzone[0]);
+			}
+		}
+		return Func_OrigRBRControllerAxisData(objPointer, 0);
 
-				if (((PRBRControllerAxis)objPointer)[3].controllerAxisData != nullptr)
-					((PRBRControllerAxis)objPointer)[3].controllerAxisData->axisValue = RANGE_REMAP(static_cast<float>((g_iXInputThrottle == 0 ? state.Gamepad.bLeftTrigger : state.Gamepad.bRightTrigger)), 0.0f, 255.0f, 0.0f, 1.0f);
+	case 3:  // Throttle
+	case 5:  // Brake
+	case 6:  // Clutch 
+	case 11: // Handbrake
+		if (((PRBRControllerAxis)objPointer)[axisID].controllerAxisData != nullptr)
+		{
+			BOOL bAxisInverted = (g_iInvertedPedalsStartupFixFlag & invertedPedalBitFlag[axisID]);
+			if (bAxisInverted && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->dinputStatus != 0)
+				return 1.0f;// Inverted pedal bugfix at starting line when the pedal is not yet pressed at all.  @0x795e14 max value. Could it be something else than 1.0f?
 
-				if (((PRBRControllerAxis)objPointer)[5].controllerAxisData != nullptr)
-					((PRBRControllerAxis)objPointer)[5].controllerAxisData->axisValue = RANGE_REMAP(static_cast<float>((g_iXInputBrake == 0 ? state.Gamepad.bLeftTrigger : state.Gamepad.bRightTrigger)), 0.0f, 255.0f, 0.0f, 1.0f);
+			if (g_fControllerAxisDeadzone[axisID] > 0.0f)
+			{
+				if (bAxisInverted)
+					((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue = 1.0f - RBRAXIS_DEADZONE(1.0f - ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue, g_fControllerAxisDeadzone[axisID]);
+				else
+					((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue = RBRAXIS_DEADZONE(((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue, g_fControllerAxisDeadzone[axisID]);
 			}
 		}
 		return Func_OrigRBRControllerAxisData(objPointer, axisID);
 
+/*
+	case 3: // Throttle
+		if (((PRBRControllerAxis)objPointer)[3].controllerAxisData != nullptr)
+		{
+			if (g_iInvertedPedalsStartupFixFlag & 0x01 &&((PRBRControllerAxis)objPointer)[3].controllerAxisData->dinputStatus != 0)
+				return 1.0f;//@0x795e14 max value. Could it be something else than 1.0f?
+
+			if (g_fDeadzoneThrottle > 0.0f)
+			{
+				if (g_iInvertedPedalsStartupFixFlag & 0x01)
+					((PRBRControllerAxis)objPointer)[3].controllerAxisData->axisValue = 1.0f - RBRAXIS_DEADZONE(1.0f - ((PRBRControllerAxis)objPointer)[3].controllerAxisData->axisValue, g_fDeadzoneThrottle);
+				else
+					((PRBRControllerAxis)objPointer)[3].controllerAxisData->axisValue = RBRAXIS_DEADZONE(((PRBRControllerAxis)objPointer)[3].controllerAxisData->axisValue, g_fDeadzoneThrottle);
+			}
+		}
+		return Func_OrigRBRControllerAxisData(objPointer, 3);
+*/
+
+	case 4: // Combined Throttle+Brake if the source is xbox/xinput controller. Workaround the issue and handle those xinput triggers as separate throttle and brake
+		if(g_iXInputSplitThrottleBrakeAxis >= 0 && ((PRBRControllerAxis)objPointer)[4].controllerAxisData != nullptr)
+		{ 
+			// Clear combinedThrottleBrake activity and then split throttle and brake values to a dedicated throttle and brake controls
+			((PRBRControllerAxis)objPointer)[4].controllerAxisData->axisValue = 0.0f;
+			((PRBRControllerAxis)objPointer)[4].controllerAxisData->axisRawValue = 0;
+
+			XINPUT_STATE state;
+			ZeroMemory(&state, sizeof(XINPUT_STATE));
+			XInputGetState(g_iXInputSplitThrottleBrakeAxis, &state);
+
+			if (((PRBRControllerAxis)objPointer)[3].controllerAxisData != nullptr)
+				((PRBRControllerAxis)objPointer)[3].controllerAxisData->axisValue = RANGE_REMAP(static_cast<float>((g_iXInputThrottle == 0 ? state.Gamepad.bLeftTrigger : state.Gamepad.bRightTrigger)), 0.0f, 255.0f, 0.0f, 1.0f);
+
+			if (((PRBRControllerAxis)objPointer)[5].controllerAxisData != nullptr)
+				((PRBRControllerAxis)objPointer)[5].controllerAxisData->axisValue = RANGE_REMAP(static_cast<float>((g_iXInputBrake == 0 ? state.Gamepad.bLeftTrigger : state.Gamepad.bRightTrigger)), 0.0f, 255.0f, 0.0f, 1.0f);
+			
+		}
+		return Func_OrigRBRControllerAxisData(objPointer, 4);
+
+/*
 	case 5: // Brake
-		if (g_iInvertedPedalsStartupFixFlag & 0x02 && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData != nullptr && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->dinputStatus != 0)
-			return 1.0f;
-		return Func_OrigRBRControllerAxisData(objPointer, axisID);
+		if (((PRBRControllerAxis)objPointer)[5].controllerAxisData != nullptr)
+		{
+			if (g_iInvertedPedalsStartupFixFlag & 0x02 && ((PRBRControllerAxis)objPointer)[5].controllerAxisData->dinputStatus != 0)
+				return 1.0f;
+
+			if (g_fDeadzoneBrake > 0.0f)
+			{
+				if (g_iInvertedPedalsStartupFixFlag & 0x02)
+					((PRBRControllerAxis)objPointer)[5].controllerAxisData->axisValue = 1.0f - RBRAXIS_DEADZONE(1.0f - ((PRBRControllerAxis)objPointer)[5].controllerAxisData->axisValue, g_fDeadzoneBrake);
+				else
+					((PRBRControllerAxis)objPointer)[5].controllerAxisData->axisValue = RBRAXIS_DEADZONE(((PRBRControllerAxis)objPointer)[5].controllerAxisData->axisValue, g_fDeadzoneBrake);
+			}
+		}
+		return Func_OrigRBRControllerAxisData(objPointer, 5);
 
 	case 6: // Clutch 
-		if (g_iInvertedPedalsStartupFixFlag & 0x08 && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData != nullptr && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->dinputStatus != 0)
-			return 1.0f;
-		return Func_OrigRBRControllerAxisData(objPointer, axisID);
+		if (((PRBRControllerAxis)objPointer)[6].controllerAxisData != nullptr)
+		{
+			if (g_iInvertedPedalsStartupFixFlag & 0x08 && ((PRBRControllerAxis)objPointer)[6].controllerAxisData->dinputStatus != 0)
+				return 1.0f;
+
+			if (g_fDeadzoneClutch > 0.0f)
+				RBRAXIS_DEADZONE(((PRBRControllerAxis)objPointer)[6].controllerAxisData->axisValue, g_fDeadzoneClutch);
+		}
+		return Func_OrigRBRControllerAxisData(objPointer, 6);
 
 	case 11: // Handbrake
-		if (g_iInvertedPedalsStartupFixFlag & 0x04 && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData != nullptr && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->dinputStatus != 0)
-			return 1.0f;
-		return Func_OrigRBRControllerAxisData(objPointer, axisID);
+		if (((PRBRControllerAxis)objPointer)[11].controllerAxisData != nullptr)
+		{
+			if (g_iInvertedPedalsStartupFixFlag & 0x04 && ((PRBRControllerAxis)objPointer)[11].controllerAxisData->dinputStatus != 0)
+				return 1.0f;
+
+			if (g_fDeadzoneHandbrake > 0.0f)
+				RBRAXIS_DEADZONE(((PRBRControllerAxis)objPointer)[11].controllerAxisData->axisValue, g_fDeadzoneHandbrake);
+		}
+		return Func_OrigRBRControllerAxisData(objPointer, 11);
+*/
 
 	default:
 		return Func_OrigRBRControllerAxisData(objPointer, axisID);

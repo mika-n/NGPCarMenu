@@ -69,6 +69,7 @@ extern void DebugPrintFunc(LPCWSTR lpszFormat, ...);
 #endif
 
 #define RANGE_REMAP(value, valueRangeMin, valueRangeMax, outputRangeMin, outputRangeMax) (outputRangeMin + (outputRangeMax - outputRangeMin) * ((value - valueRangeMin) / (valueRangeMax - valueRangeMin)))
+#define RANGE_CLAMP(value, valueMin, valueMax) ((value <= valueMin ? valueMin : (value >= valueMax ? valueMax : value)))
 
 extern bool _iStarts_With(std::wstring s1, std::wstring s2, bool s2AlreadyInLowercase = FALSE);	 // Case-insensitive starts_with string comparison
 extern bool _iEnds_With(std::wstring s1, std::wstring s2, bool s2AlreadyInLowercase = FALSE);    // Case-insensitive ends_with string comparison
