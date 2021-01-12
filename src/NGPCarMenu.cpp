@@ -37,6 +37,9 @@
 
 #include <wincodec.h>			// GUID_ContainerFormatPng 
 
+#include <xinput.h>				// xinput controller inputs DEBUG to split xbox gamepad axis
+#pragma comment(lib, "Xinput")
+
 #include "NGPCarMenu.h"
 //#include "FileWatcher.h"
 
@@ -92,7 +95,11 @@ WCHAR* g_pOrigCarSpecTitleHorsepower = nullptr;
 
 std::vector<std::string>* g_pRBRRXTrackNameListAlreadyInitialized = nullptr; // List of RBRRX track folder names with a missing track.ini splashscreen option and already scanned for default JPG/PNG preview image during this RBR process life time
 
-int g_iInvertedPedalsStartupFixFlag = 0; // Bit1=Throttle (0x01), Bit2=Brake (0x02), Bit3=Clutch (0x04), Bit4=Handbrake (0x08). Fix the inverted pedal bug in RBR when the game is started or alt-tabbed to desktop
+int g_iInvertedPedalsStartupFixFlag = 0;               // Bit1=Throttle (0x01), Bit2=Brake (0x02), Bit3=Clutch (0x04), Bit4=Handbrake (0x08). Fix the inverted pedal bug in RBR when the game is started or alt-tabbed to desktop
+
+int g_iXInputSplitThrottleBrakeAxis = -1; // -1=disabled, 0>=Split xinput controller# left and right analog triggers (by default RBR sees xbox xinput triggers as one axis)
+int g_iXInputThrottle = 1;				  // 1=Right trigger
+int g_iXInputBrake = 0;                   // 0=Left trigger
 
 CppSQLite3DB* g_pRaceStatDB = nullptr;	// Race statistics database
 
@@ -204,8 +211,9 @@ RBRCarSelectionMenuEntry g_RBRCarSelectionMenuEntry[8] = {
 #define C_MENUCMD_RENAMEDRIVER		6
 #define C_MENUCMD_RELOAD			7
 #define C_MENUCMD_CREATE			8
+#define C_MENUCMD_SELECTCARSKIN		9
 
-char* g_NGPCarMenu_PluginMenu[9] = {
+char* g_NGPCarMenu_PluginMenu[10] = {
 	 "> Create option"			// CreateOptions
 	,"> Image option"			// ImageOptions
 	,"> RBRTM integration"		// EnableDisableOptions
@@ -215,6 +223,7 @@ char* g_NGPCarMenu_PluginMenu[9] = {
 	,"RENAME driver profile" // "Rename driver MULLIGATAWNY -> SpeedRacer" in the profile to match the loaded pfXXXX.rbr profile filename (creates a new profile file. Take a backup copy of the old profile file)
 	,"RELOAD settings"		 // Clear cached car images to force re-loading of new images and settings
 	,"CREATE car images"	 // Create new car images (all or only missing car iamges)
+    ,"SELECT car skins"		 // Create new car images (all or only missing car iamges)
 };
 
 // CreateOption menu option names (option values in "Create option")
@@ -771,6 +780,8 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_iCustomReplayState = 0;
 	m_iCustomReplayScreenshotCount = 0;
 	m_bCustomReplayShowCroppingRect = false;
+
+	m_iCustomSelectCarSkinState = 0;
 
 	m_minimapVertexBuffer = nullptr;
 
@@ -1485,6 +1496,27 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool fistTimeRefresh)
 					LogPrint("InvertedPedalsStartupFix enabled and inverted pedals bitflag=%d", g_iInvertedPedalsStartupFixFlag);
 			}
 		}
+
+
+		// Split combined throttle and brake axis as separate throttle and brake (ie set CombinedThrottleBrake axis in RBR to analog trigger and set separate brake and throttle to some unused keyboard keys)
+		g_iXInputSplitThrottleBrakeAxis = pluginINIFile.GetValueEx(L"Default", L"", L"XInputSplitThrottleBrakeAxis", 0);
+		if (g_iXInputSplitThrottleBrakeAxis >= 1)
+		{
+			LogPrint("XInputSplitThrottleBrakeAxis #%d. Assign an analog gamepad trigger key to the combined Accelerate&Brake and some otherwise unused keyboard or gamepad keys to Throttle and Brake options in RBR controller setup screen", g_iXInputSplitThrottleBrakeAxis);
+			g_iXInputSplitThrottleBrakeAxis--;
+
+			g_iXInputBrake = 0;
+			if (_iEqual(pluginINIFile.GetValueEx(L"Default", L"", L"XInputBrake", L"rt"), L"rt", true))
+				g_iXInputThrottle = 1;
+
+			g_iXInputThrottle = 1;
+			if (_iEqual(pluginINIFile.GetValueEx(L"Default", L"", L"XInputThrottle", L"lt"), L"lt", true))
+				g_iXInputThrottle = 0;
+
+			LogPrint("XInputBrake=%d XInputThrottle=%d", g_iXInputBrake, g_iXInputThrottle);
+		}
+		else
+			g_iXInputSplitThrottleBrakeAxis = -1;
 
 
 		if (fistTimeRefresh)
@@ -4555,6 +4587,22 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 				m_sMenuStatusText2 = "Use UP/DOWN ARROW keys to choose characters not supported by the original RBR profile name editor.";
 				m_sMenuStatusText3 = "The profile name can have only valid WinOS filename characters.";
 			}
+
+#if USE_DEBUG == 1
+			else if (m_iMenuSelection == C_MENUCMD_SELECTCARSKIN)
+			{
+				m_iCustomSelectCarSkinState = 1;
+
+				//g_pRBRGameMode->gameMode = 0x03;
+				g_pRBRGameMode->trackID = 0x04;
+				g_pRBRMapSettingsEx->skyCloudType = 0;
+				g_pRBRMapSettingsEx->surfaceWetness = 0;
+				g_pRBRMapSettingsEx->surfaceAge = 0;
+				g_pRBRMapSettingsEx->timeOfDay = 1;
+				g_pRBRMapSettingsEx->skyType = 0;
+				g_pRBRPlugin->m_pGame->StartGame(68, RBRAPI_MapMenuIdxToCarID(0), IRBRGame::GOOD_WEATHER, IRBRGame::TYRE_GRAVEL_DRY, nullptr);
+			}
+#endif
 		}
 
 
@@ -5270,12 +5318,12 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 		if(!m_bMapLoadedCalled) OnMapLoaded();
 	}
 
-	if (g_pRBRGameMode->gameMode == 0x09 || g_pRBRGameMode->gameMode == 0x06)
+	else if (g_pRBRGameMode->gameMode == 0x09 || g_pRBRGameMode->gameMode == 0x06)
 	{
 		if (!m_bMapUnloadedCalled) OnMapUnloaded();
 	}
 
-	if (g_pRBRGameMode->gameMode == 0x05)
+	else if (g_pRBRGameMode->gameMode == 0x05)
 	{
 		// Map is being loaded (prepare OnMapLoaded handler call when the map loading is completed)
 		if (m_bMapLoadedCalled)
@@ -5644,7 +5692,14 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 		}
 	}
 
-	
+#if USE_DEBUG == 1
+	else if (m_iCustomSelectCarSkinState > 0)
+	{
+		g_pFontCarSpecModel->DrawText(5, 5, C_CARMODELTITLETEXT_COLOR, g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(g_pRBRGameMode->carID)].wszCarModel, D3DFONT_CLEARTARGET);
+
+	}
+#endif
+
 #if USE_DEBUG == 1
 /*
 		WCHAR szTxtBuffer[512];
@@ -6153,6 +6208,40 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 		g_pRBRPlugin->m_prevRaceTimeClock = g_pRBRCarInfo->raceTime;
 	}
 
+
+#if USE_DEBUG == 1
+	// DEBUG
+	static DWORD dwResetTick = 0;
+	//if (g_pRBRGameMode->gameMode == 0x01)
+	if (FALSE && (g_pRBRGameMode->gameMode == 0x03 || g_pRBRGameMode->gameMode == 0x01))
+	{
+		if (dwResetTick == 0) dwResetTick = GetTickCount32();
+		else if (GetTickCount32() - dwResetTick > 10000)
+		{
+			DebugPrint("DEBUG: ForceQuitRally");
+			//g_pRBRGameMode->gameMode = 0x0C;
+			g_pRBRGameMode->gameMode = 0x03;
+			g_pRBRGameMode->trackID = 0x04;
+			//g_pRBRGameMode->gameStatus = 0x01;
+			g_pRBRPlugin->m_pGame->StartGame(4, 5, IRBRGame::GOOD_WEATHER, IRBRGame::TYRE_TARMAC_DRY, nullptr);
+			//dwResetTick = GetTickCount32();
+			dwResetTick = 0;
+		}
+	}
+#endif
+/*
+	else if (g_pRBRGameMode->gameMode == 0x03)
+	{
+		if (dwResetTick != 0 && GetTickCount32() - dwResetTick > 10000)
+		{
+			DebugPrint("DEBUG: StartRally");
+			// TODO: Set 0x7c36a8+0x10=0x04
+			g_pRBRPlugin->m_pGame->StartGame(4, 5, IRBRGame::GOOD_WEATHER, IRBRGame::TYRE_GRAVEL_DRY, nullptr);
+			dwResetTick = 0;
+		}
+	}
+*/
+
 	if (g_pRBRGameMode->gameMode != 01)
 		return g_pRBRPlugin->CustomRBRDirectXEndScene(objPointer);
 	else
@@ -6185,13 +6274,58 @@ int __fastcall CustomRBRSaveReplay(void* objPointer, DWORD /*ignoreEDX*/, const 
 //
 float __fastcall CustomRBRControllerAxisData(void* objPointer, DWORD /*ignoreEDX*/, __int32 axisID)
 {
-	//PRBRControllerAxis pAxis = &((PRBRControllerAxis)objPointer)[axisID];
+#if USE_DEBUG == 1
+	static float prevThrottle = 0, prevBrake = 0, prevCombined = 0, currentAxisValue;
+	bool bPrintDebug = false;
+	if (axisID == 3 && ((PRBRControllerAxis)objPointer)[3].controllerAxisData != nullptr && prevThrottle != FloorFloat(((PRBRControllerAxis)objPointer)[3].controllerAxisData->axisValue, 2))
+	{
+		prevThrottle = FloorFloat(((PRBRControllerAxis)objPointer)[3].controllerAxisData->axisValue, 2);
+		bPrintDebug = true;
+	}
+	else if (axisID == 4 && ((PRBRControllerAxis)objPointer)[4].controllerAxisData != nullptr)
+	{	
+		currentAxisValue = FloorFloat(((PRBRControllerAxis)objPointer)[4].controllerAxisData->axisValue, 3);
+		if (prevCombined != currentAxisValue)
+		{
+			prevCombined = currentAxisValue;
+			bPrintDebug = true;
+		}
+	}
+	else if (axisID == 5 && ((PRBRControllerAxis)objPointer)[5].controllerAxisData != nullptr && prevBrake != FloorFloat(((PRBRControllerAxis)objPointer)[5].controllerAxisData->axisValue, 2))
+	{
+		prevBrake = FloorFloat(((PRBRControllerAxis)objPointer)[5].controllerAxisData->axisValue, 2);
+		bPrintDebug = true;
+	}
+
+	if(bPrintDebug)
+		DebugPrint("axisID=%d  Throttle=%f  Brake=%f  Combined=%f", axisID, prevThrottle, prevBrake, prevCombined );
+#endif
 
 	switch (axisID)
 	{
 	case 3: // Throttle
-		if (g_iInvertedPedalsStartupFixFlag & 0x01 && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData != nullptr && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->dinputStatus != 0) //g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[3].controllerAxisData->dinputStatus != 0)
+		if (g_iInvertedPedalsStartupFixFlag & 0x01 && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData != nullptr && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->dinputStatus != 0)
 			return 1.0f;//@0x795e14 max value. Could it be something else than 1.0f?
+		return Func_OrigRBRControllerAxisData(objPointer, axisID);
+
+	case 4: // Combined Throttle+Brake. If the source is xbox gamepad then RBR see analog triggers combined. Handle those xinput triggers as separate throttle and brake
+		if(g_iXInputSplitThrottleBrakeAxis >= 0 && ((PRBRControllerAxis)objPointer)[4].controllerAxisData != nullptr)
+		{ 
+			XINPUT_STATE state;
+			ZeroMemory(&state, sizeof(XINPUT_STATE));
+			if (XInputGetState(g_iXInputSplitThrottleBrakeAxis, &state) == ERROR_SUCCESS)
+			{
+				// Clear combinedThrottleBrake activity and then set separate throttle and brake values
+				((PRBRControllerAxis)objPointer)[4].controllerAxisData->axisValue = 0.0f;
+				((PRBRControllerAxis)objPointer)[4].controllerAxisData->axisRawValue = 0;
+
+				if (((PRBRControllerAxis)objPointer)[3].controllerAxisData != nullptr)
+					((PRBRControllerAxis)objPointer)[3].controllerAxisData->axisValue = RANGE_REMAP(static_cast<float>((g_iXInputThrottle == 0 ? state.Gamepad.bLeftTrigger : state.Gamepad.bRightTrigger)), 0.0f, 255.0f, 0.0f, 1.0f);
+
+				if (((PRBRControllerAxis)objPointer)[5].controllerAxisData != nullptr)
+					((PRBRControllerAxis)objPointer)[5].controllerAxisData->axisValue = RANGE_REMAP(static_cast<float>((g_iXInputBrake == 0 ? state.Gamepad.bLeftTrigger : state.Gamepad.bRightTrigger)), 0.0f, 255.0f, 0.0f, 1.0f);
+			}
+		}
 		return Func_OrigRBRControllerAxisData(objPointer, axisID);
 
 	case 5: // Brake

@@ -324,7 +324,9 @@ typedef RBRColorTable* PRBRColorTable;
 // Offset 0x007EAC48 + 0x728 The current game mode (state machine of RBR)
 typedef struct {
 #pragma pack(push,1)
-	BYTE pad1[0x728];
+	BYTE pad1[0x724];
+	__int32 gameStatus; // 0x724 (0x00=State already loaded, 0x01=Loading the next state)
+
 	// gameMode
 	//		00 = (not available)
 	//		01 = driving (after 5secs or less left in start clock or already driving after GO! command)
@@ -344,6 +346,10 @@ typedef struct {
 	//      0F = ? Doesnt work anymore. Goes to menu? Pause racing and replaying and hide all on-screen instruments and timers (supported only after the race or replay has started, ie 0x0A and 0x10 status has changed to 0x08 or 0x01)
 	//		10-0xFF = ?
 	__int32 gameMode; // 0x728
+
+	__int32 unknown1; // 0x72C (usually zero, but sometimes 0x12c?)
+	__int32 trackID;  // 0x730
+	__int32 carID;    // 0x734
 #pragma pack(pop)
 } RBRGameMode;
 typedef RBRGameMode* PRBRGameMode;
@@ -416,7 +422,8 @@ typedef struct {
 typedef RBRMapSettings* PRBRMapSettings;
 
 
-// Fixed offset 0x8938F8. Additional map settings 
+// Fixed offset 0x8938F8. Additional map settings
+// or 0x7C36A8->+0x08
 typedef struct {
 #pragma pack(push,1)
 	__int32 unknown1;		// 0x00

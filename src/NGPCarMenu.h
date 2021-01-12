@@ -827,6 +827,8 @@ public:
 	int  m_iCustomReplayScreenshotCount;		// Num of screenshots taken so far during the last "CREATE car preview images" command
 	bool m_bCustomReplayShowCroppingRect;		// Show the current car preview screenshot cropping rect area on screen (ie. few secs before the screenshot is taken)
 
+	int m_iCustomSelectCarSkinState;			// 0 = Normal mode, >=1 Select car skin
+
 	IMAGE_TEXTURE m_carPreviewTexture[8];		// 0..7 car preview image data (or NULL if missing/not loaded yet)	
 	IMAGE_TEXTURE m_carRBRTMPreviewTexture[8];  // 0..7 car preview image for RBRTM plugin integration if RBRTM integration is enabled (the same pic as in standard preview image texture, but re-scaled to fit the smaller picture are in RBRTM screen)
 

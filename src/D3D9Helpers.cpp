@@ -866,7 +866,7 @@ void GetCurrentDateAndTimeAsYYYYMMDD_HHMISS(int* pCurrentDate, std::string* pCur
 #endif
 
 	std::strftime(buffer, 80, "%Y%m%d %H%M%S", timeinfo);
-	std::puts(buffer);
+	//std::puts(buffer);
 	buffer[8] = '\0';
 
 	if (pCurrentDate) *pCurrentDate = atoi(buffer);
