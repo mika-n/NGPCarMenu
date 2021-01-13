@@ -8,6 +8,7 @@ The original RBR game and RBRTM and RBR_RX plugins have various problems and lim
 - RBR_RX stage selection menu list doesn't scroll (limited to 20 BTB stages), it doesn't show map preview images and doesn't remember the stages you have driven lately.
 - RBR_RX replay files cannot be replayed afterwards. You can replay those only once right after the stage is finished and before you go back to RBR main menu. After this you cannot replay RBRRX/BTB recordings.
 - RBR has a bug how it handles inverted pedals (input.ini) at startup or after alt-tabbing to a desktop. For example throttle goes to 100% until a driver presses the inverted pedal at least once.
+- RBR has limited support for xbox360/xboxOne gamepad triggers. RBR handles triggers as combined Accelerate-Brake control, so it is impossible to control throttle and brake independently (not good in a rally car).
 
 Good news! **NGPCarMenu plugin solves these issues** by doing following enhancements in RBR:
 - Shows the actual NGP car specs (HP, gears, transmission), car preview images and 3D car model details in **RBR/RBRTM/RBRRX** menu screens.
@@ -22,6 +23,7 @@ Good news! **NGPCarMenu plugin solves these issues** by doing following enhancem
 - "AutoLogon" feature opens automatically the menu screen of your favorite plugin when RBR is launched (for example takes you to RBRTM, RBR_RX or RallySimFans menu screen).
 - "Rename profile" feature renames the driver profile while preserving profile settings (ie. you no longer have to call yourself as MULLIGATAWNY. Now you can rename the driver via NGPCarMenu plugin and still keep all maps and cars unlocked).
 - Inverted pedals behave correctly right away without going through the hassle of pressing all pedals at least once while waiting for a countdown.
+- Xbox360/XboxOne triggers are splitted and work independently as a separate Throttle and Brake in RBR controls (How to use this fix? Set triggers as combined AccelerateBrake control as usual, but then set Throttle and Brake controls to any keyboard key and choose a gamepad ID in SplitCombinedThrottleBrake in-game menu, NGPCarMenu plugin menu).
 - RallyStatsDB feature to store a detailed history of all rallies in one place (RBR original stages, RBRTM stages, RSF stages, BTB stages).
 
 The plugin supports **RBRTM Czech Tournament** plugin (V0.88) integration. Use NGPCarMenu in-game menu or INI file to enable/disable this integration. 
@@ -71,6 +73,9 @@ rbr\Plugins\NGPCarMenu.ini options (see the NGPCarMenu.ini.sample file for more 
 | RBRTM_RecentResultsPosition | The location of "Recent results" data on RBRTM main menu. RBRTM_RecentResultsPosition=0 hides the information. |
 | RBRRX_RecentResultsPosition | The location of "Recent results" data on RBRRX stages menu. RBRRB_RecentResultsPosition=0 hides the information. |
 | InvertedPedalsStartupFix | 0 or 1. If enabled (default) then NGPCarMenu fixes the notorious "inverted pedals" RBR bug when the car is at starting line (ie. throttle goes to 100% until a driver presses the inverted pedal at least once). |
+| SplitCombinedThrottleBrakeAxis | The game controller ID used when a combined triggers are splitted as two different analog axis in RBR controls. 0 (disabled), 1-4 gamepad ID. |
+| SplitThrottleAxis      | LT = Left trigger, RT = Right trigger. The same for SplitBrakeAxis option also. If combined trigger is splitted then defines which trigger is throttle or brake. | 
+| DeadzoneXXXX           | Optional deadzone for DeadzoneSteering/Throttle/Brake/Clutch/Handbrake controls. Useful for those gamepad drivers where the left or right stick in the gamepad is no longer stable or don't return to absolute center position. |
 | ScreenshotPath         | Path of car preview images (relative to RBR executable location or absolute path). Supports various runtime variables (see NGPCarMenu.ini.sample for more details) |
 | ScreenshotReplay       | Replay filename the plugin uses to generate preview images. |
 | ScreenshotFileType     | PNG or BMP file format in car preview image files. There is also in-game plugin option to set this value. |
