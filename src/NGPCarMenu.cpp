@@ -103,13 +103,13 @@ int g_iXInputThrottle = 1;				  // 1=Right trigger
 int g_iXInputBrake = 0;                   // 0=Left trigger
 
 float g_fControllerAxisDeadzone[] =
-{   0.0f,    // idx 0 = steering
-    0, 0,
+{   0.0f,    // idx 0 = steering (idx is the RBR control idx)
+    0, 0,    // (unused)
 	0.0f,    // idx 3 = throttle
-	0,
+	0,       // (unused)
 	0.0f,    // idx 5 = brake
 	0.0f,    // idx 6 = clutch
-	0, 0, 0, 0,
+	0, 0, 0, 0, // (unused)
 	0.0f     // idx 11 = handbrake
 };
 
@@ -220,23 +220,31 @@ RBRCarSelectionMenuEntry g_RBRCarSelectionMenuEntry[8] = {
 #define C_MENUCMD_RBRTMOPTION		2
 #define C_MENUCMD_RBRRXOPTION		3
 #define C_MENUCMD_AUTOLOGONOPTION	4
-#define C_MENUCMD_RALLYSCHOOLMENUOPTION	5
-#define C_MENUCMD_RENAMEDRIVER		6
-#define C_MENUCMD_RELOAD			7
-#define C_MENUCMD_CREATE			8
-#define C_MENUCMD_SELECTCARSKIN		9
+#define C_MENUCMD_RALLYSCHOOLMENUOPTION			5
+#define C_MENUCMD_SPLITCOMBINEDTHROTTLEBRAKE	6
+#define C_MENUCMD_RENAMEDRIVER		7
+#define C_MENUCMD_RELOAD			8
+#define C_MENUCMD_CREATE			9
 
-char* g_NGPCarMenu_PluginMenu[10] = {
+#if USE_DEBUG == 1
+#define C_MENUCMD_SELECTCARSKIN		10
+#endif 
+
+char* g_NGPCarMenu_PluginMenu[] = {
 	 "> Create option"			// CreateOptions
 	,"> Image option"			// ImageOptions
 	,"> RBRTM integration"		// EnableDisableOptions
 	,"> RBRRX integration"		// EnableDisableOptions
 	,"> Auto logon"				// AutoLogon option
 	,"> RallySchool menu replacement"   // Replace RallySchool menu entry with another menu shortcut
+	,"> Split combined ThrottleBrake"   // Gamepad# 1-4 (will be used as 0-3 index value) used to split combined gamepad trigger keys
 	,"RENAME driver profile" // "Rename driver MULLIGATAWNY -> SpeedRacer" in the profile to match the loaded pfXXXX.rbr profile filename (creates a new profile file. Take a backup copy of the old profile file)
 	,"RELOAD settings"		 // Clear cached car images to force re-loading of new images and settings
 	,"CREATE car images"	 // Create new car images (all or only missing car iamges)
-    ,"SELECT car skins"		 // Create new car images (all or only missing car iamges)
+
+#if USE_DEBUG == 1
+	,"SELECT car textures"   // Select custom car skins and textures
+#endif
 };
 
 // CreateOption menu option names (option values in "Create option")
@@ -866,6 +874,7 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_bRBRRacingActive = false;
 	m_bRBRReplayActive = false;
 	m_iRBRCustomRaceType = 0;
+	m_dwRBRCustomRallyOptions = 0;
 
 	g_mapRBRRXRightBlackBarVertexBuffer = nullptr;
 
@@ -886,6 +895,9 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_rbrLatestStageResultsBackground = nullptr;
 
 	m_iPhysicsNGMajorVer = m_iPhysicsNGMinorVer = m_iPhysicsNGPatchVer = m_iPhysicsNGBuildVer = 0;
+
+	m_bOrigPacenotes = m_bOrig3DPacenotes = m_bOrigPacenoteDistanceCountdown = TRUE;
+	m_iOrigPacenoteStack = 0;
 
 	m_pD3D9RenderStateCache = nullptr; 
 	gtcDirect3DBeginScene = nullptr;
@@ -1512,21 +1524,21 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool fistTimeRefresh)
 
 
 		// Split combined throttle and brake axis as separate throttle and brake (ie set CombinedThrottleBrake axis in RBR to analog trigger and set separate brake and throttle to some unused keyboard keys)
-		g_iXInputSplitThrottleBrakeAxis = pluginINIFile.GetValueEx(L"Default", L"", L"XInputSplitThrottleBrakeAxis", 0);
+		g_iXInputSplitThrottleBrakeAxis = pluginINIFile.GetValueEx(L"Default", L"", L"SplitCombinedThrottleBrakeAxis", 0);
 		if (g_iXInputSplitThrottleBrakeAxis >= 1)
 		{
-			LogPrint("XInputSplitThrottleBrakeAxis #%d. Assign an analog gamepad trigger key to the combined Accelerate&Brake and some otherwise unused keyboard or gamepad keys to Throttle and Brake options in RBR controller setup screen", g_iXInputSplitThrottleBrakeAxis);
+			LogPrint("SplitCombinedThrottleBrakeAxis #%d. Assign an analog gamepad trigger key to the combined Accelerate&Brake and some otherwise unused keyboard or gamepad keys to Throttle and Brake options in RBR controller setup screen", g_iXInputSplitThrottleBrakeAxis);
 			g_iXInputSplitThrottleBrakeAxis--;
 
 			g_iXInputBrake = 0;
-			if (_iEqual(pluginINIFile.GetValueEx(L"Default", L"", L"XInputBrake", L"rt"), L"rt", true))
+			if (_iEqual(pluginINIFile.GetValueEx(L"Default", L"", L"SplitBrakeAxis", L"rt"), L"rt", true))
 				g_iXInputThrottle = 1;
 
 			g_iXInputThrottle = 1;
-			if (_iEqual(pluginINIFile.GetValueEx(L"Default", L"", L"XInputThrottle", L"lt"), L"lt", true))
+			if (_iEqual(pluginINIFile.GetValueEx(L"Default", L"", L"SplitThrottleAxis", L"lt"), L"lt", true))
 				g_iXInputThrottle = 0;
 
-			LogPrint("XInputBrake=%d XInputThrottle=%d", g_iXInputBrake, g_iXInputThrottle);
+			LogPrint("SplitBrakeAxis=%d SplitThrottleAxis=%d", g_iXInputBrake, g_iXInputThrottle);
 		}
 		else
 			g_iXInputSplitThrottleBrakeAxis = -1;
@@ -1539,9 +1551,9 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool fistTimeRefresh)
 		g_fControllerAxisDeadzone[6] = static_cast<float>(pluginINIFile.GetValueEx(L"Default", L"", L"DeadzoneHandbrake", 0)) / 100.0f;
 		g_fControllerAxisDeadzone[11] = static_cast<float>(pluginINIFile.GetValueEx(L"Default", L"", L"DeadzoneClutch", 0)) / 100.0f;
 
-		LogPrint("DEBUG: DeadzoneThrottle=%f", g_fControllerAxisDeadzone[3]);
-		LogPrint("DEBUG: DeadzoneBrake=%f", g_fControllerAxisDeadzone[5]);
-		LogPrint("DEBUG: DeadzoneSteering=%f", g_fControllerAxisDeadzone[0]);
+		if (g_fControllerAxisDeadzone[0] != 0.0f || g_fControllerAxisDeadzone[3] != 0.0f || g_fControllerAxisDeadzone[5] != 0.0f || g_fControllerAxisDeadzone[6] != 0.0f || g_fControllerAxisDeadzone[11] != 0.0f)
+			LogPrint("DeadzoneSteering=%.2f DeadzoneThrottle=%.2f DeadzoneBrake=%.2f DeadzoneHandbrake=%.2f DeadzoneClutch=%.2f", g_fControllerAxisDeadzone[0], g_fControllerAxisDeadzone[3], g_fControllerAxisDeadzone[5], g_fControllerAxisDeadzone[6], g_fControllerAxisDeadzone[11]);
+
 
 		if (fistTimeRefresh)
 		{
@@ -1746,10 +1758,11 @@ void CNGPCarMenu::SaveSettingsToPluginINIFile()
 		pluginINIFile.SetValue(L"Default", L"RBRTM_Integration", std::to_wstring(this->m_iMenuRBRTMOption).c_str());
 		pluginINIFile.SetValue(L"Default", L"RBRRX_Integration", std::to_wstring(this->m_iMenuRBRRXOption).c_str());
 
+		pluginINIFile.SetValue(L"Default", L"SplitCombinedThrottleBrakeAxis", std::to_wstring(g_iXInputSplitThrottleBrakeAxis + 1).c_str());
+
 		pluginINIFile.SetValue(L"Default", L"AutoLogon", _ToWString(std::string( m_iMenuAutoLogonOption < (int)g_NGPCarMenu_AutoLogonOptions.size() ? g_NGPCarMenu_AutoLogonOptions[m_iMenuAutoLogonOption] : m_sAutoLogon.c_str())).c_str());
 
 		pluginINIFile.SetValue(L"Default", L"RallySchoolMenuReplacement", _ToWString(m_sRallySchoolMenuReplacement).c_str());
-
 		if (g_pOrigRallySchoolMenuText != nullptr)
 		{
 			// Set RallySchool menu replacement up-to-date in case the INI file had a new RallySchoolMenuReplacement value
@@ -4446,6 +4459,8 @@ void CNGPCarMenu::DrawFrontEndPage(void)
 				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], (m_iMenuRallySchoolMenuOption < (int)g_NGPCarMenu_AutoLogonOptions.size() ? g_NGPCarMenu_AutoLogonOptions[m_iMenuRallySchoolMenuOption] : "<unknown>"));
 			else if (i == C_MENUCMD_RENAMEDRIVER)
 				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: '%s'", g_NGPCarMenu_PluginMenu[i], g_pRBRProfile->szProfileName);
+			else if (i == C_MENUCMD_SPLITCOMBINEDTHROTTLEBRAKE)
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], (g_iXInputSplitThrottleBrakeAxis < 0 ? "Disabled" : std::to_string(g_iXInputSplitThrottleBrakeAxis+1).c_str()));
 			else
 				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s", g_NGPCarMenu_PluginMenu[i]);
 
@@ -4476,6 +4491,10 @@ void CNGPCarMenu::DrawFrontEndPage(void)
 #define DO_MENUSELECTION_LEFTRIGHT(OptionID, OptionValueVariable, OptionArray) \
    if (m_iMenuSelection == OptionID && bLeft && (--OptionValueVariable) < 0) OptionValueVariable = 0; \
    else if (m_iMenuSelection == OptionID && bRight && (++OptionValueVariable) >= COUNT_OF_ITEMS(OptionArray)) OptionValueVariable = COUNT_OF_ITEMS(OptionArray)-1
+
+#define DO_MENUSELECTION_LEFTRIGHT_BOUNDS(OptionID, OptionValueVariable, OptionValueMin, OptionValueMax) \
+   if (m_iMenuSelection == OptionID && bLeft && (--OptionValueVariable) < OptionValueMin) OptionValueVariable = OptionValueMin; \
+   else if (m_iMenuSelection == OptionID && bRight && (++OptionValueVariable) > OptionValueMax) OptionValueVariable = OptionValueMax
 
 void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, bool bLeft, bool bRight, bool bSelect)
 {
@@ -4616,7 +4635,7 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 
 				m_sMenuStatusText1 = "BACKSPACE key closes this screen. Use LEFT ARROW key as backspace.";
 				m_sMenuStatusText2 = "Use UP/DOWN ARROW keys to choose characters not supported by the original RBR profile name editor.";
-				m_sMenuStatusText3 = "The profile name can have only valid WinOS filename characters.";
+				m_sMenuStatusText3 = "The profile name should have only valid WinOS filename characters.";
 			}
 
 #if USE_DEBUG == 1
@@ -4669,17 +4688,30 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 			g_bNewCustomPluginIntegrations = TRUE;
 
 		int iPrevMenuAutoLogonOptionValue = m_iMenuAutoLogonOption;
-		if (m_iMenuSelection == C_MENUCMD_AUTOLOGONOPTION && bLeft && (--m_iMenuAutoLogonOption) < 0) m_iMenuAutoLogonOption = 0;
-		else if (m_iMenuSelection == C_MENUCMD_AUTOLOGONOPTION && bRight && (++m_iMenuAutoLogonOption) >= (int)g_NGPCarMenu_AutoLogonOptions.size()) m_iMenuAutoLogonOption = g_NGPCarMenu_AutoLogonOptions.size() - 1;
+		DO_MENUSELECTION_LEFTRIGHT_BOUNDS(C_MENUCMD_AUTOLOGONOPTION, m_iMenuAutoLogonOption, 0, ((int)g_NGPCarMenu_AutoLogonOptions.size() - 1) );
+		//if (m_iMenuSelection == C_MENUCMD_AUTOLOGONOPTION && bLeft && (--m_iMenuAutoLogonOption) < 0) m_iMenuAutoLogonOption = 0;
+		//else if (m_iMenuSelection == C_MENUCMD_AUTOLOGONOPTION && bRight && (++m_iMenuAutoLogonOption) >= (int)g_NGPCarMenu_AutoLogonOptions.size()) m_iMenuAutoLogonOption = g_NGPCarMenu_AutoLogonOptions.size() - 1;
 
 		int iPrevMenuRallySchoolMenuOptionValue = m_iMenuRallySchoolMenuOption;
-		if (m_iMenuSelection == C_MENUCMD_RALLYSCHOOLMENUOPTION && bLeft && (--m_iMenuRallySchoolMenuOption) < 0) m_iMenuRallySchoolMenuOption = 0;
-		else if (m_iMenuSelection == C_MENUCMD_RALLYSCHOOLMENUOPTION && bRight && (++m_iMenuRallySchoolMenuOption) >= (int)g_NGPCarMenu_AutoLogonOptions.size()) m_iMenuRallySchoolMenuOption = g_NGPCarMenu_AutoLogonOptions.size() - 1;
+		DO_MENUSELECTION_LEFTRIGHT_BOUNDS(C_MENUCMD_RALLYSCHOOLMENUOPTION, m_iMenuRallySchoolMenuOption, 0, ((int)g_NGPCarMenu_AutoLogonOptions.size() - 1) );
+		//if (m_iMenuSelection == C_MENUCMD_RALLYSCHOOLMENUOPTION && bLeft && (--m_iMenuRallySchoolMenuOption) < 0) m_iMenuRallySchoolMenuOption = 0;
+		//else if (m_iMenuSelection == C_MENUCMD_RALLYSCHOOLMENUOPTION && bRight && (++m_iMenuRallySchoolMenuOption) >= (int)g_NGPCarMenu_AutoLogonOptions.size()) m_iMenuRallySchoolMenuOption = g_NGPCarMenu_AutoLogonOptions.size() - 1;
 		if (iPrevMenuRallySchoolMenuOptionValue != m_iMenuRallySchoolMenuOption)
 			m_sRallySchoolMenuReplacement = g_NGPCarMenu_AutoLogonOptions[m_iMenuRallySchoolMenuOption];
 
-		if (iPrevMenuImageOptionValue != m_iMenuImageOption || iPrevMenuRBRTMOptionValue != m_iMenuRBRTMOption || iPrevMenuRBRRXOptionValue != m_iMenuRBRRXOption || iPrevMenuAutoLogonOptionValue != m_iMenuAutoLogonOption || iPrevMenuRallySchoolMenuOptionValue != m_iMenuRallySchoolMenuOption)
+		int iPrevXInputSplitThrottleBrakeAxisOptionValue = g_iXInputSplitThrottleBrakeAxis;
+		DO_MENUSELECTION_LEFTRIGHT_BOUNDS(C_MENUCMD_SPLITCOMBINEDTHROTTLEBRAKE, g_iXInputSplitThrottleBrakeAxis, -1, 3);
+
+		//
+		// Save settings if any of the persistent options was changed
+		//
+		if (iPrevMenuImageOptionValue != m_iMenuImageOption || iPrevMenuRBRTMOptionValue != m_iMenuRBRTMOption
+			|| iPrevMenuRBRRXOptionValue != m_iMenuRBRRXOption || iPrevMenuAutoLogonOptionValue != m_iMenuAutoLogonOption
+			|| iPrevMenuRallySchoolMenuOptionValue != m_iMenuRallySchoolMenuOption || iPrevXInputSplitThrottleBrakeAxisOptionValue != g_iXInputSplitThrottleBrakeAxis
+			)
+		{
 			SaveSettingsToPluginINIFile();
+		}
 	}
 }
 
@@ -4847,8 +4879,20 @@ void CNGPCarMenu::OnPluginDeactivated(const std::string& pluginName)
 //
 BOOL CNGPCarMenu::OnPrepareTrackLoad(const std::string& pluginName, int rallyType, const std::string& rallyName, DWORD rallyOptions)
 {
-	DebugPrint("OnPrepareTrackLoad. %s %d %s %d", pluginName.c_str(), rallyType, rallyName.c_str(), rallyOptions);
+	DebugPrint("OnPrepareTrackLoad. %s %d %s %x", pluginName.c_str(), rallyType, rallyName.c_str(), rallyOptions);
+
 	m_iRBRCustomRaceType = rallyType;
+	m_dwRBRCustomRallyOptions = rallyOptions;
+
+	if (m_dwRBRCustomRallyOptions != 0)
+	{
+		// Store original config values because forceDisable rallyOptions may modify these. These are restored on OnRaceEnded call
+		m_bOrig3DPacenotes = g_pRBRGameConfigEx->show3DPacenotes;
+		m_bOrigPacenoteDistanceCountdown = g_pRBRGameConfigEx->showPacenoteDistanceCountdown;
+		m_bOrigPacenotes = g_pRBRGameConfigEx->showPacenotes;
+		m_iOrigPacenoteStack = g_pRBRGameConfigEx->pacenoteStack;
+	}
+
 	return TRUE;
 }
 
@@ -4859,6 +4903,8 @@ BOOL CNGPCarMenu::OnPrepareTrackLoad(const std::string& pluginName, int rallyTyp
 void CNGPCarMenu::OnMapLoaded()
 {	
 	static int prevRBRTMMapID = -1;
+
+	DebugPrint("DEBUG: CustomRallyOptions=%x", m_dwRBRCustomRallyOptions);
 
 	m_bMapLoadedCalled = TRUE;
 	m_bMapUnloadedCalled = FALSE;
@@ -4962,14 +5008,32 @@ void CNGPCarMenu::OnRaceStarted()
 	}
 */
 
+#if USE_DEBUG == 1
+	// DEBUG. test forceDisable options
+	//OnPrepareTrackLoad("", 0, "", RALLYOPTION_FORCEDISABLE_PACENOTESYMBOLS);
+	//OnPrepareTrackLoad("", 0, "", RALLYOPTION_FORCEDISABLE_3DPACENOTES | RALLYOPTION_FORCEDISABLE_PACENOTEDISTANCECOUNTDOWN);
+#endif
+
 	DebugPrint("OnRaceStarted. GameMode=%d  RBRRacingActive=%d  RBRRXRacingActive=%d", g_pRBRGameMode->gameMode, m_bRBRRacingActive, m_bRBRRXRacingActive);
 }
 
 void CNGPCarMenu::OnRaceEnded()
 {
 	DebugPrint("OnRaceEnded. RBRRacingActive=%d  RBRRXRacingActive=%d  Map=%s (%d %d)", m_bRBRRacingActive, m_bRBRRXRacingActive, _ToString(m_latestMapName).c_str(), m_latestMapID, g_pRBRGameModeExt->trackID);
+
 	m_bRBRRacingActive = m_bRBRRXRacingActive = m_bRBRReplayOrRacingEnding = FALSE;
 	m_iRBRCustomRaceType = 0;
+
+	if (m_dwRBRCustomRallyOptions != 0)
+	{
+		// Restore force-disabled pacenote settings
+		g_pRBRGameConfigEx->show3DPacenotes = m_bOrig3DPacenotes;
+		g_pRBRGameConfigEx->showPacenoteDistanceCountdown = m_bOrigPacenoteDistanceCountdown;
+		g_pRBRGameConfigEx->showPacenotes = m_bOrigPacenotes;
+		g_pRBRGameConfigEx->pacenoteStack = m_iOrigPacenoteStack;
+		m_dwRBRCustomRallyOptions = 0;
+	}
+
 	ClearCustomTrackLoadImage();
 }
 
@@ -6158,9 +6222,23 @@ HRESULT __fastcall CustomRBRDirectXBeginScene(void* objPointer)
 	// Call the origial RBR BeginScene and let it to initialize the new D3D scene
 	HRESULT hResult = ::Func_OrigRBRDirectXBeginScene(objPointer);
 
-	// If racing is active then no need to do any custom things
-	if (g_pRBRGameMode->gameMode == 0x01) 
+	// If racing is active and not custom rallyOptions enabled then no need to do any custom things
+	if (g_pRBRGameMode->gameMode == 0x01)
+	{
+		if (g_pRBRPlugin->m_dwRBRCustomRallyOptions != 0)
+		{
+			// Set custom "force disable" rallyOptions (pacenote plugin may be used to enabel these at raceTime, so do the force disable always during racing)
+			if ((g_pRBRPlugin->m_dwRBRCustomRallyOptions & RALLYOPTION_FORCEDISABLE_3DPACENOTES))
+				g_pRBRGameConfigEx->show3DPacenotes = 0;
+
+			if ((g_pRBRPlugin->m_dwRBRCustomRallyOptions & RALLYOPTION_FORCEDISABLE_PACENOTEDISTANCECOUNTDOWN))
+				g_pRBRGameConfigEx->showPacenoteDistanceCountdown = 0;
+
+			if ((g_pRBRPlugin->m_dwRBRCustomRallyOptions & RALLYOPTION_FORCEDISABLE_PACENOTESYMBOLS))
+				g_pRBRGameConfigEx->showPacenotes = g_pRBRGameConfigEx->show3DPacenotes = g_pRBRGameConfigEx->pacenoteStack = 0;
+		}
 		return hResult;
+	}
 
 	if (g_pRBRGameMode->gameMode == 0x03 || g_pRBRPlugin->m_iCustomReplayState > 0)
 	{
@@ -6304,7 +6382,7 @@ int __fastcall CustomRBRSaveReplay(void* objPointer, DWORD /*ignoreEDX*/, const 
 // RBR controller axis data handler. Workaround the RBR bug with inverted pedals (ie. throttle goes to 100% at starting line until user presses the inverted pedal at least once)
 //
 #define RBRAXIS_DEADZONE(axisValue, deadZoneValue) (axisValue - deadZoneValue <= 0.0f ? 0.0f : RANGE_REMAP(axisValue - deadZoneValue, 0.0f, 1.0f - deadZoneValue, 0.0f, 1.0f))
-#define RBRAXIS_DEADZONE_NEGATIVE(axisValue, deadZoneValue) (axisValue + deadZoneValue >= 0.0f ? 0.0f : -1.0f * RANGE_REMAP(fabs(axisValue) - deadZoneValue, 0.0f, 1.0f - deadZoneValue, 0.0f, 1.0f))
+#define RBRAXIS_DEADZONE_NEGATIVE(axisValue, deadZoneValue) (axisValue + deadZoneValue >= 0.0f ? 0.0f : -RANGE_REMAP(fabs(axisValue) - deadZoneValue, 0.0f, 1.0f - deadZoneValue, 0.0f, 1.0f))
 
 float __fastcall CustomRBRControllerAxisData(void* objPointer, DWORD /*ignoreEDX*/, __int32 axisID)
 {

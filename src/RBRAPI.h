@@ -309,6 +309,26 @@ typedef struct {
 typedef RBRGameConfig* PRBRGameConfig;
 
 
+// Fixed Offset 0x1660AF8 RBRGameConfigEx
+typedef struct {
+#pragma pack(push,1)
+	BYTE pad1[0x54];
+	__int32 pacenoteStack;					// 0x54  (0=disabled, 1-4 enabled)
+	__int32 showCheckpointTimes;			// 0x58
+	__int32 showInGameClock;				// 0x5C
+	__int32 unknown1;						// 0x60
+	__int32 show3DPacenotes;				// 0x64
+	__int32 showPacenotes;					// 0x68
+	__int32 unknown2;						// 0x6C
+	__int32 showPacenoteDistance;			// 0x70
+	__int32 showPacenoteDistanceCountdown;	// 0x74
+	__int32 unknown3;						// 0x78
+	float   calloutDistance;				// 0x7C
+#pragma pack(pop)
+} RBRGameConfigEx;
+typedef RBRGameConfigEx* PRBRGameConfigEx;
+
+
 // Offset 0x007C3668
 typedef struct {
 #pragma pack(push,1)
@@ -781,6 +801,7 @@ extern int RBRAPI_MapRBRMenuObjToID(PRBRMenuObj pMenuObj);
 // Global RBR object pointers
 //
 extern PRBRGameConfig		g_pRBRGameConfig;
+extern PRBRGameConfigEx	    g_pRBRGameConfigEx;
 
 extern PRBRGameMode			g_pRBRGameMode;
 extern PRBRGameModeExt		g_pRBRGameModeExt;

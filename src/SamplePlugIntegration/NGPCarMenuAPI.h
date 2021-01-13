@@ -83,6 +83,12 @@ typedef BOOL  (APIENTRY* tAPI_PrepareTrackLoad)(DWORD pluginID, int rallyType, L
 #define D3DFONT_CLEARTARGET 0x0080	// Clear the target area where font will be drawn (ie. font background is not transparent)
 
 
+// RallyOptions (PrepareTrackLoad)
+#define RALLYOPTION_FORCEDISABLE_3DPACENOTES				0x01  // Don't show 3D pacenotes (in a bad weather this may give "unrealistic" advantage)
+#define RALLYOPTION_FORCEDISABLE_PACENOTEDISTANCECOUNTDOWN	0x02  // Don't show the countdown of pacenote distance (in a bad weather this may give "unrealistic" advantage)
+#define RALLYOPTION_FORCEDISABLE_PACENOTESYMBOLS			0x04  // Don't show any pacenote symbols (only pacenote audio)
+
+
 class CNGPCarMenuAPI
 {
 protected:

@@ -71,6 +71,12 @@
 #define C_RBRTM_PLUGIN_NAME     "RBR Tournament"
 #define C_MAX_RECENT_RBRTM_MAPS 5
 
+// RallyOptions (PrepareTrackLoad)
+#define RALLYOPTION_FORCEDISABLE_3DPACENOTES				0x01  // Don't show 3D pacenotes (in a bad weather this may give "unrealistic" advantage)
+#define RALLYOPTION_FORCEDISABLE_PACENOTEDISTANCECOUNTDOWN	0x02  // Don't show the countdown of pacenote distance (in a bad weather this may give "unrealistic" advantage)
+#define RALLYOPTION_FORCEDISABLE_PACENOTESYMBOLS			0x04  // Don't show any pacenotes ("blind rally" option without detailed recce notes)
+
+
 //
 // The state of the plugin enum
 //
@@ -887,6 +893,12 @@ public:
 	bool   m_bRBRRacingActive;					// TRUE=Racing active (if m_bRBRRXRacingActive is TRUE also then it is BTB racing and not standard RBR classic track racing)
 	bool   m_bRBRReplayActive;					// TRUE=Track loading for the replay purposes (if m_bRBRRXReplayActive is TRUE also then it is BTB replay and not standard track replay), FALSE=No active replay
 	int    m_iRBRCustomRaceType;				// Custom racing type (0=default)
+
+	DWORD  m_dwRBRCustomRallyOptions;			// Custom rally options (fex force disable pacenotes)
+	BOOL   m_bOrig3DPacenotes;
+	BOOL   m_bOrigPacenoteDistanceCountdown;
+	BOOL   m_bOrigPacenotes;
+	int    m_iOrigPacenoteStack;
 
 	float  m_prevRaceTimeClock;					// The previous value of race clock (used to check if there are new time penalties)
 	float  m_latestFalseStartPenaltyTime;		// If there was a false start then this has the false start penalty time (10 sec base penalty + extra time depending on how much early)

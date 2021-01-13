@@ -51,7 +51,10 @@ RECT			  g_rectRBRWnd;					  // RBR wnd top,left,right,bottom coordinates (inclu
 RECT			  g_rectRBRWndClient;		      // RBR client area coordinates (resolutionX=right-left, resolutionY=bottom-top)
 RECT			  g_rectRBRWndMapped;			  // RBR client area re-mapped to screen points (normally client area top,left is always relative to physical wndRect coordinates)
 
-PRBRGameConfig		 g_pRBRGameConfig = nullptr;			// Various RBR-API struct pointers
+// Various RBR-API struct pointers
+PRBRGameConfig		 g_pRBRGameConfig = nullptr;
+PRBRGameConfigEx	 g_pRBRGameConfigEx = nullptr;
+
 PRBRGameMode		 g_pRBRGameMode = nullptr;
 PRBRGameModeExt		 g_pRBRGameModeExt = nullptr;
 PRBRGameModeExt2	 g_pRBRGameModeExt2 = nullptr;
@@ -269,7 +272,9 @@ BOOL WriteOpCodeNearJmpCmd(const LPVOID writeAddr, const LPVOID jmpTargetAddr)
 BOOL RBRAPI_InitializeObjReferences()
 {
 	// Pointers to various RBR objects
-	if (g_pRBRGameConfig == nullptr)  g_pRBRGameConfig = (PRBRGameConfig) * (DWORD*)(0x007EAC48);
+	if (g_pRBRGameConfig == nullptr)   g_pRBRGameConfig = (PRBRGameConfig) * (DWORD*)(0x007EAC48);
+	if (g_pRBRGameConfigEx == nullptr) g_pRBRGameConfigEx = (PRBRGameConfigEx)(0x1660AF8);
+
 	if (g_pRBRGameMode == nullptr)    g_pRBRGameMode = (PRBRGameMode) * (DWORD*)(0x007EAC48);
 	if (g_pRBRGameModeExt == nullptr) g_pRBRGameModeExt = (PRBRGameModeExt) * (DWORD*)(0x00893634);
 	if (g_pRBRGameModeExt2 == nullptr) g_pRBRGameModeExt2 = (PRBRGameModeExt2) (* (DWORD*)(( * (DWORD*)(0x007EA678)) + 0x70));
