@@ -68,7 +68,7 @@ extern void DebugPrintFunc(LPCWSTR lpszFormat, ...);
 #define SAFE_DELETE( p ) if( p ){ delete p; p = nullptr; }
 #endif
 
-#define RANGE_REMAP(value, valueRangeMin, valueRangeMax, outputRangeMin, outputRangeMax) (outputRangeMin + (outputRangeMax - outputRangeMin) * ((value - valueRangeMin) / (valueRangeMax - valueRangeMin)))
+#define RANGE_REMAP(value, valueRangeMin, valueRangeMax, outputRangeMin, outputRangeMax) ((outputRangeMin) + ((outputRangeMax) - (outputRangeMin)) * (((value) - (valueRangeMin)) / ((valueRangeMax) - (valueRangeMin))))
 #define RANGE_CLAMP(value, valueMin, valueMax) ((value <= valueMin ? valueMin : (value >= valueMax ? valueMax : value)))
 
 extern bool _iStarts_With(std::wstring s1, std::wstring s2, bool s2AlreadyInLowercase = FALSE);	 // Case-insensitive starts_with string comparison
