@@ -3209,7 +3209,7 @@ bool CNGPCarMenu::ModifyCarModelFiles(int carSlotID)
 	WCHAR wszStockCarINISection[8];
 
 	//if (m_iMenuCockpitSteeringWheel <= 0 && m_iMenuCockpitWipers <= 0 && m_iMenuCockpitWindscreen <= 0 && m_iMenuCockpitOverrideFOV <= 0)
-	//	return FALSE;
+	//	return FALSE; 
 
 	try
 	{
