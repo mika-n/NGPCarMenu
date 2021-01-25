@@ -216,19 +216,23 @@ RBRCarSelectionMenuEntry g_RBRCarSelectionMenuEntry[8] = {
 //
 // Menu item command ID and names (custom plugin menu). The ID should match the g_RBRPluginMenu array index (0...n)
 //
-#define C_MENUCMD_CREATEOPTION		0
-#define C_MENUCMD_IMAGEOPTION		1
-#define C_MENUCMD_RBRTMOPTION		2
-#define C_MENUCMD_RBRRXOPTION		3
-#define C_MENUCMD_AUTOLOGONOPTION	4
+#define C_MENUCMD_CREATEOPTION					0
+#define C_MENUCMD_IMAGEOPTION					1
+#define C_MENUCMD_RBRTMOPTION					2
+#define C_MENUCMD_RBRRXOPTION					3
+#define C_MENUCMD_AUTOLOGONOPTION				4
 #define C_MENUCMD_RALLYSCHOOLMENUOPTION			5
 #define C_MENUCMD_SPLITCOMBINEDTHROTTLEBRAKE	6
-#define C_MENUCMD_RENAMEDRIVER		7
-#define C_MENUCMD_RELOAD			8
-#define C_MENUCMD_CREATE			9
+#define C_MENUCMD_COCKPIT_STEERINGWHEEL			7
+#define C_MENUCMD_COCKPIT_WIPERS				8
+#define C_MENUCMD_COCKPIT_WINDSCREEN			9
+#define C_MENUCMD_COCKPIT_OVERRIDEFOV			10
+#define C_MENUCMD_RENAMEDRIVER					11
+#define C_MENUCMD_RELOAD						12
+#define C_MENUCMD_CREATE						13
 
 #if USE_DEBUG == 1
-#define C_MENUCMD_SELECTCARSKIN		10
+#define C_MENUCMD_SELECTCARSKIN		14
 #endif 
 
 char* g_NGPCarMenu_PluginMenu[] = {
@@ -239,6 +243,10 @@ char* g_NGPCarMenu_PluginMenu[] = {
 	,"> Auto logon"				// AutoLogon option
 	,"> RallySchool menu replacement"   // Replace RallySchool menu entry with another menu shortcut
 	,"> Split combined ThrottleBrake"   // Gamepad# 1-4 (will be used as 0-3 index value) used to split combined gamepad trigger keys
+    ,"> Cockpit - Steering wheel"  // Show or hide steeringWheel in the internal cockpit camera view (Default, Hidden, Shown)
+    ,"> Cockpit - Wipers"
+	,"> Cockpit - Windscreen"
+    ,"> Cockpit - Override FOV"    // Override FOV in the internal cockpit camera view (Default, the value used to override the FOV in the car model)
 	,"RENAME driver profile" // "Rename driver MULLIGATAWNY -> SpeedRacer" in the profile to match the loaded pfXXXX.rbr profile filename (creates a new profile file. Take a backup copy of the old profile file)
 	,"RELOAD settings"		 // Clear cached car images to force re-loading of new images and settings
 	,"CREATE car images"	 // Create new car images (all or only missing car iamges)
@@ -265,6 +273,14 @@ char* g_NGPCarMenu_EnableDisableOptions[2] = {
 	"Disabled"
 	,"Enabled"
 };
+
+// Default/Hide/Show 
+char* g_NGPCarMenu_HiddenShownOptions[3] = {
+	"Default"
+	,"Hidden"
+	,"Shown"
+};
+
 
 // AutoLogon options: Disabled, Main, Plugins and N custom plugin names (dynamically looked up from the current list of RBR plugins)
 std::vector<LPCSTR> g_NGPCarMenu_AutoLogonOptions;
@@ -848,6 +864,10 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_iMenuRBRRXOption = 0;
 	m_iMenuAutoLogonOption = 0;	
 	m_iMenuRallySchoolMenuOption = 0; 
+
+	m_iMenuCockpitSteeringWheel = m_iMenuCockpitWipers = m_iMenuCockpitWindscreen = 0;
+	m_iMenuCockpitOverrideFOV = 0;
+	m_fMenuCockpitOverrideFOVValue = 1.308997f;
 
 	m_bAutoLogonWaitProfile = FALSE;
 	
@@ -1641,6 +1661,13 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool fistTimeRefresh)
 		}
 
 
+		m_iMenuCockpitSteeringWheel = pluginINIFile.GetValueEx(L"Default", L"", L"CockpitSteeringWheel", 0);
+		m_iMenuCockpitWipers = pluginINIFile.GetValueEx(L"Default", L"", L"CockpitWipers", 0);
+		m_iMenuCockpitWindscreen = pluginINIFile.GetValueEx(L"Default", L"", L"CockpitWindscreen", 0);
+		m_iMenuCockpitOverrideFOV = pluginINIFile.GetValueEx(L"Default", L"", L"CockpitOverrideFOV", 0);
+		m_fMenuCockpitOverrideFOVValue = pluginINIFile.GetValueExFloat(L"Default", L"", L"CockpitOverrideFOVValue", 1.308997f);
+
+
 		//
 		// If the existing INI file format is an old version1 then save the file using the new format specifier
 		//
@@ -1772,6 +1799,11 @@ void CNGPCarMenu::SaveSettingsToPluginINIFile()
 			else
 				wcsncpy_s(g_wszRallySchoolMenuReplacementText, g_pOrigRallySchoolMenuText, COUNT_OF_ITEMS(g_wszRallySchoolMenuReplacementText));
 		}
+
+		pluginINIFile.SetValue(L"Default", L"CockpitSteeringWheel", std::to_wstring(this->m_iMenuCockpitSteeringWheel).c_str());
+		pluginINIFile.SetValue(L"Default", L"CockpitWipers", std::to_wstring(this->m_iMenuCockpitWipers).c_str());
+		pluginINIFile.SetValue(L"Default", L"CockpitWindscreen", std::to_wstring(this->m_iMenuCockpitWindscreen).c_str());
+		pluginINIFile.SetValue(L"Default", L"CockpitOverrideFOV", std::to_wstring(this->m_iMenuCockpitOverrideFOV).c_str());
 
 		pluginINIFile.SaveFile(sIniFileName.c_str());
 	}
@@ -2648,7 +2680,7 @@ bool CNGPCarMenu::InitCarModelNameFromCarsFile(CSimpleIniWEx* stockCarListINIFil
 		swprintf_s(wszStockCarINISection, COUNT_OF_ITEMS(wszStockCarINISection), L"Car0%d", ::RBRAPI_MapMenuIdxToCarID(menuIdx));
 		sStockCarModelName = stockCarListINIFile->GetValueEx(wszStockCarINISection, L"", L"CarName", L"");
 		
-		// Read "Cars\YARIS_WRC18\yaris_wrc.sgc" model name, take use only the parent path value (ie. Cars\YARIS_WRC18)
+		// Read "Cars\YARIS_WRC18\yaris_wrc.sgc" model name, then use only the parent path value (ie. Cars\YARIS_WRC18)
 		sTextValue = stockCarListINIFile->GetValueEx(wszStockCarINISection, L"", L"FileName", L"");
 		sTextValue = fs::path(sTextValue).parent_path().c_str();
 		wcsncpy_s(pRBRCarSelectionMenuEntry->wszCarModelFolder, sTextValue.c_str(), COUNT_OF_ITEMS(pRBRCarSelectionMenuEntry->wszCarModelFolder));
@@ -3121,6 +3153,131 @@ int CNGPCarMenu::CalculateMaxLenCarMenuName()
 	}
 
 	return m_iCarMenuNameLen;
+}
+
+
+//------------------------------------------------------------------------------------------------
+// Modify the model files of the current car (hide/show windscreen/wipers/steeringWheel and override internal cockpit FOV)
+//
+bool CNGPCarMenu::ModifyCarModelIniFile(CSimpleIniWEx* carModelIniFile, const std::wstring& section, const std::wstring& key, const std::wstring& newOptionValue, bool restoreBackupValue)
+{
+	bool bModifiedIniFile = false;
+	std::wstring sTextValue;
+	std::wstring sBackupOptionKey; 
+
+	if (carModelIniFile == nullptr)
+		return false;
+
+	sBackupOptionKey = std::wstring(L"Backup_") + key;
+	if (!restoreBackupValue)
+	{
+		if (!newOptionValue.empty())
+		{
+			sTextValue = carModelIniFile->GetValueEx(section, L"", key, L"");
+			if (!sTextValue.empty() && !_iEqual(sTextValue, newOptionValue))
+			{
+				if (carModelIniFile->GetValueEx(section, L"", sBackupOptionKey, L"").empty())
+					carModelIniFile->SetValue(section.c_str(), sBackupOptionKey.c_str(), sTextValue.c_str());
+
+				carModelIniFile->SetValue(section.c_str(), key.c_str(), newOptionValue.c_str());
+				bModifiedIniFile = true;
+			}
+		}
+	}
+	else
+	{
+		std::wstring sBackupOptionValue;
+		sBackupOptionValue = carModelIniFile->GetValueEx(section, L"", sBackupOptionKey, L"");
+		if (!sBackupOptionValue.empty())
+		{
+			carModelIniFile->SetValue(section.c_str(), sBackupOptionKey.c_str(), L"");
+			carModelIniFile->SetValue(section.c_str(), key.c_str(), sBackupOptionValue.c_str());
+			bModifiedIniFile = true;
+		}
+	}
+
+	return bModifiedIniFile;
+}
+
+bool CNGPCarMenu::ModifyCarModelFiles(int carSlotID)
+{	
+	bool bModifiedIniFile = false;
+	std::wstring sCarIniFileName;
+	std::wstring sTextValue;
+	std::wstring sOptionValue;
+
+	WCHAR wszStockCarINISection[8];
+
+	//if (m_iMenuCockpitSteeringWheel <= 0 && m_iMenuCockpitWipers <= 0 && m_iMenuCockpitWindscreen <= 0 && m_iMenuCockpitOverrideFOV <= 0)
+	//	return FALSE;
+
+	try
+	{
+		CSimpleIniWEx stockCarListINIFile;
+		CSimpleIniWEx carModelIniFile;
+
+		stockCarListINIFile.LoadFile((m_sRBRRootDirW + L"\\cars\\Cars.ini").c_str());
+		swprintf_s(wszStockCarINISection, COUNT_OF_ITEMS(wszStockCarINISection), L"Car0%d", carSlotID);
+		sCarIniFileName = stockCarListINIFile.GetValueEx(wszStockCarINISection, L"", L"IniFile", L"");
+
+		if (!sCarIniFileName.empty())
+		{			
+			std::wstring sCarIniFileNameFullPath = m_sRBRRootDirW + L"\\" + sCarIniFileName;
+			carModelIniFile.LoadFile(sCarIniFileNameFullPath.c_str());
+
+			if (m_iMenuCockpitOverrideFOV > 0)
+			{
+				sOptionValue = std::to_wstring(m_fMenuCockpitOverrideFOVValue);
+				bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"Cam_internal", L"FOV", sOptionValue, false) || bModifiedIniFile;
+			}
+			else
+			{
+				bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"Cam_internal", L"FOV", L"", true) || bModifiedIniFile;
+			}
+
+			if (m_iMenuCockpitSteeringWheel > 0)
+			{
+				sOptionValue = (m_iMenuCockpitSteeringWheel == 1 ? L"true" : L"false");
+				bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"i_steeringwheel", L"Switch", sOptionValue, false) || bModifiedIniFile;
+			}
+			else
+			{
+				bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"i_steeringwheel", L"Switch", L"", true) || bModifiedIniFile;
+			}
+
+			if (m_iMenuCockpitWipers > 0)
+			{
+				sOptionValue = (m_iMenuCockpitWipers == 1 ? L"true" : L"false");
+				bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"i_wiper_r", L"Switch", sOptionValue, false) || bModifiedIniFile;
+				bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"i_wiper_l", L"Switch", sOptionValue, false) || bModifiedIniFile;
+			}
+			else
+			{
+				bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"i_wiper_r", L"Switch", L"", true) || bModifiedIniFile;
+				bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"i_wiper_l", L"Switch", L"", true) || bModifiedIniFile;
+			}
+
+			if (m_iMenuCockpitWindscreen > 0)
+			{
+				sOptionValue = (m_iMenuCockpitWindscreen == 1 ? L"true" : L"false");
+				bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"i_window_f", L"Switch", sOptionValue, false) || bModifiedIniFile;
+			}
+			else
+			{
+				bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"i_window_f", L"Switch", L"", true) || bModifiedIniFile;
+			}
+
+			if (bModifiedIniFile)
+				carModelIniFile.SaveFile(sCarIniFileNameFullPath.c_str());
+		}
+	}
+	catch (...)
+	{
+		LogPrint("ERROR. Failed to set steeringWheel/wipers/windscreen/FOV attributes for a car in slot %d", carSlotID);
+		return FALSE;
+	}
+
+	return TRUE;
 }
 
 
@@ -4422,26 +4579,26 @@ void CNGPCarMenu::DrawFrontEndPage(void)
 	// Draw custom plugin header line
 	m_pGame->SetMenuColor(IRBRGame::MENU_HEADING);
 	m_pGame->SetFont(IRBRGame::FONT_BIG);
-	m_pGame->WriteText(65.0f, 49.0f, m_sPluginTitle.c_str());
+	m_pGame->WriteText(65.0f, 29.0f, m_sPluginTitle.c_str());
 
 	if (m_iMenuCurrentScreen == C_MENUCMD_RENAMEDRIVER)
 	{
 		// Draw gray background in the "text editbox" area
 		m_pGame->SetColor(0x20, 0x20, 0x20, 180);
-		m_pGame->DrawFlatBox(63.0f, 68.0f + (2 * 21.0f), 160.0f, 23.0f);
+		m_pGame->DrawFlatBox(63.0f, 48.0f + (2 * 21.0f), 160.0f, 23.0f);
 
 		m_pGame->SetMenuColor(IRBRGame::MENU_TEXT);
 		
 		sprintf_s(szTextBuf, sizeof(szTextBuf), "Rename driver profile: '%s'", g_pRBRProfile->szProfileName);
-		m_pGame->WriteText(65.0f, 70.0f, szTextBuf);
+		m_pGame->WriteText(65.0f, 50.0f, szTextBuf);
 
-		m_pGame->WriteText(65.0f, 70.0f + (1 * 21.0f), "Enter the new driver name:");
-		m_pGame->WriteText(65.0f, 70.0f + (2 * 21.0f), m_sMenuNewDriverName.c_str());
+		m_pGame->WriteText(65.0f, 50.0f + (1 * 21.0f), "Enter the new driver name:");
+		m_pGame->WriteText(65.0f, 50.0f + (2 * 21.0f), m_sMenuNewDriverName.c_str());
 	}
 	else
 	{
 		// The red menu selection line (background color of the focused menu line)
-		m_pGame->DrawSelection(0.0f, 68.0f + (static_cast<float>(m_iMenuSelection) * 21.0f), 440.0f);
+		m_pGame->DrawSelection(0.0f, 48.0f + (static_cast<float>(m_iMenuSelection) * 21.0f), 440.0f);
 		
 		m_pGame->SetMenuColor(IRBRGame::MENU_TEXT);
 		for (unsigned int i = 0; i < COUNT_OF_ITEMS(g_NGPCarMenu_PluginMenu); ++i)
@@ -4467,24 +4624,36 @@ void CNGPCarMenu::DrawFrontEndPage(void)
 				if (gtcRBRControllerAxisData == nullptr && g_iXInputSplitThrottleBrakeAxis >= 0)
 					m_sMenuStatusText1 = "ATTENTION! You need to restart RBR to activate SplitCombinedThrottleBrake for the first time";
 			}
+			else if (i == C_MENUCMD_COCKPIT_STEERINGWHEEL)
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_HiddenShownOptions[m_iMenuCockpitSteeringWheel]);
+			else if (i == C_MENUCMD_COCKPIT_WIPERS)
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_HiddenShownOptions[m_iMenuCockpitWipers]);
+			else if (i == C_MENUCMD_COCKPIT_WINDSCREEN)
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_HiddenShownOptions[m_iMenuCockpitWindscreen]);
+			else if (i == C_MENUCMD_COCKPIT_OVERRIDEFOV)
+			{
+				if(m_iMenuCockpitOverrideFOV > 0)
+					sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s (%f)", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_EnableDisableOptions[m_iMenuCockpitOverrideFOV], m_fMenuCockpitOverrideFOVValue);
+				else
+					sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_EnableDisableOptions[m_iMenuCockpitOverrideFOV]);
+			}
 			else
 				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s", g_NGPCarMenu_PluginMenu[i]);
 
-			m_pGame->WriteText(65.0f, 70.0f + (static_cast<float>(i) * 21.0f), szTextBuf);
+			m_pGame->WriteText(65.0f, 50.0f + (static_cast<float>(i) * 21.0f), szTextBuf);
 		}
 	}
 
 	m_pGame->SetFont(IRBRGame::FONT_SMALL);
 
-	posY = 70.0f + (static_cast<float>COUNT_OF_ITEMS(g_NGPCarMenu_PluginMenu)) * 21.0f;
-	iRow = 3;
+	posY = 50.0f + (static_cast<float>COUNT_OF_ITEMS(g_NGPCarMenu_PluginMenu)) * 21.0f;
+	iRow = 1;
 
 	if (!m_sMenuStatusText1.empty()) m_pGame->WriteText(10.0f, posY + (static_cast<float>(iRow++) * 18.0f), m_sMenuStatusText1.c_str());
 	if (!m_sMenuStatusText2.empty()) m_pGame->WriteText(10.0f, posY + (static_cast<float>(iRow++) * 18.0f), m_sMenuStatusText2.c_str());
 	if (!m_sMenuStatusText3.empty()) m_pGame->WriteText(10.0f, posY + (static_cast<float>(iRow++) * 18.0f), m_sMenuStatusText3.c_str());
 
-	iRow += 3;
-	m_pGame->WriteText(10.0f, posY + (static_cast<float>(iRow++) * 18.0f), C_PLUGIN_FOOTER_STR);
+	m_pGame->WriteText(10.0f, /*posY + (static_cast<float>(iRow++) * 18.0f)*/480 - 21.0f, C_PLUGIN_FOOTER_STR);
 }
 
 
@@ -4494,13 +4663,27 @@ void CNGPCarMenu::DrawFrontEndPage(void)
 //typedef IPlugin* ( *tRBR_CreatePlugin)(IRBRGame* pGame);
 //#endif
 
-#define DO_MENUSELECTION_LEFTRIGHT(OptionID, OptionValueVariable, OptionArray) \
-   if (m_iMenuSelection == OptionID && bLeft && (--OptionValueVariable) < 0) OptionValueVariable = 0; \
-   else if (m_iMenuSelection == OptionID && bRight && (++OptionValueVariable) >= COUNT_OF_ITEMS(OptionArray)) OptionValueVariable = COUNT_OF_ITEMS(OptionArray)-1
+#define DO_MENUSELECTION_LEFTRIGHT(OptionID, OptionValueVariable, OptionArray, GlobalDirtyFlag, OptionDirtyFlag) \
+   { OptionDirtyFlag = false; \
+   if (m_iMenuSelection == OptionID) \
+   { \
+	  if(bLeft && OptionValueVariable > 0) { OptionValueVariable--; OptionDirtyFlag = GlobalDirtyFlag = true; } \
+      else if (bRight && OptionValueVariable < COUNT_OF_ITEMS(OptionArray)-1) { OptionValueVariable++; OptionDirtyFlag = GlobalDirtyFlag = true; } \
+   } }
 
-#define DO_MENUSELECTION_LEFTRIGHT_BOUNDS(OptionID, OptionValueVariable, OptionValueMin, OptionValueMax) \
-   if (m_iMenuSelection == OptionID && bLeft && (--OptionValueVariable) < OptionValueMin) OptionValueVariable = OptionValueMin; \
-   else if (m_iMenuSelection == OptionID && bRight && (++OptionValueVariable) > OptionValueMax) OptionValueVariable = OptionValueMax
+   //if (m_iMenuSelection == OptionID && bLeft && (--OptionValueVariable) < 0) OptionValueVariable = 0; \
+   //else if (m_iMenuSelection == OptionID && bRight && (++OptionValueVariable) >= COUNT_OF_ITEMS(OptionArray)) OptionValueVariable = COUNT_OF_ITEMS(OptionArray)-1
+
+#define DO_MENUSELECTION_LEFTRIGHT_BOUNDS(OptionID, OptionValueVariable, OptionValueMin, OptionValueMax, GlobalDirtyFlag, OptionDirtyFlag) \
+   { OptionDirtyFlag = false; \
+   if (m_iMenuSelection == OptionID) \
+   { \
+	  if(bLeft && OptionValueVariable > OptionValueMin) { OptionValueVariable--; OptionDirtyFlag = GlobalDirtyFlag = true; } \
+      else if (bRight && OptionValueVariable < OptionValueMax) { OptionValueVariable++; OptionDirtyFlag = GlobalDirtyFlag = true; } \
+   } }
+
+   //if (m_iMenuSelection == OptionID && bLeft && (--OptionValueVariable) < OptionValueMin) OptionValueVariable = OptionValueMin; \
+   //else if (m_iMenuSelection == OptionID && bRight && (++OptionValueVariable) > OptionValueMax) OptionValueVariable = OptionValueMax
 
 void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, bool bLeft, bool bRight, bool bSelect)
 {
@@ -4614,7 +4797,8 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 				m_iCustomReplayCarID = GetNextScreenshotCarID(-1);
 
 				// Prepare replay to show custom car 3D model and car position
-				if (m_iCustomReplayCarID >= 0 && CNGPCarMenu::PrepareScreenshotReplayFile(m_iCustomReplayCarID))
+				//if (m_iCustomReplayCarID >= 0 && CNGPCarMenu::PrepareScreenshotReplayFile(m_iCustomReplayCarID))
+				if (m_iCustomReplayCarID >= 0)
 				{
 					ClearCachedCarPreviewImages();
 
@@ -4627,7 +4811,8 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 					// Set a flag that custom replay generation is active during replays. If this is zero then replay plays the file normally
 					m_iCustomReplayState = 1;
 
-					::RBRAPI_Replay(this->m_sRBRRootDir, C_REPLAYFILENAME_SCREENSHOT);
+					//::RBRAPI_Replay(this->m_sRBRRootDir, C_REPLAYFILENAME_SCREENSHOT);
+					m_pGame->StartGame(71, m_iCustomReplayCarID, IRBRGame::GOOD_WEATHER, IRBRGame::TYRE_GRAVEL_DRY, nullptr);
 				}
 				else
 					m_sMenuStatusText1 = "All cars already have a preview image. Did not create any new images.";
@@ -4647,7 +4832,7 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 #if USE_DEBUG == 1
 			else if (m_iMenuSelection == C_MENUCMD_SELECTCARSKIN)
 			{
-				__asm {
+/*				__asm {
 					nop
 					nop
 					int 3
@@ -4663,18 +4848,6 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 				D3DDEVTYPE devType = D3DDEVTYPE_HAL;
 				g_pRBRIDirect3DDevice9->GetDirect3D(&pDD9);
 				pDD9->CreateDevice(0, devType, 0, 0, &pp, &g_pRBRIDirect3DDevice9);
-
-/*
-				m_iCustomSelectCarSkinState = 1;
-
-				//g_pRBRGameMode->gameMode = 0x03;
-				g_pRBRGameMode->trackID = 0x04;
-				g_pRBRMapSettingsEx->skyCloudType = 0;
-				g_pRBRMapSettingsEx->surfaceWetness = 0;
-				g_pRBRMapSettingsEx->surfaceAge = 0;
-				g_pRBRMapSettingsEx->timeOfDay = 1;
-				g_pRBRMapSettingsEx->skyType = 0;
-				g_pRBRPlugin->m_pGame->StartGame(68, RBRAPI_MapMenuIdxToCarID(0), IRBRGame::GOOD_WEATHER, IRBRGame::TYRE_GRAVEL_DRY, nullptr);
 */
 			}
 #endif
@@ -4697,43 +4870,49 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 		// Menu options changed in the current menu line. Options don't wrap around.
 		// Note! Not all menu lines have any additional options.
 		//
-		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_CREATEOPTION, m_iMenuCreateOption, g_NGPCarMenu_CreateOptions);
+		bool bDirtyFlag = false;
+		bool bOptionDirtyFlag = false;
 
-		int iPrevMenuImageOptionValue = m_iMenuImageOption;
-		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_IMAGEOPTION, m_iMenuImageOption, g_NGPCarMenu_ImageOptions);
+		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_CREATEOPTION, m_iMenuCreateOption, g_NGPCarMenu_CreateOptions, bDirtyFlag, bOptionDirtyFlag);
 
-		int iPrevMenuRBRTMOptionValue = m_iMenuRBRTMOption;
-		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_RBRTMOPTION, m_iMenuRBRTMOption, g_NGPCarMenu_EnableDisableOptions);
-		if (m_iMenuRBRTMOption == 1 && iPrevMenuRBRTMOptionValue != m_iMenuRBRTMOption)
+		//int iPrevMenuImageOptionValue = m_iMenuImageOption;
+		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_IMAGEOPTION, m_iMenuImageOption, g_NGPCarMenu_ImageOptions, bDirtyFlag, bOptionDirtyFlag);
+
+		//int iPrevMenuRBRTMOptionValue = m_iMenuRBRTMOption;
+		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_RBRTMOPTION, m_iMenuRBRTMOption, g_NGPCarMenu_EnableDisableOptions, bDirtyFlag, bOptionDirtyFlag);
+		if (m_iMenuRBRTMOption == 1 && bOptionDirtyFlag /*iPrevMenuRBRTMOptionValue != m_iMenuRBRTMOption*/)
 			g_bNewCustomPluginIntegrations = TRUE;
 
-		int iPrevMenuRBRRXOptionValue = m_iMenuRBRRXOption;
-		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_RBRRXOPTION, m_iMenuRBRRXOption, g_NGPCarMenu_EnableDisableOptions);
-		if (m_iMenuRBRRXOption == 1 && iPrevMenuRBRRXOptionValue != m_iMenuRBRRXOption)
+		//int iPrevMenuRBRRXOptionValue = m_iMenuRBRRXOption;
+		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_RBRRXOPTION, m_iMenuRBRRXOption, g_NGPCarMenu_EnableDisableOptions, bDirtyFlag, bOptionDirtyFlag);
+		if (m_iMenuRBRRXOption == 1 && bOptionDirtyFlag /*iPrevMenuRBRRXOptionValue != m_iMenuRBRRXOption*/)
 			g_bNewCustomPluginIntegrations = TRUE;
 
-		int iPrevMenuAutoLogonOptionValue = m_iMenuAutoLogonOption;
-		DO_MENUSELECTION_LEFTRIGHT_BOUNDS(C_MENUCMD_AUTOLOGONOPTION, m_iMenuAutoLogonOption, 0, ((int)g_NGPCarMenu_AutoLogonOptions.size() - 1) );
-		//if (m_iMenuSelection == C_MENUCMD_AUTOLOGONOPTION && bLeft && (--m_iMenuAutoLogonOption) < 0) m_iMenuAutoLogonOption = 0;
-		//else if (m_iMenuSelection == C_MENUCMD_AUTOLOGONOPTION && bRight && (++m_iMenuAutoLogonOption) >= (int)g_NGPCarMenu_AutoLogonOptions.size()) m_iMenuAutoLogonOption = g_NGPCarMenu_AutoLogonOptions.size() - 1;
+		//int iPrevMenuAutoLogonOptionValue = m_iMenuAutoLogonOption;
+		DO_MENUSELECTION_LEFTRIGHT_BOUNDS(C_MENUCMD_AUTOLOGONOPTION, m_iMenuAutoLogonOption, 0, ((int)g_NGPCarMenu_AutoLogonOptions.size() - 1), bDirtyFlag, bOptionDirtyFlag);
 
-		int iPrevMenuRallySchoolMenuOptionValue = m_iMenuRallySchoolMenuOption;
-		DO_MENUSELECTION_LEFTRIGHT_BOUNDS(C_MENUCMD_RALLYSCHOOLMENUOPTION, m_iMenuRallySchoolMenuOption, 0, ((int)g_NGPCarMenu_AutoLogonOptions.size() - 1) );
-		//if (m_iMenuSelection == C_MENUCMD_RALLYSCHOOLMENUOPTION && bLeft && (--m_iMenuRallySchoolMenuOption) < 0) m_iMenuRallySchoolMenuOption = 0;
-		//else if (m_iMenuSelection == C_MENUCMD_RALLYSCHOOLMENUOPTION && bRight && (++m_iMenuRallySchoolMenuOption) >= (int)g_NGPCarMenu_AutoLogonOptions.size()) m_iMenuRallySchoolMenuOption = g_NGPCarMenu_AutoLogonOptions.size() - 1;
-		if (iPrevMenuRallySchoolMenuOptionValue != m_iMenuRallySchoolMenuOption)
+		//int iPrevMenuRallySchoolMenuOptionValue = m_iMenuRallySchoolMenuOption;
+		DO_MENUSELECTION_LEFTRIGHT_BOUNDS(C_MENUCMD_RALLYSCHOOLMENUOPTION, m_iMenuRallySchoolMenuOption, 0, ((int)g_NGPCarMenu_AutoLogonOptions.size() - 1), bDirtyFlag, bOptionDirtyFlag);
+		if (bOptionDirtyFlag /*iPrevMenuRallySchoolMenuOptionValue != m_iMenuRallySchoolMenuOption*/)
 			m_sRallySchoolMenuReplacement = g_NGPCarMenu_AutoLogonOptions[m_iMenuRallySchoolMenuOption];
 
-		int iPrevXInputSplitThrottleBrakeAxisOptionValue = g_iXInputSplitThrottleBrakeAxis;
-		DO_MENUSELECTION_LEFTRIGHT_BOUNDS(C_MENUCMD_SPLITCOMBINEDTHROTTLEBRAKE, g_iXInputSplitThrottleBrakeAxis, -1, 3);
+		//int iPrevXInputSplitThrottleBrakeAxisOptionValue = g_iXInputSplitThrottleBrakeAxis;
+		DO_MENUSELECTION_LEFTRIGHT_BOUNDS(C_MENUCMD_SPLITCOMBINEDTHROTTLEBRAKE, g_iXInputSplitThrottleBrakeAxis, -1, 3, bDirtyFlag, bOptionDirtyFlag);
+
+		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_COCKPIT_STEERINGWHEEL, m_iMenuCockpitSteeringWheel, g_NGPCarMenu_HiddenShownOptions, bDirtyFlag, bOptionDirtyFlag);
+		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_COCKPIT_WIPERS, m_iMenuCockpitWipers, g_NGPCarMenu_HiddenShownOptions, bDirtyFlag, bOptionDirtyFlag);
+		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_COCKPIT_WINDSCREEN, m_iMenuCockpitWindscreen, g_NGPCarMenu_HiddenShownOptions, bDirtyFlag, bOptionDirtyFlag);
+
+		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_COCKPIT_OVERRIDEFOV, m_iMenuCockpitOverrideFOV, g_NGPCarMenu_EnableDisableOptions, bDirtyFlag, bOptionDirtyFlag);
 
 		//
 		// Save settings if any of the persistent options was changed
 		//
-		if (iPrevMenuImageOptionValue != m_iMenuImageOption || iPrevMenuRBRTMOptionValue != m_iMenuRBRTMOption
-			|| iPrevMenuRBRRXOptionValue != m_iMenuRBRRXOption || iPrevMenuAutoLogonOptionValue != m_iMenuAutoLogonOption
-			|| iPrevMenuRallySchoolMenuOptionValue != m_iMenuRallySchoolMenuOption || iPrevXInputSplitThrottleBrakeAxisOptionValue != g_iXInputSplitThrottleBrakeAxis
-			)
+		//if (iPrevMenuImageOptionValue != m_iMenuImageOption || iPrevMenuRBRTMOptionValue != m_iMenuRBRTMOption
+		//	|| iPrevMenuRBRRXOptionValue != m_iMenuRBRRXOption || iPrevMenuAutoLogonOptionValue != m_iMenuAutoLogonOption
+		//	|| iPrevMenuRallySchoolMenuOptionValue != m_iMenuRallySchoolMenuOption || iPrevXInputSplitThrottleBrakeAxisOptionValue != g_iXInputSplitThrottleBrakeAxis
+		//	)
+		if(bDirtyFlag)
 		{
 			SaveSettingsToPluginINIFile();
 		}
@@ -4993,9 +5172,14 @@ void CNGPCarMenu::OnMapUnloaded()
 
 void CNGPCarMenu::OnRaceStarted()
 {
+	ModifyCarModelFiles(g_pRBRMapSettings->carID);
+
 	m_rbrLatestStageResults.clear(); // Notify rbr recent list to update the list of recent races when the RBR returns to the main screen
 
+#if USE_DEBUG == 1
+	// DEBUG. Test custom trackLoad img
 	//SetupCustomTrackLoadImage(std::wstring(L"c:\\apps\\rbr\\Textures\\splash\\121-*.dds"), nullptr, nullptr, IMAGE_TEXTURE_POSITION_HORIZONTAL_CENTER | IMAGE_TEXTURE_SCALE_PRESERVE_ASPECTRATIO);
+#endif
 
 	m_bRBRRacingActive = TRUE;
 	m_bMapLoadedCalled = m_bMapUnloadedCalled = FALSE;
@@ -5272,8 +5456,111 @@ inline void CNGPCarMenu::CustomRBRDirectXBeginScene()
 		//
 
 		m_bCustomReplayShowCroppingRect = true;
-		g_pRBRCarInfo->stageStartCountdown = 1.0f;
+		//g_pRBRCarInfo->stageStartCountdown = 1.0f;
+		g_pRBRCarInfo->stageStartCountdown = 7.0f;
 
+		if (m_iCustomReplayState == 2)
+		{
+			// Move car into a screenshot position
+			g_pRBRGameMode->gameMode = 0x0A;
+
+			m_iCustomReplayState = 4;
+			m_tCustomReplayStateStartTime = std::chrono::steady_clock::now();
+
+			g_pRBRCameraInfo = g_pRBRCarInfo->pCamera->pCameraInfo;
+			g_pRBRCarMovement = (PRBRCarMovement) * (DWORD*)(0x008EF660);
+
+			g_pRBRCameraInfo->cameraType = 3;
+
+			// Set car and camera position to create a cool car preview image
+			g_pRBRCameraInfo->camOrientation.x = 0.664824f;
+			g_pRBRCameraInfo->camOrientation.y = -0.747000f;
+			g_pRBRCameraInfo->camOrientation.z = 0.000000f;
+			g_pRBRCameraInfo->camPOV1.x = 0.699783f;
+			g_pRBRCameraInfo->camPOV1.y = 0.622800f;
+			g_pRBRCameraInfo->camPOV1.z = -0.349891f;
+			g_pRBRCameraInfo->camPOV2.x = 0.261369f;
+			g_pRBRCameraInfo->camPOV2.y = 0.232616f;
+			g_pRBRCameraInfo->camPOV2.z = 0.936790f;
+			g_pRBRCameraInfo->camPOS.x = -4.000000f;
+			g_pRBRCameraInfo->camPOS.y = -4.559966f;
+			g_pRBRCameraInfo->camPOS.z = 2.000000f;
+			g_pRBRCameraInfo->camFOV = 75.000175f;
+			g_pRBRCameraInfo->camNear = 0.150000f;
+
+			g_pRBRCarMovement->carQuat.x = -0.017969f;
+			g_pRBRCarMovement->carQuat.y = 0.008247f;
+			g_pRBRCarMovement->carQuat.z = 0.982173f;
+			g_pRBRCarMovement->carQuat.w = -0.186811f;
+
+			if (m_screenshotCarPosition != 1)
+			{
+				// Normal car position (screenshotCarPosition==0)
+				g_pRBRCarMovement->carMapLocation.m[0][0] = -0.929464f;
+				g_pRBRCarMovement->carMapLocation.m[0][1] = -0.367257f;
+				g_pRBRCarMovement->carMapLocation.m[0][2] = -0.032216f;
+				g_pRBRCarMovement->carMapLocation.m[0][3] = 0.366664f;
+			}
+			else
+			{
+				// Car in the middle of nowhere, in the sky (screenshotCarPosition==1)
+				g_pRBRCarMovement->carMapLocation.m[0][0] = 4000.929464f;
+				g_pRBRCarMovement->carMapLocation.m[0][1] = 4000.367257f;
+				g_pRBRCarMovement->carMapLocation.m[0][2] = 4000.032216f;
+				g_pRBRCarMovement->carMapLocation.m[0][3] = 4000.366664f;
+			}
+
+			g_pRBRCarMovement->carMapLocation.m[1][0] = -0.929974f;
+			g_pRBRCarMovement->carMapLocation.m[1][1] = 0.022913f;
+			g_pRBRCarMovement->carMapLocation.m[1][2] = -0.038378f;
+			g_pRBRCarMovement->carMapLocation.m[1][3] = 0.009485f;
+			g_pRBRCarMovement->carMapLocation.m[2][0] = 0.999218f;
+			g_pRBRCarMovement->carMapLocation.m[2][1] = 0.000008f;
+			g_pRBRCarMovement->carMapLocation.m[2][2] = 2.000000f;
+			g_pRBRCarMovement->carMapLocation.m[2][3] = 524287.968750f;
+			g_pRBRCarMovement->carMapLocation.m[3][0] = 7.236033f;
+			g_pRBRCarMovement->carMapLocation.m[3][1] = 149.234146f;
+			g_pRBRCarMovement->carMapLocation.m[3][2] = 0.287426f;
+			g_pRBRCarMovement->carMapLocation.m[3][3] = -1.453711f;
+		}
+/*
+		else if (false && m_iCustomReplayState == 6)
+		{
+			// Screenshot taken. Prepare the next car for a screenshot
+			m_bCustomReplayShowCroppingRect = false;
+			g_pRBRCarInfo->stageStartCountdown = 7.0f;
+
+			m_iCustomReplayState = 0;
+			m_iCustomReplayCarID = GetNextScreenshotCarID(m_iCustomReplayCarID);
+
+			if (m_iCustomReplayCarID >= 0)
+			{
+				DebugPrint("m_iCustomReplayState=6. NextReplayCarID");
+
+				//if (CNGPCarMenu::PrepareScreenshotReplayFile(m_iCustomReplayCarID))
+				//	m_iCustomReplayState = 1;
+				m_iCustomReplayState = 1;
+
+				g_pRBRGameMode->gameMode = 0x03;
+				g_pRBRGameMode->trackID = 0x04;
+				g_pRBRGameMode->gameStatus = 0x01;
+
+				__asm int 3
+				__asm nop 
+				__asm nop 
+
+				m_pGame->StartGame(71, m_iCustomReplayCarID, IRBRGame::GOOD_WEATHER, IRBRGame::TYRE_GRAVEL_DRY, nullptr);
+			}
+			else
+			{
+				// TODO quit the stage
+			}
+
+			//::RBRAPI_Replay(m_sRBRRootDir, C_REPLAYFILENAME_SCREENSHOT);
+		}
+*/
+
+/*
 		if (g_pRBRGameMode->gameMode == 0x08)
 		{
 			// Don't start the normal replay logic of RBR
@@ -5367,6 +5654,8 @@ inline void CNGPCarMenu::CustomRBRDirectXBeginScene()
 
 			::RBRAPI_Replay(m_sRBRRootDir, C_REPLAYFILENAME_SCREENSHOT);
 		}
+*/
+
 	}
 }
 
@@ -5492,7 +5781,8 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 		if (m_iCustomReplayState >= 2 && m_bCustomReplayShowCroppingRect && m_iCustomReplayState != 4)
 		{
 			// Draw rectangle to highlight the screenshot capture area (except when state == 4 because then this plugin takes the car preview screenshot and we don't want to see the gray box in a preview image)
-			D3D9DrawVertex2D(g_pRBRIDirect3DDevice9, m_screenshotCroppingRectVertexBuffer);
+			if(m_screenshotCroppingRectVertexBuffer != nullptr)
+				D3D9DrawVertex2D(g_pRBRIDirect3DDevice9, m_screenshotCroppingRectVertexBuffer);
 
 			if(m_screenshotCroppingRectVertexBufferRSF != nullptr)
 				D3D9DrawVertex2D(g_pRBRIDirect3DDevice9, m_screenshotCroppingRectVertexBufferRSF);
@@ -5906,12 +6196,25 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 	//       5=Screenshot taken. If this was the first car then show the cropping rect for few secs (easier to check that the cropping rect is in the correct location)
 	//       6=Ending the screenshot state cycle. End or start all over again with a new car
 	//
-	if (m_iCustomReplayState == 2)
+	
+	//g_pRBRCarInfo->stageStartCountdown = 7.0f;
+
+/*	if (m_iCustomReplayState == 2)
 	{
+		DebugPrint("m_iCustomReplayState=2");
+
 		std::chrono::steady_clock::time_point tCustomReplayStateNowTime = std::chrono::steady_clock::now();
 		auto iTimeElapsedSec = std::chrono::duration_cast<std::chrono::milliseconds>(tCustomReplayStateNowTime - m_tCustomReplayStateStartTime).count();
-		if (iTimeElapsedSec >= 1200)
-			m_iCustomReplayState = 3;
+		//if (iTimeElapsedSec >= 1200)
+		//	m_iCustomReplayState = 3;
+		m_iCustomReplayState = 3;
+	}
+	else 
+*/
+	if (m_iCustomReplayState == 1)
+	{
+		if(g_pRBRGameMode->gameMode == 0x0A)
+			m_iCustomReplayState = 2;
 	}
 	else if (m_iCustomReplayState == 4)
 	{
@@ -5949,10 +6252,43 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 	}
 	else if (m_iCustomReplayState == 5)
 	{
-		std::chrono::steady_clock::time_point tCustomReplayStateNowTime = std::chrono::steady_clock::now();
-		auto iTimeElapsedSec = std::chrono::duration_cast<std::chrono::milliseconds>(tCustomReplayStateNowTime - m_tCustomReplayStateStartTime).count();
-		if (m_iCustomReplayScreenshotCount > 1 || iTimeElapsedSec >= 3000)
-			m_iCustomReplayState = 6; // Completing the screenshot state for this carID
+		//std::chrono::steady_clock::time_point tCustomReplayStateNowTime = std::chrono::steady_clock::now();
+		//auto iTimeElapsedSec = std::chrono::duration_cast<std::chrono::milliseconds>(tCustomReplayStateNowTime - m_tCustomReplayStateStartTime).count();
+		//if (m_iCustomReplayScreenshotCount > 1 || iTimeElapsedSec >= 3000)
+		if (m_iCustomReplayScreenshotCount > 1 || (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_tCustomReplayStateStartTime).count()) >= 3000)
+		{
+			// Completing the screenshot state for this carID (the first image waits 3 secs before completing it, this is just to give a bit more time to see the grey highlighted screenshot rectangle area)
+			m_iCustomReplayState = 6; 
+		}
+	}
+	else if (m_iCustomReplayState == 6)
+	{
+		// Screenshot taken. Prepare the next car for a screenshot
+		m_bCustomReplayShowCroppingRect = false;
+		//g_pRBRCarInfo->stageStartCountdown = 7.0f;
+
+		m_iCustomReplayCarID = GetNextScreenshotCarID(m_iCustomReplayCarID);
+
+		if (m_iCustomReplayCarID >= 0)
+		{
+			//if (CNGPCarMenu::PrepareScreenshotReplayFile(m_iCustomReplayCarID))
+			//	m_iCustomReplayState = 1;
+			m_iCustomReplayState = 1;
+
+			// Force reload the stage and the next car
+			g_pRBRGameMode->gameStatus = 0x01;
+			g_pRBRGameMode->gameMode = 0x03;
+			g_pRBRMapSettingsEx->trackID = 0x04;
+			m_pGame->StartGame(71, m_iCustomReplayCarID, IRBRGame::GOOD_WEATHER, IRBRGame::TYRE_GRAVEL_DRY, nullptr);
+		}
+		else
+		{
+			// Quit back to the game menu from racing mode
+			m_iCustomReplayState = 0;
+			g_pRBRGameMode->gameMode = 0x02;
+			g_pRBRRaceTimePauseMenuSystem->menuStatus = 0x03;
+			//g_pRBRGameMode->gameStatus = 0x01;
+		}
 	}
 
 	return hResult;
@@ -6087,8 +6423,10 @@ void CNGPCarMenu::CompleteSaveReplayProcess(const std::string& replayFileName)
 */
 
 		//fileNameWithoutExt = fs::path(fileNameItem).replace_extension().generic_wstring();
-		fileNameWithoutExt = fs::path(replayFileName).replace_extension().generic_wstring();
+		fileNameWithoutExt = _ToWString(replayFileName);
 		sReplayINIFileName = m_sRBRRootDir + "\\Replays\\" + _ToString(fileNameWithoutExt) + ".ini";
+
+		DebugPrint("CompleteSaveReplayProcess. RPL=%s  INI=%s", replayFileName.c_str(), sReplayINIFileName.c_str());
 
 		// Re-create the replay metadata INI file in case the old file has some garbage left overs from an old version
 		std::ofstream recreatedFile(sReplayINIFileName, std::ios::out | std::ios::trunc);
@@ -6097,6 +6435,7 @@ void CNGPCarMenu::CompleteSaveReplayProcess(const std::string& replayFileName)
 			recreatedFile << "; RBR replay metadata file generated by NGPCarMenu plugin. TYPE and NAME options are required in BTB replays. Other options are just for informative purposes" << std::endl;
 		else
 			recreatedFile << "; RBR replay metadata file generated by NGPCarMenu plugin. All options are just for informative purposes" << (m_bRBRTMPluginActive ? " in RBRTM replays" : "") << std::endl;
+
 		recreatedFile.close();
 
 		replayINIFile.LoadFile(sReplayINIFileName.c_str());
@@ -6171,6 +6510,10 @@ void CNGPCarMenu::CompleteSaveReplayProcess(const std::string& replayFileName)
 
 			replayINIFile.SetValue("Replay", "CarModel", sCarModelName.c_str());
 			replayINIFile.SetLongValue("Replay", "CarSlot", m_latestCarID);
+
+			// Write out finish time (if the rally was completed)
+			if (g_pRBRCarInfo != nullptr && g_pRBRCarInfo->raceTime != 0.0f && (g_pRBRCarInfo->finishLinePassed > 0 || g_pRBRCarInfo->distanceToFinish <= 0.0f))
+				replayINIFile.SetValue("Replay", "FinishTimeSecs", std::to_string(g_pRBRCarInfo->raceTime).c_str());
 
 			replayINIFile.SetValue("Replay", "CarModelFolder", _ToString(g_RBRCarSelectionMenuEntry[RBRAPI_MapCarIDToMenuIdx(m_latestCarID)].wszCarModelFolder).c_str() /*sCarModelFolder.c_str()*/ );
 			replayINIFile.SetValue("Replay", "CarPhysicsFolder", sCarPhysicsFolder.c_str());
@@ -6347,7 +6690,7 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 	// DEBUG
 	static DWORD dwResetTick = 0;
 	//if (g_pRBRGameMode->gameMode == 0x01)
-	if (FALSE && (g_pRBRGameMode->gameMode == 0x03 || g_pRBRGameMode->gameMode == 0x01))
+	if (false && (g_pRBRGameMode->gameMode == 0x03 || g_pRBRGameMode->gameMode == 0x01))
 	{
 		if (dwResetTick == 0) dwResetTick = GetTickCount32();
 		else if (GetTickCount32() - dwResetTick > 10000)
@@ -6356,8 +6699,8 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 			//g_pRBRGameMode->gameMode = 0x0C;
 			g_pRBRGameMode->gameMode = 0x03;
 			g_pRBRGameMode->trackID = 0x04;
-			//g_pRBRGameMode->gameStatus = 0x01;
-			g_pRBRPlugin->m_pGame->StartGame(4, 5, IRBRGame::GOOD_WEATHER, IRBRGame::TYRE_TARMAC_DRY, nullptr);
+			g_pRBRGameMode->gameStatus = 0x01;
+			g_pRBRPlugin->m_pGame->StartGame(4, 0 + rand() % 7, IRBRGame::GOOD_WEATHER, IRBRGame::TYRE_TARMAC_DRY, nullptr);
 			//dwResetTick = GetTickCount32();
 			dwResetTick = 0;
 		}
@@ -6376,7 +6719,7 @@ HRESULT __fastcall CustomRBRDirectXEndScene(void* objPointer)
 	}
 */
 
-	if (g_pRBRGameMode->gameMode != 01)
+	if (g_pRBRGameMode->gameMode != 01 || g_pRBRPlugin->m_iCustomReplayState > 0)
 		return g_pRBRPlugin->CustomRBRDirectXEndScene(objPointer);
 	else
 		return ::Func_OrigRBRDirectXEndScene(objPointer); // Racing is active. No need to do any NGPCarMenu special things
@@ -6408,53 +6751,21 @@ int __fastcall CustomRBRSaveReplay(void* objPointer, DWORD /*ignoreEDX*/, const 
 //
 #define RBRAXIS_DEADZONE(axisValue, deadZoneValue) ((axisValue) - (deadZoneValue) <= 0.0f ? 0.0f : RANGE_REMAP((axisValue) - (deadZoneValue), 0.0f, 1.0f - (deadZoneValue), 0.0f, 1.0f))
 #define RBRAXIS_DEADZONE_WIDERANGE(axisValue, deadZoneValue) ((axisValue) - ((deadZoneValue)*2.0f) <= -1.0f ? -1.0f : RANGE_REMAP(((axisValue)+1.0f) - ((deadZoneValue)*2.0f), 0.0f, 2.0f - ((deadZoneValue)*2.0f), 0.0f, 2.0f) - 1.0f)
+#define RBRAXIS_DEADZONE_WIDERANGE_INVERTED(axisValue, deadZoneValue) ((axisValue) + ((deadZoneValue)*2.0f) >= 1.0f ? 1.0f : (2.0f - RANGE_REMAP((2.0f - ((axisValue)+1.0f)) - ((deadZoneValue)*2.0f), 0.0f, 2.0f - ((deadZoneValue)*2.0f), 0.0f, 2.0f)) - 1.0f)
 
 #define RBRAXIS_DEADZONE_POSITIVE(axisValue, deadZoneValue) ((axisValue) - (deadZoneValue) <= 0.0f ? 0.0f : RANGE_REMAP((axisValue) - (deadZoneValue), 0.0f, 1.0f - (deadZoneValue), 0.0f, 1.0f))
 #define RBRAXIS_DEADZONE_NEGATIVE(axisValue, deadZoneValue) ((axisValue) + (deadZoneValue) >= 0.0f ? 0.0f : -RANGE_REMAP(fabs(axisValue) - (deadZoneValue), 0.0f, 1.0f - (deadZoneValue), 0.0f, 1.0f))
 
 float __fastcall CustomRBRControllerAxisData(void* objPointer, DWORD /*ignoreEDX*/, __int32 axisID)
 {
-/*
-#if USE_DEBUG == 1
-	static float prevThrottle = 0, prevBrake = 0, prevCombined = 0, currentAxisValue;
-	bool bPrintDebug = false;
-	if (axisID == 3 && ((PRBRControllerAxis)objPointer)[3].controllerAxisData != nullptr && prevThrottle != FloorFloat(((PRBRControllerAxis)objPointer)[3].controllerAxisData->axisValue, 2))
-	{
-		prevThrottle = FloorFloat(((PRBRControllerAxis)objPointer)[3].controllerAxisData->axisValue, 2);
-		bPrintDebug = true;
-	}
-	else if (axisID == 4 && ((PRBRControllerAxis)objPointer)[4].controllerAxisData != nullptr)
-	{	
-		currentAxisValue = FloorFloat(((PRBRControllerAxis)objPointer)[4].controllerAxisData->axisValue, 3);
-		if (prevCombined != currentAxisValue)
-		{
-			prevCombined = currentAxisValue;
-			bPrintDebug = true;
-		}
-	}
-	else if (axisID == 5 && ((PRBRControllerAxis)objPointer)[5].controllerAxisData != nullptr && prevBrake != FloorFloat(((PRBRControllerAxis)objPointer)[5].controllerAxisData->axisValue, 2))
-	{
-		prevBrake = FloorFloat(((PRBRControllerAxis)objPointer)[5].controllerAxisData->axisValue, 2);
-		bPrintDebug = true;
-	}
-
-	if(bPrintDebug)
-		DebugPrint("axisID=%d  Throttle=%f  Brake=%f  Combined=%f.  Throttle3=%f  Brake5=%f  Combined4=%f", axisID, prevThrottle, prevBrake, prevCombined,
-			FloorFloat(((PRBRControllerAxis)objPointer)[3].controllerAxisData->axisValue, 2),
-			FloorFloat(((PRBRControllerAxis)objPointer)[5].controllerAxisData->axisValue, 2),
-			FloorFloat(((PRBRControllerAxis)objPointer)[4].controllerAxisData->axisValue, 2)
-		);
-#endif
-*/
-
 	const static int invertedPedalBitFlag[] = 
 	{   0,0,0, 
 		0x01,    // idx 3 = throttle bit1
 		0, 
 		0x02,    // idx 5 = brake bit2
-		0x08,    // idx 6 = clutch bit4
+		0x08,    // idx 6 = handbrake bit4
 		0,0,0,0,
-		0x04     // idx 11 = handbrake bit3
+		0x04     // idx 11 = clutch bit3
 	};
 
 	switch (axisID)
@@ -6474,69 +6785,43 @@ float __fastcall CustomRBRControllerAxisData(void* objPointer, DWORD /*ignoreEDX
 
 	case 3:  // Throttle
 	case 5:  // Brake
-	case 6:  // Clutch 
-	case 11: // Handbrake
 		if (((PRBRControllerAxis)objPointer)[axisID].controllerAxisData != nullptr)
 		{
-			BOOL bAxisInverted = (g_iInvertedPedalsStartupFixFlag & invertedPedalBitFlag[axisID]);
-			if (bAxisInverted && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->dinputStatus != 0)
+			if ( (g_iInvertedPedalsStartupFixFlag & invertedPedalBitFlag[axisID]) && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->dinputStatus != 0 )
 				return 1.0f;// Inverted pedal bugfix at starting line when the pedal is not yet pressed at all.  @0x795e14 max value. Could it be something else than 1.0f?
 
 #if USE_DEBUG == 1
-			static float prevAxisValue = 0.0f;
-			bool bDebugPrint = false;
-			if (axisID == 3 && prevAxisValue != ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue)
-			{
-				prevAxisValue = ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue;
-				bDebugPrint = true;
-			}
-
-			if (axisID == 3 && bDebugPrint)
-				DebugPrint("Before AxisValue=%f", ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue);
+			float prevValue = ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue;
 #endif
 
 			if (g_fControllerAxisDeadzone[axisID] > 0.0f)
 			{
-				// DEBUG: FIXME. How to detect when axis uses 0..1 or -1..1 range? Some status field in control struct?
-				//if (true)
-				//{
-					// Axis range 0..1 (or 1..0 if inverted)
-					if (bAxisInverted)
-						((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue = 1.0f - RBRAXIS_DEADZONE(1.0f - ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue, g_fControllerAxisDeadzone[axisID]);
-					else
-						((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue = RBRAXIS_DEADZONE(((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue, g_fControllerAxisDeadzone[axisID]);
-				//}
-				//else
-				//{
-					// Axis range -1..1
-				//	((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue = RBRAXIS_DEADZONE_WIDERANGE(((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue, g_fControllerAxisDeadzone[axisID]);
-				//}
+				if(g_iXInputSplitThrottleBrakeAxis >= 0)
+					// Splitted trigger throttle/brake with 0..1 range
+					((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue = RBRAXIS_DEADZONE(((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue, g_fControllerAxisDeadzone[axisID]);
+				else
+					// Normal analog axis with -1..1 range
+					((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue = RBRAXIS_DEADZONE_WIDERANGE(((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue, g_fControllerAxisDeadzone[axisID]);
 			}
 
 #if USE_DEBUG == 1
-			if (axisID == 3 && bDebugPrint)
-				DebugPrint("After AxisValue=%f", ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue);
+			if(prevValue != 0.0f && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue != 0.0f)
+			DebugPrint("Before=%f  After=%f", prevValue, ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue);
 #endif
 		}
 		return Func_OrigRBRControllerAxisData(objPointer, axisID);
 
-/*
-	case 3: // Throttle
-		if (((PRBRControllerAxis)objPointer)[3].controllerAxisData != nullptr)
+	case 6:  // Handbrake
+	case 11: // Clutch
+		if (((PRBRControllerAxis)objPointer)[axisID].controllerAxisData != nullptr)
 		{
-			if (g_iInvertedPedalsStartupFixFlag & 0x01 &&((PRBRControllerAxis)objPointer)[3].controllerAxisData->dinputStatus != 0)
-				return 1.0f;//@0x795e14 max value. Could it be something else than 1.0f?
+			if ((g_iInvertedPedalsStartupFixFlag & invertedPedalBitFlag[axisID]) && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->dinputStatus != 0)
+				return 1.0f;// Inverted pedal bugfix at starting line when the pedal is not yet pressed at all.  @0x795e14 max value. Could it be something else than 1.0f?
 
-			if (g_fDeadzoneThrottle > 0.0f)
-			{
-				if (g_iInvertedPedalsStartupFixFlag & 0x01)
-					((PRBRControllerAxis)objPointer)[3].controllerAxisData->axisValue = 1.0f - RBRAXIS_DEADZONE(1.0f - ((PRBRControllerAxis)objPointer)[3].controllerAxisData->axisValue, g_fDeadzoneThrottle);
-				else
-					((PRBRControllerAxis)objPointer)[3].controllerAxisData->axisValue = RBRAXIS_DEADZONE(((PRBRControllerAxis)objPointer)[3].controllerAxisData->axisValue, g_fDeadzoneThrottle);
-			}
+			if (g_fControllerAxisDeadzone[axisID] > 0.0f)
+				((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue = RBRAXIS_DEADZONE_WIDERANGE(((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue, g_fControllerAxisDeadzone[axisID]);
 		}
-		return Func_OrigRBRControllerAxisData(objPointer, 3);
-*/
+		return Func_OrigRBRControllerAxisData(objPointer, axisID);
 
 	case 4: // Combined Throttle+Brake if the source is xbox/xinput controller. Workaround the issue and handle those xinput triggers as separate throttle and brake
 		if(g_iXInputSplitThrottleBrakeAxis >= 0 && ((PRBRControllerAxis)objPointer)[4].controllerAxisData != nullptr)
@@ -6550,53 +6835,20 @@ float __fastcall CustomRBRControllerAxisData(void* objPointer, DWORD /*ignoreEDX
 			XInputGetState(g_iXInputSplitThrottleBrakeAxis, &state);
 
 			if (((PRBRControllerAxis)objPointer)[3].controllerAxisData != nullptr)
+			{
+				// Throttle
 				((PRBRControllerAxis)objPointer)[3].controllerAxisData->axisValue = RANGE_REMAP(static_cast<float>((g_iXInputThrottle == 0 ? state.Gamepad.bLeftTrigger : state.Gamepad.bRightTrigger)), 0.0f, 255.0f, 0.0f, 1.0f);
+				((PRBRControllerAxis)objPointer)[3].controllerAxisData->axisRawValue = 0;
+			}
 
 			if (((PRBRControllerAxis)objPointer)[5].controllerAxisData != nullptr)
+			{
+				// Brake
 				((PRBRControllerAxis)objPointer)[5].controllerAxisData->axisValue = RANGE_REMAP(static_cast<float>((g_iXInputBrake == 0 ? state.Gamepad.bLeftTrigger : state.Gamepad.bRightTrigger)), 0.0f, 255.0f, 0.0f, 1.0f);
-			
+				((PRBRControllerAxis)objPointer)[5].controllerAxisData->axisRawValue = 0;
+			}			
 		}
 		return Func_OrigRBRControllerAxisData(objPointer, 4);
-
-/*
-	case 5: // Brake
-		if (((PRBRControllerAxis)objPointer)[5].controllerAxisData != nullptr)
-		{
-			if (g_iInvertedPedalsStartupFixFlag & 0x02 && ((PRBRControllerAxis)objPointer)[5].controllerAxisData->dinputStatus != 0)
-				return 1.0f;
-
-			if (g_fDeadzoneBrake > 0.0f)
-			{
-				if (g_iInvertedPedalsStartupFixFlag & 0x02)
-					((PRBRControllerAxis)objPointer)[5].controllerAxisData->axisValue = 1.0f - RBRAXIS_DEADZONE(1.0f - ((PRBRControllerAxis)objPointer)[5].controllerAxisData->axisValue, g_fDeadzoneBrake);
-				else
-					((PRBRControllerAxis)objPointer)[5].controllerAxisData->axisValue = RBRAXIS_DEADZONE(((PRBRControllerAxis)objPointer)[5].controllerAxisData->axisValue, g_fDeadzoneBrake);
-			}
-		}
-		return Func_OrigRBRControllerAxisData(objPointer, 5);
-
-	case 6: // Clutch 
-		if (((PRBRControllerAxis)objPointer)[6].controllerAxisData != nullptr)
-		{
-			if (g_iInvertedPedalsStartupFixFlag & 0x08 && ((PRBRControllerAxis)objPointer)[6].controllerAxisData->dinputStatus != 0)
-				return 1.0f;
-
-			if (g_fDeadzoneClutch > 0.0f)
-				RBRAXIS_DEADZONE(((PRBRControllerAxis)objPointer)[6].controllerAxisData->axisValue, g_fDeadzoneClutch);
-		}
-		return Func_OrigRBRControllerAxisData(objPointer, 6);
-
-	case 11: // Handbrake
-		if (((PRBRControllerAxis)objPointer)[11].controllerAxisData != nullptr)
-		{
-			if (g_iInvertedPedalsStartupFixFlag & 0x04 && ((PRBRControllerAxis)objPointer)[11].controllerAxisData->dinputStatus != 0)
-				return 1.0f;
-
-			if (g_fDeadzoneHandbrake > 0.0f)
-				RBRAXIS_DEADZONE(((PRBRControllerAxis)objPointer)[11].controllerAxisData->axisValue, g_fDeadzoneHandbrake);
-		}
-		return Func_OrigRBRControllerAxisData(objPointer, 11);
-*/
 
 	default:
 		return Func_OrigRBRControllerAxisData(objPointer, axisID);

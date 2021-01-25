@@ -56,6 +56,10 @@
 #define C_LOGMESSAGEBUFFER_SIZE 2048
 BYTE g_LogMessageBuffer[C_LOGMESSAGEBUFFER_SIZE+2] = {0}; // Buffer for LogPrint and DebugPrint (char and wchar) message line (used within a log critical section, so only one msg at any time)
 
+#if USE_DEBUG == 1
+BYTE g_PrevLogMessageBuffer[C_LOGMESSAGEBUFFER_SIZE + 2] = { 0 };
+#endif
+
 namespace fs = std::filesystem;
 
 //
@@ -1081,7 +1085,7 @@ void DebugPrintFunc_CHAR_or_WCHAR(LPCSTR szTxtBuf, LPCWSTR wszTxtBuf, int iMaxCh
 void DebugPrintFunc(LPCSTR lpszFormat, ...)
 {
 	// Safety option to ignore debug messages if the app gets stuck in infinite loop
-	if (g_iLogMsgCount >= 2000)
+	if (g_iLogMsgCount >= 10000)
 		return;
 
 	va_list args;
@@ -1095,8 +1099,15 @@ void DebugPrintFunc(LPCSTR lpszFormat, ...)
 		if (_vsnprintf_s((char*)g_LogMessageBuffer, C_LOGMESSAGEBUFFER_SIZE, _TRUNCATE, lpszFormat, args) <= 0)
 			g_LogMessageBuffer[0] = 0;
 
+#if USE_DEBUG == 1
+		if (strcmp((char*)g_PrevLogMessageBuffer, (char*)g_LogMessageBuffer) != 0)
+		{
+			memcpy(g_PrevLogMessageBuffer, g_LogMessageBuffer, sizeof(g_PrevLogMessageBuffer));
+			DebugPrintFunc_CHAR_or_WCHAR((char*)g_LogMessageBuffer, nullptr, C_LOGMESSAGEBUFFER_SIZE - 1);
+		}
+#else
 		DebugPrintFunc_CHAR_or_WCHAR((char*)g_LogMessageBuffer, nullptr, C_LOGMESSAGEBUFFER_SIZE - 1);
-
+#endif
 		LeaveCriticalSection(&g_hLogCriticalSection);
 	}
 	catch (...)
@@ -1124,8 +1135,15 @@ void DebugPrintFunc(LPCWSTR lpszFormat, ...)
 		if (_vsnwprintf_s((WCHAR*)g_LogMessageBuffer, C_LOGMESSAGEBUFFER_SIZE / sizeof(WCHAR), _TRUNCATE, lpszFormat, args) <= 0)
 			((WCHAR*)g_LogMessageBuffer)[0] = L'\0';
 
+#if USE_DEBUG == 1
+		if (wcscmp((WCHAR*)g_PrevLogMessageBuffer, (WCHAR*)g_LogMessageBuffer) != 0)
+		{
+			memcpy(g_PrevLogMessageBuffer, g_LogMessageBuffer, sizeof(g_PrevLogMessageBuffer));
+			DebugPrintFunc_CHAR_or_WCHAR(nullptr, (WCHAR*)g_LogMessageBuffer, (C_LOGMESSAGEBUFFER_SIZE - 1) / sizeof(WCHAR));
+		}
+#else
 		DebugPrintFunc_CHAR_or_WCHAR(nullptr, (WCHAR*)g_LogMessageBuffer, (C_LOGMESSAGEBUFFER_SIZE - 1) / sizeof(WCHAR));
-		
+#endif
 		LeaveCriticalSection(&g_hLogCriticalSection);
 	}
 	catch (...)

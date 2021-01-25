@@ -630,6 +630,13 @@ protected:
 	int m_iMenuRBRRXOption;		// 0 = RBRRX integration disabled, 1 = Enabled
 	int m_iMenuAutoLogonOption; // 0 = Disabled, 1=Main, 2=Plugins, 3+ custom plugin
 	int m_iMenuRallySchoolMenuOption; // 0 = Disabled, 1=Main, 2=Plugins, 3+ custom plugin
+	
+	int m_iMenuCockpitSteeringWheel;  // 0 = Default, 1=Hidden, 2=Shown
+	int m_iMenuCockpitWipers;         // 0 = Default, 1=Hidden, 2=Shown
+	int m_iMenuCockpitWindscreen;     // 0 = Default, 1=Hidden, 2=Shown
+	
+	int m_iMenuCockpitOverrideFOV;       // 0 = Disabled, 1=Enabled
+	float m_fMenuCockpitOverrideFOVValue;  // The FOV value
 
 	bool m_bFirstTimeWndInitialization; // Do "first time RBR initializations" in EndScene
 
@@ -682,6 +689,9 @@ protected:
 
 	bool InitCarSpecDataFromRSFFile(PRSFJsonData rsfJsonData, PRBRCarSelectionMenuEntry pRBRCarSelectionMenuEntry, int numOfGears);
 	int  GetCarIDFromRSFFile(PRSFJsonData rsfJsonData, std::string carModelName);
+
+	bool ModifyCarModelFiles(int carSlotID);
+	bool ModifyCarModelIniFile(CSimpleIniWEx* carModelIniFile, const std::wstring& section, const std::wstring& key, const std::wstring& newOptionValue, bool restoreBackupValue);
 
 	void RefreshSettingsFromPluginINIFile(bool fistTimeRefresh = false);
 	void SaveSettingsToPluginINIFile();

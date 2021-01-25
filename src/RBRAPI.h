@@ -139,7 +139,7 @@ typedef void(__thiscall* tRBRCallForHelp)(void* objPointer);
 // CameraInfo
 typedef struct {
 #pragma pack(push,1)
-	__int32 cameraType;					// 0x00. 0x01=ExternalCamBackNear, 0x02=ExternalCamBack, 0x03=BumperCam (allows customCams), 04=BonnetCam, 0x05=InternalCam, 0x06=InternalCamBackseat, 0x07=RoadSideReplayCam, 0x08=(unknown), 0x09=BirdsEyeCam, 0x0A=SpinAroundCam, 0x0B=ChaseCam, 
+	__int32 cameraType;					// 0x00. 0x01=ExternalCamBackNear, 0x02=ExternalCamBack, 0x03=BumperCam (allows customCams), 04=BonnetCam, 0x05=InternalCam, 0x06=InternalCamBackseat, 0x07=RoadSideReplayCam, 0x08=(unknown), 0x09=BirdsEyeCam, 0x0A=SpinAroundCam, 0x0B=ChaseCam
 	BYTE pad1[0xCC - 0x00 - sizeof(__int32)];
 	D3DMATRIX currentCamMapLocation;	// 0xCC (4x4 matrix of floats). These values are overwritten by the values in 0x318 location if cameraType is 0x03 (custom cam location)
 	BYTE pad2[0x318 - 0xCC - sizeof(D3DMATRIX)];
@@ -240,9 +240,14 @@ typedef RRBRCarMovement* PRBRCarMovement;
 typedef struct
 {
 #pragma pack(push,1)
-	BYTE pad1[0x24];
+	__int32 unknown1;		  // 0x00
+	__int32 unknown2;         // 0x04
+	__int32 unknown3;         // 0x08
+	__int32 keyCode;		  // 0x0C if kbd assignment then xxxxFFFF has the VK keyCode
+
+	BYTE pad1[0x24 - 0x0C - sizeof(__int32)];
 	__int32 status;           // 0x24  <=1 axis disabled
-	__int32 unknown1;         // 0x28
+	__int32 unknown4;         // 0x28
 	__int32 dinputStatus;     // 0x2C  0=Dinput data received <>0=not yet received any dinput events (either controller is offline or pedals/wheels not moved yet)
 
 	float   axisValue;		// 0x30 -1.0..1.0 the current axis value
@@ -300,9 +305,11 @@ typedef struct {
 	BYTE pad1[0x54];		// 0x00
 	__int32 resolutionX;	// 0x54
 	__int32 resolutionY;	// 0x58
+	void*   someRBRObj;		// 0X5C TODO. what obj is this?
+
 	// TODO: What are the values following resolution?
 
-	BYTE pad3[0x0CF8 - 0x58 - sizeof(__int32)];
+	BYTE pad3[0x0CF8 - 0x5C - sizeof(void*)];
 	PRBRControllerBaseObj controllerBaseObj; // 0xCF8
 #pragma pack(pop)
 } RBRGameConfig;
@@ -590,7 +597,12 @@ typedef struct {
 #pragma pack(push,1)
 	BYTE pad1[0x08];          // 0x00
 	__int32 menuItemStatus;	  // 0x08 (bitflags bit0=Enabled/Disabled)
-	BYTE pad2[0x24 - 0x08 - sizeof(__int32)];          
+	__int32 unknown1;		  // 0x0C
+	__int32 unknown2;		  // 0x10
+	DWORD pHandlerFunc;       // 0x14
+	__int32 unknown3;         // 0x18
+	__int32 unknown4;         // 0x1C
+	__int32 unknown5;         // 0x20
 	LPCSTR  szMenuTitleID;    // 0x24
 	LPCWSTR wszMenuTitleName; // 0x28
 #pragma pack(pop)
@@ -604,7 +616,7 @@ typedef struct RBRMenuObj* PRBRMenuObj;
 typedef struct RBRMenuObj RBRMenuObj;
 struct RBRMenuObj {
 #pragma pack(push,1)
-	BYTE pad1[0x04];
+	__int32 unknown1;					// 0x00
 	PRBRMenuObj rootMenuObj;			// 0x04 (always points to PRBRMenuPoint->rootMenuObj?)
 	PRBRMenuObj prevMenuObj;			// 0x08 (ESC menu navigation key returns to this menu)
 	LPVOID* pItemObj;                   // 0x0C (pointer to a array of menu item objects. Array of "numOfItems" items)
@@ -729,7 +741,11 @@ typedef struct {
 	BYTE pad2[0x70 - 0x54 - sizeof(__int32)];
 	__int32 menuVisible;				   // 0x70 (1=Show menus, 0=Do not show any menu, show just default RBR background image)
 	__int32 unknown2;					   // 0x74
-	PRBRMenuObj menuObj[RBRMENUSYSTEM_NUM_OF_MENUS]; // 0x78 (array of all menuObj pointers. pCurrentMenuObj has one of these pointer values, except Options menu is not in the array for some reason). RBRMENUIDX_xxx defines some known menu array indexes.
+	union
+	{
+		PRBRMenuObj menuObj[RBRMENUSYSTEM_NUM_OF_MENUS]; // 0x78 (array of all menuObj pointers. pCurrentMenuObj has one of these pointer values, except Options menu is not in the array for some reason). RBRMENUIDX_xxx defines some known menu array indexes.
+		__int32 menuStatus;								 // 0x78 menu transition status in RaceTime menu (gameState=2 and menuStatus=3 takes us back to main menu)
+	};
 #pragma pack(pop)
 } RBRMenuSystem;
 typedef RBRMenuSystem* PRBRMenuSystem;
