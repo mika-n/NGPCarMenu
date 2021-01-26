@@ -25,6 +25,9 @@ Good news! **NGPCarMenu plugin solves these issues** by doing following enhancem
 - Inverted pedals behave correctly right away without going through the hassle of pressing all pedals at least once while waiting for a countdown.
 - Xbox360/XboxOne triggers are splitted and work independently as a separate Throttle and Brake in RBR controls (How to use this fix? Set triggers as combined AccelerateBrake control as usual, but then set Throttle and Brake controls to any keyboard key and choose a gamepad ID in SplitCombinedThrottleBrake in-game menu, NGPCarMenu plugin menu).
 - RallyStatsDB feature to store a detailed history of all rallies in one place (RBR original stages, RBRTM stages, RSF stages, BTB stages).
+- In-game menu to hide or show steering wheel/windscreen/wipers in the cockpit camera view (internal cam).
+- In-game menu to enable or disable camera shaking in the cockpit camera view.
+- In-game menu to override the FOV value in the cockpit (internal) camera view for all car models (ie. no need to modify manually all car model files).
 
 The plugin supports **RBRTM Czech Tournament** plugin (V0.88) integration. Use NGPCarMenu in-game menu or INI file to enable/disable this integration. 
 **RBR_RX** plugin (RBR_RX.dll with 417792 bytes, the file doesn't have version tag) integration. Use NGPCarMenu in-game menu or INI file to enable/disable this integration. 
@@ -76,6 +79,9 @@ rbr\Plugins\NGPCarMenu.ini options (see the NGPCarMenu.ini.sample file for more 
 | SplitCombinedThrottleBrakeAxis | The game controller ID used when a combined triggers are splitted as two different analog axis in RBR controls. 0 (disabled), 1-4 gamepad ID. |
 | SplitThrottleAxis      | LT = Left trigger, RT = Right trigger. The same for SplitBrakeAxis option also. If combined trigger is splitted then defines which trigger is throttle or brake. | 
 | DeadzoneXXXX           | Optional deadzone for DeadzoneSteering/Throttle/Brake/Clutch/Handbrake controls. Useful for those gamepad drivers where the left or right stick in the gamepad is no longer stable or don't return to absolute center position. |
+| CockpitCameraShaking   | Enable or Disable the camera shaking in the cockpit (internal) camera view. 0=Use the model default, 1=Disabled shaking, 2=Enabled shaking |
+| CockpitSteeringWheel   | Show or Hide steering wheel/windscreen/wipers in the cockpit camera view. 0=Use the model default, 1=Hidden, 2=Shown |
+| CockpitOverrideFOV     | Enable or Disable overriding of FOV value in the cockpit (internal) camera view. Use CockpitOverrideFOVValue option to set the new FOV value |
 | ScreenshotPath         | Path of car preview images (relative to RBR executable location or absolute path). Supports various runtime variables (see NGPCarMenu.ini.sample for more details) |
 | ScreenshotReplay       | Replay filename the plugin uses to generate preview images. |
 | ScreenshotFileType     | PNG or BMP file format in car preview image files. There is also in-game plugin option to set this value. |
