@@ -631,6 +631,7 @@ protected:
 	int m_iMenuAutoLogonOption; // 0 = Disabled, 1=Main, 2=Plugins, 3+ custom plugin
 	int m_iMenuRallySchoolMenuOption; // 0 = Disabled, 1=Main, 2=Plugins, 3+ custom plugin
 	
+	int m_iMenuCockpitCameraShaking;  // 0 = Default, 1=Disabled shaking, 2=Enabled shaking
 	int m_iMenuCockpitSteeringWheel;  // 0 = Default, 1=Hidden, 2=Shown
 	int m_iMenuCockpitWipers;         // 0 = Default, 1=Hidden, 2=Shown
 	int m_iMenuCockpitWindscreen;     // 0 = Default, 1=Hidden, 2=Shown
@@ -691,7 +692,8 @@ protected:
 	int  GetCarIDFromRSFFile(PRSFJsonData rsfJsonData, std::string carModelName);
 
 	bool ModifyCarModelFiles(int carSlotID);
-	bool ModifyCarModelIniFile(CSimpleIniWEx* carModelIniFile, const std::wstring& section, const std::wstring& key, const std::wstring& newOptionValue, bool restoreBackupValue);
+	bool ModifyCarModelIniFile(CSimpleIniWEx* carModelIniFile, const std::wstring& section, const std::wstring& key, const std::wstring& newOptionValue, bool restoreBackupValue, bool forceBackupValue = false);
+	bool CopyCarModelIniCamSection(CSimpleIniWEx* carModelIniFile, const std::wstring& fromSection, const std::wstring& toSection, bool restoreBackupValue);
 
 	void RefreshSettingsFromPluginINIFile(bool fistTimeRefresh = false);
 	void SaveSettingsToPluginINIFile();

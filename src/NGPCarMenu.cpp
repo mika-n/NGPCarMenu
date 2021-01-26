@@ -223,36 +223,44 @@ RBRCarSelectionMenuEntry g_RBRCarSelectionMenuEntry[8] = {
 #define C_MENUCMD_AUTOLOGONOPTION				4
 #define C_MENUCMD_RALLYSCHOOLMENUOPTION			5
 #define C_MENUCMD_SPLITCOMBINEDTHROTTLEBRAKE	6
-#define C_MENUCMD_COCKPIT_STEERINGWHEEL			7
-#define C_MENUCMD_COCKPIT_WIPERS				8
-#define C_MENUCMD_COCKPIT_WINDSCREEN			9
-#define C_MENUCMD_COCKPIT_OVERRIDEFOV			10
-#define C_MENUCMD_RENAMEDRIVER					11
-#define C_MENUCMD_RELOAD						12
-#define C_MENUCMD_CREATE						13
+#define C_MENUCMD_COCKPIT_CAMERASHAKING			7
+#define C_MENUCMD_COCKPIT_STEERINGWHEEL			8
+#define C_MENUCMD_COCKPIT_WIPERS				9
+#define C_MENUCMD_COCKPIT_WINDSCREEN			10
+#define C_MENUCMD_COCKPIT_OVERRIDEFOV			11
+#define C_MENUCMD_RENAMEDRIVER					12
+#define C_MENUCMD_RELOAD						13
+#define C_MENUCMD_CREATE						14
 
 #if USE_DEBUG == 1
-#define C_MENUCMD_SELECTCARSKIN		14
+#define C_MENUCMD_SELECTCARSKIN		15
 #endif 
 
-char* g_NGPCarMenu_PluginMenu[] = {
-	 "> Create option"			// CreateOptions
-	,"> Image option"			// ImageOptions
-	,"> RBRTM integration"		// EnableDisableOptions
-	,"> RBRRX integration"		// EnableDisableOptions
-	,"> Auto logon"				// AutoLogon option
-	,"> RallySchool menu replacement"   // Replace RallySchool menu entry with another menu shortcut
-	,"> Split combined ThrottleBrake"   // Gamepad# 1-4 (will be used as 0-3 index value) used to split combined gamepad trigger keys
-    ,"> Cockpit - Steering wheel"  // Show or hide steeringWheel in the internal cockpit camera view (Default, Hidden, Shown)
-    ,"> Cockpit - Wipers"
-	,"> Cockpit - Windscreen"
-    ,"> Cockpit - Override FOV"    // Override FOV in the internal cockpit camera view (Default, the value used to override the FOV in the car model)
-	,"RENAME driver profile" // "Rename driver MULLIGATAWNY -> SpeedRacer" in the profile to match the loaded pfXXXX.rbr profile filename (creates a new profile file. Take a backup copy of the old profile file)
-	,"RELOAD settings"		 // Clear cached car images to force re-loading of new images and settings
-	,"CREATE car images"	 // Create new car images (all or only missing car iamges)
+typedef struct {
+	char* szMenuName;
+	char* szMenuTooltip;
+} PluginMenuItemDef;
+typedef PluginMenuItemDef* PPluginMenuItemDef;
+
+PluginMenuItemDef g_NGPCarMenu_PluginMenu[] = {
+{ "> Create option", nullptr }		// CreateOptions
+,{"> Image option", nullptr }			// ImageOptions
+,{"> RBRTM integration", nullptr }		// EnableDisableOptions
+,{"> RBRRX integration", nullptr }		// EnableDisableOptions
+,{"> Auto logon", "Navigates automatically to this menu when RBR is started" }				// AutoLogon option
+,{"> RallySchool menu replacement", "Replaces the RallySchool menu item in the main menu with this shortcut" }   // Replace RallySchool menu entry with another menu shortcut
+,{"> Split combined ThrottleBrake", "Split combined xbox triggers. See https://github.com/mika-n/NGPCarMenu/issues/15" }   // Gamepad# 1-4 (will be used as 0-3 index value) used to split combined gamepad trigger keys
+,{"> Cockpit - Camera shaking", "Cockpit camera shaking. If disabled use the cam_bonnet cam as non-shaking cockpit view" }  // The internal cockpit camera shaking (default behavior is to shake. When disabled then cam_internal and cam_bonnet camera values are switched)
+,{"> Cockpit - Steering wheel", nullptr }  // Show or hide steeringWheel in the internal cockpit camera view (Default, Hidden, Shown)
+,{"> Cockpit - Wipers", nullptr }
+,{"> Cockpit - Windscreen", nullptr }
+,{"> Cockpit - Override FOV", "Force override cockpit FOV value. See Plugins\\NGPCarMenu.ini CockpitOverrideFOVValue" }      // Override FOV in the internal cockpit camera view (Default, the value used to override the FOV in the car model)
+,{"RENAME driver profile", "Renames the current driver name without loosing settings" } // "Rename driver MULLIGATAWNY -> SpeedRacer" in the profile to match the loaded pfXXXX.rbr profile filename (creates a new profile file. Take a backup copy of the old profile file)
+,{"RELOAD settings", "Reloads Plugins\\NGPCarMenu.ini settings file" }		 // Clear cached car images to force re-loading of new images and settings
+,{"CREATE car images", "Creates car preview images" }	 // Create new car images (all or only missing car iamges)
 
 #if USE_DEBUG == 1
-	,"SELECT car textures"   // Select custom car skins and textures
+,{"SELECT car textures", "Selects customized car skins and options" }   // Select custom car skins and textures
 #endif
 };
 
@@ -279,6 +287,13 @@ char* g_NGPCarMenu_HiddenShownOptions[3] = {
 	"Default"
 	,"Hidden"
 	,"Shown"
+};
+
+// Default/Disabled/Enabled
+char* g_NGPCarMenu_DefaultEnableDisableOptions[3] = {
+	"Default"
+	,"Disabled"
+	,"Enabled"
 };
 
 
@@ -865,9 +880,9 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	m_iMenuAutoLogonOption = 0;	
 	m_iMenuRallySchoolMenuOption = 0; 
 
-	m_iMenuCockpitSteeringWheel = m_iMenuCockpitWipers = m_iMenuCockpitWindscreen = 0;
+	m_iMenuCockpitCameraShaking = m_iMenuCockpitSteeringWheel = m_iMenuCockpitWipers = m_iMenuCockpitWindscreen = 0;
 	m_iMenuCockpitOverrideFOV = 0;
-	m_fMenuCockpitOverrideFOVValue = 1.308997f;
+	m_fMenuCockpitOverrideFOVValue = 1.3050f;
 
 	m_bAutoLogonWaitProfile = FALSE;
 	
@@ -1049,8 +1064,9 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool fistTimeRefresh)
 			//
 			// If [XresxYres] INI section is missing then add it now with a default value in ScreenshotCropping option
 			//
-
+			bool bIniFileModified = false;
 			bool bSectionFound = false;
+
 			CSimpleIniW::TNamesDepend allSections;
 			pluginINIFile.GetAllSections(allSections);
 			CSimpleIniW::TNamesDepend::const_iterator iter;
@@ -1075,7 +1091,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool fistTimeRefresh)
 					swprintf_s(szScreenshotCroppingDefaultValue, COUNT_OF_ITEMS(szScreenshotCroppingDefaultValue), L"%d %d %d %d", 0, posY1, g_rectRBRWndClient.right, posY2);
 
 					if (pluginINIFile.SetValue(szResolutionText, L"ScreenshotCropping", szScreenshotCroppingDefaultValue) >= 0)
-						pluginINIFile.SaveFile(sIniFileName.c_str());
+						bIniFileModified = true;
 					else
 						LogPrint("ERROR CNGPCarMenu.RefreshSettingsFromPluginINIFile. Failed to add %s section to %s INI file. You should modify the file in Notepad and to add new resolution INI section", _ToString(std::wstring(szResolutionText)).c_str(), sIniFileName.c_str());
 				}
@@ -1084,6 +1100,15 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool fistTimeRefresh)
 					LogPrint("ERROR CNGPCarMenu.RefreshSettingsFromPluginINIFile. Failed to add %s section to %s INI file. You should modify the file in Notepad and to add new resolution INI section", _ToString(std::wstring(szResolutionText)).c_str(), sIniFileName.c_str());
 				}
 			}
+
+			if (pluginINIFile.GetValueEx(L"Default", L"", L"CockpitOverrideFOVValue", L"").empty())
+			{
+				pluginINIFile.SetValue(L"Default", L"CockpitOverrideFOVValue", std::to_wstring(m_fMenuCockpitOverrideFOVValue).c_str());
+				bIniFileModified = true;
+			}
+
+			if(bIniFileModified)
+				pluginINIFile.SaveFile(sIniFileName.c_str());
 		}
 
 		// The latest INI fileFormat is 2
@@ -1661,11 +1686,13 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool fistTimeRefresh)
 		}
 
 
+		m_iMenuCockpitCameraShaking = pluginINIFile.GetValueEx(L"Default", L"", L"CockpitCameraShaking", 0);
 		m_iMenuCockpitSteeringWheel = pluginINIFile.GetValueEx(L"Default", L"", L"CockpitSteeringWheel", 0);
 		m_iMenuCockpitWipers = pluginINIFile.GetValueEx(L"Default", L"", L"CockpitWipers", 0);
 		m_iMenuCockpitWindscreen = pluginINIFile.GetValueEx(L"Default", L"", L"CockpitWindscreen", 0);
+
 		m_iMenuCockpitOverrideFOV = pluginINIFile.GetValueEx(L"Default", L"", L"CockpitOverrideFOV", 0);
-		m_fMenuCockpitOverrideFOVValue = pluginINIFile.GetValueExFloat(L"Default", L"", L"CockpitOverrideFOVValue", 1.308997f);
+		m_fMenuCockpitOverrideFOVValue = pluginINIFile.GetValueExFloat(L"Default", L"", L"CockpitOverrideFOVValue", m_fMenuCockpitOverrideFOVValue);
 
 
 		//
@@ -1800,6 +1827,7 @@ void CNGPCarMenu::SaveSettingsToPluginINIFile()
 				wcsncpy_s(g_wszRallySchoolMenuReplacementText, g_pOrigRallySchoolMenuText, COUNT_OF_ITEMS(g_wszRallySchoolMenuReplacementText));
 		}
 
+		pluginINIFile.SetValue(L"Default", L"CockpitCameraShaking", std::to_wstring(this->m_iMenuCockpitCameraShaking).c_str());
 		pluginINIFile.SetValue(L"Default", L"CockpitSteeringWheel", std::to_wstring(this->m_iMenuCockpitSteeringWheel).c_str());
 		pluginINIFile.SetValue(L"Default", L"CockpitWipers", std::to_wstring(this->m_iMenuCockpitWipers).c_str());
 		pluginINIFile.SetValue(L"Default", L"CockpitWindscreen", std::to_wstring(this->m_iMenuCockpitWindscreen).c_str());
@@ -3159,7 +3187,7 @@ int CNGPCarMenu::CalculateMaxLenCarMenuName()
 //------------------------------------------------------------------------------------------------
 // Modify the model files of the current car (hide/show windscreen/wipers/steeringWheel and override internal cockpit FOV)
 //
-bool CNGPCarMenu::ModifyCarModelIniFile(CSimpleIniWEx* carModelIniFile, const std::wstring& section, const std::wstring& key, const std::wstring& newOptionValue, bool restoreBackupValue)
+bool CNGPCarMenu::ModifyCarModelIniFile(CSimpleIniWEx* carModelIniFile, const std::wstring& section, const std::wstring& key, const std::wstring& newOptionValue, bool restoreBackupValue, bool forceBackupValue)
 {
 	bool bModifiedIniFile = false;
 	std::wstring sTextValue;
@@ -3168,17 +3196,26 @@ bool CNGPCarMenu::ModifyCarModelIniFile(CSimpleIniWEx* carModelIniFile, const st
 	if (carModelIniFile == nullptr)
 		return false;
 
-	sBackupOptionKey = std::wstring(L"Backup_") + key;
+	// NGPCarMenuComment option doesn't need backup key
+	if(!_iEqual(key, L"ngpcarmenucomment", true))
+		sBackupOptionKey = std::wstring(L"Backup_") + key;
+
 	if (!restoreBackupValue)
 	{
-		if (!newOptionValue.empty())
-		{
-			sTextValue = carModelIniFile->GetValueEx(section, L"", key, L"");
-			if (!sTextValue.empty() && !_iEqual(sTextValue, newOptionValue))
-			{
-				if (carModelIniFile->GetValueEx(section, L"", sBackupOptionKey, L"").empty())
-					carModelIniFile->SetValue(section.c_str(), sBackupOptionKey.c_str(), sTextValue.c_str());
+		bool bNewOpenEqual; 
+		sTextValue = carModelIniFile->GetValueEx(section, L"", key, L"");
+		bNewOpenEqual = _iEqual(sTextValue, newOptionValue);
 
+		if (forceBackupValue || !bNewOpenEqual)
+		{
+			if (!sBackupOptionKey.empty() && carModelIniFile->GetValueEx(section, L"", sBackupOptionKey, L"").empty())
+			{
+				carModelIniFile->SetValue(section.c_str(), sBackupOptionKey.c_str(), sTextValue.c_str());
+				bModifiedIniFile = true;
+			}
+
+			if (!bNewOpenEqual)
+			{
 				carModelIniFile->SetValue(section.c_str(), key.c_str(), newOptionValue.c_str());
 				bModifiedIniFile = true;
 			}
@@ -3199,10 +3236,55 @@ bool CNGPCarMenu::ModifyCarModelIniFile(CSimpleIniWEx* carModelIniFile, const st
 	return bModifiedIniFile;
 }
 
+bool CNGPCarMenu::CopyCarModelIniCamSection(CSimpleIniWEx* carModelIniFile, const std::wstring& fromSection, const std::wstring& toSection, bool restoreBackupValue)
+{
+	bool bModifiedIniFile = false;
+	std::wstring sFromTextValue;
+	std::wstring sToTextValue;
+
+	if (carModelIniFile == nullptr)
+		return false;
+
+	if (!restoreBackupValue)
+	{
+		sFromTextValue = carModelIniFile->GetValueEx(fromSection, L"", L"Pos", L"");
+		bModifiedIniFile = ModifyCarModelIniFile(carModelIniFile, toSection, L"Pos", sFromTextValue, false, true) || bModifiedIniFile;
+
+		sFromTextValue = carModelIniFile->GetValueEx(fromSection, L"", L"Target", L"");
+		bModifiedIniFile = ModifyCarModelIniFile(carModelIniFile, toSection, L"Target", sFromTextValue, false, true) || bModifiedIniFile;
+
+		sFromTextValue = carModelIniFile->GetValueEx(fromSection, L"", L"Up", L"");
+		bModifiedIniFile = ModifyCarModelIniFile(carModelIniFile, toSection, L"Up", sFromTextValue, false, true) || bModifiedIniFile;
+
+		sFromTextValue = carModelIniFile->GetValueEx(fromSection, L"", L"Near", L"");
+		bModifiedIniFile = ModifyCarModelIniFile(carModelIniFile, toSection, L"Near", sFromTextValue, false, true) || bModifiedIniFile;
+
+		sFromTextValue = carModelIniFile->GetValueEx(fromSection, L"", L"FOV", L"");
+		bModifiedIniFile = ModifyCarModelIniFile(carModelIniFile, toSection, L"FOV", sFromTextValue, false, true) || bModifiedIniFile;
+
+		sFromTextValue = carModelIniFile->GetValueEx(fromSection, L"", L"showExterior", L"0");
+		bModifiedIniFile = ModifyCarModelIniFile(carModelIniFile, toSection, L"showExterior", sFromTextValue, false, true) || bModifiedIniFile;
+	}
+	else
+	{
+		bModifiedIniFile = ModifyCarModelIniFile(carModelIniFile, toSection, L"Pos", L"", true) || bModifiedIniFile;
+		bModifiedIniFile = ModifyCarModelIniFile(carModelIniFile, toSection, L"Target", L"", true) || bModifiedIniFile;
+		bModifiedIniFile = ModifyCarModelIniFile(carModelIniFile, toSection, L"Up", L"", true) || bModifiedIniFile;
+		bModifiedIniFile = ModifyCarModelIniFile(carModelIniFile, toSection, L"Near", L"", true) || bModifiedIniFile;
+		bModifiedIniFile = ModifyCarModelIniFile(carModelIniFile, toSection, L"FOV", L"", true) || bModifiedIniFile;
+		bModifiedIniFile = ModifyCarModelIniFile(carModelIniFile, toSection, L"showExterior", L"", true) || bModifiedIniFile;
+	}
+
+	return bModifiedIniFile;
+}
+
 bool CNGPCarMenu::ModifyCarModelFiles(int carSlotID)
 {	
 	bool bModifiedIniFile = false;
+
 	std::wstring sCarIniFileName;
+	std::wstring sCarIniFileNameFullPath;
+
 	std::wstring sTextValue;
 	std::wstring sOptionValue;
 
@@ -3219,20 +3301,40 @@ bool CNGPCarMenu::ModifyCarModelFiles(int carSlotID)
 		stockCarListINIFile.LoadFile((m_sRBRRootDirW + L"\\cars\\Cars.ini").c_str());
 		swprintf_s(wszStockCarINISection, COUNT_OF_ITEMS(wszStockCarINISection), L"Car0%d", carSlotID);
 		sCarIniFileName = stockCarListINIFile.GetValueEx(wszStockCarINISection, L"", L"IniFile", L"");
+		sCarIniFileNameFullPath = m_sRBRRootDirW + L"\\" + sCarIniFileName;
 
-		if (!sCarIniFileName.empty())
+		if (!sCarIniFileName.empty() && fs::exists(sCarIniFileNameFullPath))
 		{			
-			std::wstring sCarIniFileNameFullPath = m_sRBRRootDirW + L"\\" + sCarIniFileName;
 			carModelIniFile.LoadFile(sCarIniFileNameFullPath.c_str());
+			
+			if (m_iMenuCockpitCameraShaking == 1)
+			{
+				// 0=default as set in model files, 1=disable shaking (bonnet = internal view), 2=enable shaking (bonnet = normal bonnet)
+				// If internal cameraShaking is disabled then copy cam_internal values to cam_bonnet if the copied values are not there already
+				bModifiedIniFile = CopyCarModelIniCamSection(&carModelIniFile, L"Cam_internal", L"Cam_bonnet", false) || bModifiedIniFile;
+				bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"Cam_bonnet", L"NGPCarMenuComment", L"cam_bonnet has internal cockpit cam values without shaking", false, false) || bModifiedIniFile;
+			}
+			else
+			{
+				bModifiedIniFile = CopyCarModelIniCamSection(&carModelIniFile, L"Cam_internal", L"Cam_bonnet", true) || bModifiedIniFile;
+				bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"Cam_bonnet", L"NGPCarMenuComment", L"", false, false) || bModifiedIniFile;
+			}
 
 			if (m_iMenuCockpitOverrideFOV > 0)
 			{
 				sOptionValue = std::to_wstring(m_fMenuCockpitOverrideFOVValue);
 				bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"Cam_internal", L"FOV", sOptionValue, false) || bModifiedIniFile;
+
+				// 0=default as set in model files, 1=disable shaking (bonnet = internal view), 2=enable shaking (bonnet = normal bonnet)
+				if(m_iMenuCockpitCameraShaking == 1)
+					bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"Cam_bonnet", L"FOV", sOptionValue, false) || bModifiedIniFile;
 			}
 			else
 			{
 				bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"Cam_internal", L"FOV", L"", true) || bModifiedIniFile;
+				
+				if (m_iMenuCockpitCameraShaking != 1)
+					bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"Cam_bonnet", L"FOV", L"", true) || bModifiedIniFile;
 			}
 
 			if (m_iMenuCockpitSteeringWheel > 0)
@@ -4579,74 +4681,76 @@ void CNGPCarMenu::DrawFrontEndPage(void)
 	// Draw custom plugin header line
 	m_pGame->SetMenuColor(IRBRGame::MENU_HEADING);
 	m_pGame->SetFont(IRBRGame::FONT_BIG);
-	m_pGame->WriteText(65.0f, 29.0f, m_sPluginTitle.c_str());
+	m_pGame->WriteText(65.0f, 19.0f, m_sPluginTitle.c_str());
 
 	if (m_iMenuCurrentScreen == C_MENUCMD_RENAMEDRIVER)
 	{
 		// Draw gray background in the "text editbox" area
 		m_pGame->SetColor(0x20, 0x20, 0x20, 180);
-		m_pGame->DrawFlatBox(63.0f, 48.0f + (2 * 21.0f), 160.0f, 23.0f);
+		m_pGame->DrawFlatBox(63.0f, 38.0f + (2 * 21.0f), 160.0f, 23.0f);
 
 		m_pGame->SetMenuColor(IRBRGame::MENU_TEXT);
 		
 		sprintf_s(szTextBuf, sizeof(szTextBuf), "Rename driver profile: '%s'", g_pRBRProfile->szProfileName);
-		m_pGame->WriteText(65.0f, 50.0f, szTextBuf);
+		m_pGame->WriteText(65.0f, 40.0f, szTextBuf);
 
-		m_pGame->WriteText(65.0f, 50.0f + (1 * 21.0f), "Enter the new driver name:");
-		m_pGame->WriteText(65.0f, 50.0f + (2 * 21.0f), m_sMenuNewDriverName.c_str());
+		m_pGame->WriteText(65.0f, 40.0f + (1 * 21.0f), "Enter the new driver name:");
+		m_pGame->WriteText(65.0f, 40.0f + (2 * 21.0f), m_sMenuNewDriverName.c_str());
 	}
 	else
 	{
 		// The red menu selection line (background color of the focused menu line)
-		m_pGame->DrawSelection(0.0f, 48.0f + (static_cast<float>(m_iMenuSelection) * 21.0f), 440.0f);
+		m_pGame->DrawSelection(0.0f, 38.0f + (static_cast<float>(m_iMenuSelection) * 21.0f), 440.0f);
 		
 		m_pGame->SetMenuColor(IRBRGame::MENU_TEXT);
 		for (unsigned int i = 0; i < COUNT_OF_ITEMS(g_NGPCarMenu_PluginMenu); ++i)
 		{
 			if (i == C_MENUCMD_CREATEOPTION)
-				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_CreateOptions[m_iMenuCreateOption]);
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i].szMenuName, g_NGPCarMenu_CreateOptions[m_iMenuCreateOption]);
 			else if (i == C_MENUCMD_IMAGEOPTION)
-				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_ImageOptions[m_iMenuImageOption]);
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i].szMenuName, g_NGPCarMenu_ImageOptions[m_iMenuImageOption]);
 			else if (i == C_MENUCMD_RBRTMOPTION)
-				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_EnableDisableOptions[m_iMenuRBRTMOption]);
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i].szMenuName, g_NGPCarMenu_EnableDisableOptions[m_iMenuRBRTMOption]);
 			else if (i == C_MENUCMD_RBRRXOPTION)
-				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_EnableDisableOptions[m_iMenuRBRRXOption]);
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i].szMenuName, g_NGPCarMenu_EnableDisableOptions[m_iMenuRBRRXOption]);
 			else if (i == C_MENUCMD_AUTOLOGONOPTION)
-				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], (m_iMenuAutoLogonOption < (int)g_NGPCarMenu_AutoLogonOptions.size() ? g_NGPCarMenu_AutoLogonOptions[m_iMenuAutoLogonOption] : "<unknown>"));
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i].szMenuName, (m_iMenuAutoLogonOption < (int)g_NGPCarMenu_AutoLogonOptions.size() ? g_NGPCarMenu_AutoLogonOptions[m_iMenuAutoLogonOption] : "<unknown>"));
 			else if (i == C_MENUCMD_RALLYSCHOOLMENUOPTION)
-				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], (m_iMenuRallySchoolMenuOption < (int)g_NGPCarMenu_AutoLogonOptions.size() ? g_NGPCarMenu_AutoLogonOptions[m_iMenuRallySchoolMenuOption] : "<unknown>"));
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i].szMenuName, (m_iMenuRallySchoolMenuOption < (int)g_NGPCarMenu_AutoLogonOptions.size() ? g_NGPCarMenu_AutoLogonOptions[m_iMenuRallySchoolMenuOption] : "<unknown>"));
 			else if (i == C_MENUCMD_RENAMEDRIVER)
-				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: '%s'", g_NGPCarMenu_PluginMenu[i], g_pRBRProfile->szProfileName);
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: '%s'", g_NGPCarMenu_PluginMenu[i].szMenuName, g_pRBRProfile->szProfileName);
 			else if (i == C_MENUCMD_SPLITCOMBINEDTHROTTLEBRAKE)
 			{
-				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], (g_iXInputSplitThrottleBrakeAxis < 0 ? "Disabled" : std::to_string(g_iXInputSplitThrottleBrakeAxis + 1).c_str()));
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i].szMenuName, (g_iXInputSplitThrottleBrakeAxis < 0 ? "Disabled" : std::to_string(g_iXInputSplitThrottleBrakeAxis + 1).c_str()));
 				
 				if (gtcRBRControllerAxisData == nullptr && g_iXInputSplitThrottleBrakeAxis >= 0)
 					m_sMenuStatusText1 = "ATTENTION! You need to restart RBR to activate SplitCombinedThrottleBrake for the first time";
 			}
+			else if (i == C_MENUCMD_COCKPIT_CAMERASHAKING)
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i].szMenuName, g_NGPCarMenu_DefaultEnableDisableOptions[m_iMenuCockpitCameraShaking]);
 			else if (i == C_MENUCMD_COCKPIT_STEERINGWHEEL)
-				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_HiddenShownOptions[m_iMenuCockpitSteeringWheel]);
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i].szMenuName, g_NGPCarMenu_HiddenShownOptions[m_iMenuCockpitSteeringWheel]);
 			else if (i == C_MENUCMD_COCKPIT_WIPERS)
-				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_HiddenShownOptions[m_iMenuCockpitWipers]);
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i].szMenuName, g_NGPCarMenu_HiddenShownOptions[m_iMenuCockpitWipers]);
 			else if (i == C_MENUCMD_COCKPIT_WINDSCREEN)
-				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_HiddenShownOptions[m_iMenuCockpitWindscreen]);
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i].szMenuName, g_NGPCarMenu_HiddenShownOptions[m_iMenuCockpitWindscreen]);
 			else if (i == C_MENUCMD_COCKPIT_OVERRIDEFOV)
 			{
 				if(m_iMenuCockpitOverrideFOV > 0)
-					sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s (%f)", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_EnableDisableOptions[m_iMenuCockpitOverrideFOV], m_fMenuCockpitOverrideFOVValue);
+					sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s (%f)", g_NGPCarMenu_PluginMenu[i].szMenuName, g_NGPCarMenu_EnableDisableOptions[m_iMenuCockpitOverrideFOV], m_fMenuCockpitOverrideFOVValue);
 				else
-					sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i], g_NGPCarMenu_EnableDisableOptions[m_iMenuCockpitOverrideFOV]);
+					sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i].szMenuName, g_NGPCarMenu_EnableDisableOptions[m_iMenuCockpitOverrideFOV]);
 			}
 			else
-				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s", g_NGPCarMenu_PluginMenu[i]);
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s", g_NGPCarMenu_PluginMenu[i].szMenuName);
 
-			m_pGame->WriteText(65.0f, 50.0f + (static_cast<float>(i) * 21.0f), szTextBuf);
+			m_pGame->WriteText(65.0f, 40.0f + (static_cast<float>(i) * 21.0f), szTextBuf);
 		}
 	}
 
 	m_pGame->SetFont(IRBRGame::FONT_SMALL);
 
-	posY = 50.0f + (static_cast<float>COUNT_OF_ITEMS(g_NGPCarMenu_PluginMenu)) * 21.0f;
+	posY = 40.0f + (static_cast<float>COUNT_OF_ITEMS(g_NGPCarMenu_PluginMenu)) * 21.0f;
 	iRow = 1;
 
 	if (!m_sMenuStatusText1.empty()) m_pGame->WriteText(10.0f, posY + (static_cast<float>(iRow++) * 18.0f), m_sMenuStatusText1.c_str());
@@ -4857,13 +4961,22 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 		//
 		// Menu focus line moved up or down
 		//
-		if (bUp && (--m_iMenuSelection) < 0)
-			//m_iMenuSelection = COUNT_OF_ITEMS(g_RBRPluginMenu) - 1;  // Wrap around logic
-			m_iMenuSelection = 0;  // No wrapping logic
+		if (bUp || bDown)
+		{
+			if (bUp && (--m_iMenuSelection) < 0)
+			{
+				//m_iMenuSelection = COUNT_OF_ITEMS(g_RBRPluginMenu) - 1;  // Wrap around logic
+				m_iMenuSelection = 0;  // No wrapping logic
+			}
 
-		if (bDown && (++m_iMenuSelection) >= COUNT_OF_ITEMS(g_NGPCarMenu_PluginMenu))
-			//m_iMenuSelection = 0; // Wrap around logic
-			m_iMenuSelection = COUNT_OF_ITEMS(g_NGPCarMenu_PluginMenu) - 1;
+			if (bDown && (++m_iMenuSelection) >= COUNT_OF_ITEMS(g_NGPCarMenu_PluginMenu))
+			{
+				//m_iMenuSelection = 0; // Wrap around logic
+				m_iMenuSelection = COUNT_OF_ITEMS(g_NGPCarMenu_PluginMenu) - 1;
+			}
+
+			m_sMenuStatusText1 = (g_NGPCarMenu_PluginMenu[m_iMenuSelection].szMenuTooltip != nullptr ? g_NGPCarMenu_PluginMenu[m_iMenuSelection].szMenuTooltip : "");
+		}
 
 
 		//
@@ -4874,31 +4987,25 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 		bool bOptionDirtyFlag = false;
 
 		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_CREATEOPTION, m_iMenuCreateOption, g_NGPCarMenu_CreateOptions, bDirtyFlag, bOptionDirtyFlag);
+		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_IMAGEOPTION,  m_iMenuImageOption, g_NGPCarMenu_ImageOptions, bDirtyFlag, bOptionDirtyFlag);
 
-		//int iPrevMenuImageOptionValue = m_iMenuImageOption;
-		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_IMAGEOPTION, m_iMenuImageOption, g_NGPCarMenu_ImageOptions, bDirtyFlag, bOptionDirtyFlag);
-
-		//int iPrevMenuRBRTMOptionValue = m_iMenuRBRTMOption;
 		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_RBRTMOPTION, m_iMenuRBRTMOption, g_NGPCarMenu_EnableDisableOptions, bDirtyFlag, bOptionDirtyFlag);
-		if (m_iMenuRBRTMOption == 1 && bOptionDirtyFlag /*iPrevMenuRBRTMOptionValue != m_iMenuRBRTMOption*/)
+		if (m_iMenuRBRTMOption == 1 && bOptionDirtyFlag)
 			g_bNewCustomPluginIntegrations = TRUE;
 
-		//int iPrevMenuRBRRXOptionValue = m_iMenuRBRRXOption;
 		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_RBRRXOPTION, m_iMenuRBRRXOption, g_NGPCarMenu_EnableDisableOptions, bDirtyFlag, bOptionDirtyFlag);
-		if (m_iMenuRBRRXOption == 1 && bOptionDirtyFlag /*iPrevMenuRBRRXOptionValue != m_iMenuRBRRXOption*/)
+		if (m_iMenuRBRRXOption == 1 && bOptionDirtyFlag)
 			g_bNewCustomPluginIntegrations = TRUE;
 
-		//int iPrevMenuAutoLogonOptionValue = m_iMenuAutoLogonOption;
 		DO_MENUSELECTION_LEFTRIGHT_BOUNDS(C_MENUCMD_AUTOLOGONOPTION, m_iMenuAutoLogonOption, 0, ((int)g_NGPCarMenu_AutoLogonOptions.size() - 1), bDirtyFlag, bOptionDirtyFlag);
 
-		//int iPrevMenuRallySchoolMenuOptionValue = m_iMenuRallySchoolMenuOption;
 		DO_MENUSELECTION_LEFTRIGHT_BOUNDS(C_MENUCMD_RALLYSCHOOLMENUOPTION, m_iMenuRallySchoolMenuOption, 0, ((int)g_NGPCarMenu_AutoLogonOptions.size() - 1), bDirtyFlag, bOptionDirtyFlag);
-		if (bOptionDirtyFlag /*iPrevMenuRallySchoolMenuOptionValue != m_iMenuRallySchoolMenuOption*/)
+		if (bOptionDirtyFlag)
 			m_sRallySchoolMenuReplacement = g_NGPCarMenu_AutoLogonOptions[m_iMenuRallySchoolMenuOption];
 
-		//int iPrevXInputSplitThrottleBrakeAxisOptionValue = g_iXInputSplitThrottleBrakeAxis;
 		DO_MENUSELECTION_LEFTRIGHT_BOUNDS(C_MENUCMD_SPLITCOMBINEDTHROTTLEBRAKE, g_iXInputSplitThrottleBrakeAxis, -1, 3, bDirtyFlag, bOptionDirtyFlag);
 
+		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_COCKPIT_CAMERASHAKING, m_iMenuCockpitCameraShaking, g_NGPCarMenu_DefaultEnableDisableOptions, bDirtyFlag, bOptionDirtyFlag);
 		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_COCKPIT_STEERINGWHEEL, m_iMenuCockpitSteeringWheel, g_NGPCarMenu_HiddenShownOptions, bDirtyFlag, bOptionDirtyFlag);
 		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_COCKPIT_WIPERS, m_iMenuCockpitWipers, g_NGPCarMenu_HiddenShownOptions, bDirtyFlag, bOptionDirtyFlag);
 		DO_MENUSELECTION_LEFTRIGHT(C_MENUCMD_COCKPIT_WINDSCREEN, m_iMenuCockpitWindscreen, g_NGPCarMenu_HiddenShownOptions, bDirtyFlag, bOptionDirtyFlag);
@@ -4908,10 +5015,6 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 		//
 		// Save settings if any of the persistent options was changed
 		//
-		//if (iPrevMenuImageOptionValue != m_iMenuImageOption || iPrevMenuRBRTMOptionValue != m_iMenuRBRTMOption
-		//	|| iPrevMenuRBRRXOptionValue != m_iMenuRBRRXOption || iPrevMenuAutoLogonOptionValue != m_iMenuAutoLogonOption
-		//	|| iPrevMenuRallySchoolMenuOptionValue != m_iMenuRallySchoolMenuOption || iPrevXInputSplitThrottleBrakeAxisOptionValue != g_iXInputSplitThrottleBrakeAxis
-		//	)
 		if(bDirtyFlag)
 		{
 			SaveSettingsToPluginINIFile();
