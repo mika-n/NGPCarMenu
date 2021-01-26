@@ -3438,6 +3438,7 @@ int CNGPCarMenu::GetNextScreenshotCarID(int currentCarID)
 }
 
 
+#if USE_DEBUG == 1
 //------------------------------------------------------------------------------------------------
 // Prepare RBR "screenshot replay file" for a new car 3D model (replay was saved using certain car model, but modify it on the fly to show another car model)
 // CarID is the RBR car slot# 0..7
@@ -3521,7 +3522,7 @@ bool CNGPCarMenu::PrepareScreenshotReplayFile(int carID)
 		return FALSE;
 	}
 }
-
+#endif
 
 //-----------------------------------------------------------------------------------------------
 // Read start/spli1/split2/finish distances from the currently loaded map
@@ -4916,10 +4917,16 @@ void CNGPCarMenu::HandleFrontEndEvents(char txtKeyboard, bool bUp, bool bDown, b
 					m_iCustomReplayState = 1;
 
 					//::RBRAPI_Replay(this->m_sRBRRootDir, C_REPLAYFILENAME_SCREENSHOT);
+					g_pRBRGameMode->gameStatus = 0x01;
+					g_pRBRGameMode->gameMode = 0x03;
+					g_pRBRMapSettingsEx->trackID = 0x04;
 					m_pGame->StartGame(71, m_iCustomReplayCarID, IRBRGame::GOOD_WEATHER, IRBRGame::TYRE_GRAVEL_DRY, nullptr);
 				}
 				else
+				{
+					m_iCustomReplayState = 0;
 					m_sMenuStatusText1 = "All cars already have a preview image. Did not create any new images.";
+				}
 
 			}
 			else if (m_iMenuSelection == C_MENUCMD_RENAMEDRIVER)
@@ -6390,7 +6397,7 @@ inline HRESULT CNGPCarMenu::CustomRBRDirectXEndScene(void* objPointer)
 			m_iCustomReplayState = 0;
 			g_pRBRGameMode->gameMode = 0x02;
 			g_pRBRRaceTimePauseMenuSystem->menuStatus = 0x03;
-			//g_pRBRGameMode->gameStatus = 0x01;
+			g_pRBRGameMode->gameStatus = 0x01;
 		}
 	}
 
