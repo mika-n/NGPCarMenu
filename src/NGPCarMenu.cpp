@@ -1114,7 +1114,7 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool fistTimeRefresh)
 		// The latest INI fileFormat is 2
 		iFileFormat = pluginINIFile.GetValueEx(L"Default", L"", L"FileFormat", 2);
 	
-		this->m_screenshotReplayFileName = pluginINIFile.GetValueEx(L"Default", L"", L"ScreenshotReplay", L"");
+		//this->m_screenshotReplayFileName = pluginINIFile.GetValueEx(L"Default", L"", L"ScreenshotReplay", L"");
 
 		this->m_screenshotPath = pluginINIFile.GetValueEx(L"Default", L"", L"ScreenshotPath", L"");
 		this->m_screenshotPathRSF = pluginINIFile.GetValueEx(L"Default", L"", L"RSF_ScreenshotPath", L"");
@@ -3438,7 +3438,7 @@ int CNGPCarMenu::GetNextScreenshotCarID(int currentCarID)
 }
 
 
-#if USE_DEBUG == 1
+#if 0
 //------------------------------------------------------------------------------------------------
 // Prepare RBR "screenshot replay file" for a new car 3D model (replay was saved using certain car model, but modify it on the fly to show another car model)
 // CarID is the RBR car slot# 0..7

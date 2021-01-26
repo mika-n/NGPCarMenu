@@ -723,10 +723,7 @@ protected:
 	void DrawRecentResultsTable(int posX, int posY, std::vector<RaceStatDBStageResult>& latestStageResults, bool drawStageRecordTitleRow = false);
 
 	int GetNextScreenshotCarID(int currentCarID);
-
-#if USE_DEBUG == 1
-	static bool PrepareScreenshotReplayFile(int carID);
-#endif
+	//static bool PrepareScreenshotReplayFile(int carID);
 
 	std::wstring ReplacePathVariables(const std::wstring& sPath, int selectedCarIdx = -1, bool rbrtmplugin = false, int mapID = -1, const WCHAR* mapName = nullptr, const std::string& folderName = "");
 	bool ReadCarPreviewImageFromFile(int selectedCarIdx, float x, float y, float cx, float cy, IMAGE_TEXTURE* pOutImageTexture, DWORD dwFlags = 0, bool isRBRTMPlugin = false);
@@ -814,7 +811,7 @@ public:
 	std::wstring m_screenshotPathRSF;			// Path to RSF specific car preview screenshot images (by default AppPath + \rsfdata\images\car_images\)
 
 	int m_screenshotAPIType;					// Uses DIRECTX or GDI API technique to generate a new screenshot file. 0=DirectX (default), 1=GDI. No GUI option, so tweak this in NGPCarMenu.ini file.
-	std::wstring m_screenshotReplayFileName;	// Name of the RBR replay file used when car preview images are generated
+	//std::wstring m_screenshotReplayFileName;	// Name of the RBR replay file used when car preview images are generated
 
 	std::wstring m_rbrCITCarListFilePath;		// Path to RBRCIT carList.ini file (the file has NGP car details and specs information)
 	std::wstring m_easyRBRFilePath;				// Path to EesyRBR installation folder (if RBRCIT car manager is not used)
