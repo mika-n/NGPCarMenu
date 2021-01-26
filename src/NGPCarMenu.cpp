@@ -1117,6 +1117,11 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool fistTimeRefresh)
 		//this->m_screenshotReplayFileName = pluginINIFile.GetValueEx(L"Default", L"", L"ScreenshotReplay", L"");
 
 		this->m_screenshotPath = pluginINIFile.GetValueEx(L"Default", L"", L"ScreenshotPath", L"");
+
+		// Read RSF specific screenshot path. If the value is "0" then disable rsf image generation
+		//this->m_screenshotPathRSF = pluginINIFile.GetValueEx(L"Default", L"", L"RSF_ScreenshotPath", L"rsfdata\\images\\car_images\\%carRSFID%.%fileType%");
+		//if (this->m_screenshotPathRSF == L"0")
+		//	this->m_screenshotPathRSF.clear();
 		this->m_screenshotPathRSF = pluginINIFile.GetValueEx(L"Default", L"", L"RSF_ScreenshotPath", L"");
 
 		// FleFormat=1 has a bit different logic in ScreenshotPath value. The "%resolution%" variable value was the default postfix. 
@@ -3363,10 +3368,18 @@ bool CNGPCarMenu::ModifyCarModelFiles(int carSlotID)
 			{
 				sOptionValue = (m_iMenuCockpitWindscreen == 1 ? L"true" : L"false");
 				bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"i_window_f", L"Switch", sOptionValue, false) || bModifiedIniFile;
+				//bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"cam_internal", L"showExterior", L"", false) || bModifiedIniFile;
+
+				if (m_iMenuCockpitCameraShaking == 1)
+					bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"Cam_bonnet", L"showExterior", L"", false) || bModifiedIniFile;
 			}
 			else
 			{
 				bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"i_window_f", L"Switch", L"", true) || bModifiedIniFile;
+				//bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"cam_internal", L"showExterior", L"", true) || bModifiedIniFile;
+
+				if (m_iMenuCockpitCameraShaking == 1)
+					bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"Cam_bonnet", L"showExterior", L"", true) || bModifiedIniFile;
 			}
 
 			if (bModifiedIniFile)
