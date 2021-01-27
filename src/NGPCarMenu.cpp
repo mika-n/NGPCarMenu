@@ -250,7 +250,7 @@ PluginMenuItemDef g_NGPCarMenu_PluginMenu[] = {
 ,{"> Auto logon", "Navigates automatically to this menu when RBR is started" }				// AutoLogon option
 ,{"> RallySchool menu replacement", "Replaces the RallySchool menu item in the main menu with this shortcut" }   // Replace RallySchool menu entry with another menu shortcut
 ,{"> Split combined ThrottleBrake", "Split combined xbox triggers. See https://github.com/mika-n/NGPCarMenu/issues/15" }   // Gamepad# 1-4 (will be used as 0-3 index value) used to split combined gamepad trigger keys
-,{"> Cockpit - Camera shaking", "Cockpit camera shaking. If disabled use the cam_bonnet cam as non-shaking cockpit view" }  // The internal cockpit camera shaking (default behavior is to shake. When disabled then cam_internal and cam_bonnet camera values are switched)
+,{"> Cockpit - Camera shaking", "Cockpit camera shaking. If disabled USE THE CAM_BONNET cam as non-shaking cockpit view" }  // The internal cockpit camera shaking (default behavior is to shake. When disabled then cam_internal and cam_bonnet camera values are switched)
 ,{"> Cockpit - Steering wheel", nullptr }  // Show or hide steeringWheel in the internal cockpit camera view (Default, Hidden, Shown)
 ,{"> Cockpit - Wipers", nullptr }
 ,{"> Cockpit - Windscreen", nullptr }
@@ -1119,10 +1119,12 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool fistTimeRefresh)
 		this->m_screenshotPath = pluginINIFile.GetValueEx(L"Default", L"", L"ScreenshotPath", L"");
 
 		// Read RSF specific screenshot path. If the value is "0" then disable rsf image generation
-		//this->m_screenshotPathRSF = pluginINIFile.GetValueEx(L"Default", L"", L"RSF_ScreenshotPath", L"rsfdata\\images\\car_images\\%carRSFID%.%fileType%");
-		//if (this->m_screenshotPathRSF == L"0")
-		//	this->m_screenshotPathRSF.clear();
-		this->m_screenshotPathRSF = pluginINIFile.GetValueEx(L"Default", L"", L"RSF_ScreenshotPath", L"");
+		if (pluginINIFile.GetValue(L"Default", L"RSF_ScreenshotPath", nullptr) == nullptr)
+			this->m_screenshotPathRSF = L"rsfdata\\images\\car_images\\%carRSFID%.%fileType%";
+		else
+			this->m_screenshotPathRSF = pluginINIFile.GetValueEx(L"Default", L"", L"RSF_ScreenshotPath", L"");
+
+		DebugPrint(L"RSF_ScreenshotPath=%s", this->m_screenshotPathRSF.c_str());
 
 		// FleFormat=1 has a bit different logic in ScreenshotPath value. The "%resolution%" variable value was the default postfix. 
 		// The current fileFormat expects to see %% variables in the option value, so append the default %resolution% variable at the end of the existing path value.
@@ -1604,7 +1606,6 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool fistTimeRefresh)
 
 		if (g_fControllerAxisDeadzone[0] != 0.0f || g_fControllerAxisDeadzone[3] != 0.0f || g_fControllerAxisDeadzone[5] != 0.0f || g_fControllerAxisDeadzone[6] != 0.0f || g_fControllerAxisDeadzone[11] != 0.0f)
 			LogPrint("DeadzoneSteering=%.2f DeadzoneThrottle=%.2f DeadzoneBrake=%.2f DeadzoneHandbrake=%.2f DeadzoneClutch=%.2f", g_fControllerAxisDeadzone[0], g_fControllerAxisDeadzone[3], g_fControllerAxisDeadzone[5], g_fControllerAxisDeadzone[6], g_fControllerAxisDeadzone[11]);
-
 
 		if (fistTimeRefresh)
 		{
@@ -3111,6 +3112,7 @@ int CNGPCarMenu::GetCarIDFromRSFFile(PRSFJsonData rsfJsonData, std::string carMo
 
 	try
 	{
+		std::string rsfCarModelName;
 		RSFJsonData tempRsfJsonData;
 
 		if (rsfJsonData == nullptr)
@@ -3131,10 +3133,17 @@ int CNGPCarMenu::GetCarIDFromRSFFile(PRSFJsonData rsfJsonData, std::string carMo
 		_ToLowerCase(carModelName);
 		for (rapidjson::Value::ConstValueIterator itr = rsfJsonData->carsJson.Begin(); itr != rsfJsonData->carsJson.End(); ++itr)
 		{
-			if ((*itr).HasMember("name") && _iEqual(((*itr)["name"].GetString()), carModelName, true))
+			if ((*itr).HasMember("name"))
 			{
-				if ((*itr).HasMember("id")) rsfCarID = atoi((*itr)["id"].GetString());
-				break;
+				rsfCarModelName = ((*itr)["name"].GetString());
+				_Trim(rsfCarModelName);
+				if (_iEqual(rsfCarModelName, carModelName, true))
+				{
+					if ((*itr).HasMember("id")) 
+						rsfCarID = atoi((*itr)["id"].GetString());						
+
+					break;
+				}
 			}
 		}
 	}
@@ -3368,7 +3377,7 @@ bool CNGPCarMenu::ModifyCarModelFiles(int carSlotID)
 			{
 				sOptionValue = (m_iMenuCockpitWindscreen == 1 ? L"true" : L"false");
 				bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"i_window_f", L"Switch", sOptionValue, false) || bModifiedIniFile;
-				//bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"cam_internal", L"showExterior", L"", false) || bModifiedIniFile;
+				bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"cam_internal", L"showExterior", L"", false) || bModifiedIniFile;
 
 				if (m_iMenuCockpitCameraShaking == 1)
 					bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"Cam_bonnet", L"showExterior", L"", false) || bModifiedIniFile;
@@ -3376,7 +3385,7 @@ bool CNGPCarMenu::ModifyCarModelFiles(int carSlotID)
 			else
 			{
 				bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"i_window_f", L"Switch", L"", true) || bModifiedIniFile;
-				//bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"cam_internal", L"showExterior", L"", true) || bModifiedIniFile;
+				bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"cam_internal", L"showExterior", L"", true) || bModifiedIniFile;
 
 				if (m_iMenuCockpitCameraShaking == 1)
 					bModifiedIniFile = ModifyCarModelIniFile(&carModelIniFile, L"Cam_bonnet", L"showExterior", L"", true) || bModifiedIniFile;
@@ -4517,11 +4526,14 @@ const char* CNGPCarMenu::GetName(void)
 
 		if (g_iInvertedPedalsStartupFixFlag != 0 
 			|| g_iXInputSplitThrottleBrakeAxis >= 0 
-			|| g_fControllerAxisDeadzone[0] > 0.0f 
+// FIXME. Deadzone feature disable. It is broken with inverted pedals
+/*			|| g_fControllerAxisDeadzone[0] > 0.0f 
 			|| g_fControllerAxisDeadzone[3] > 0.0f 
 			|| g_fControllerAxisDeadzone[5] > 0.0f
 			|| g_fControllerAxisDeadzone[6] > 0.0f 
-			|| g_fControllerAxisDeadzone[11] > 0.0f)
+			|| g_fControllerAxisDeadzone[11] > 0.0f
+*/
+		)
 		{
 			// Inverted pedal bugfix, combined Throttle&Brake axis split or deadzone set. Enable custom handle of controller events
 			gtcRBRControllerAxisData = new DetourXS((LPVOID)0x4C2610, ::CustomRBRControllerAxisData, TRUE);
@@ -4741,7 +4753,7 @@ void CNGPCarMenu::DrawFrontEndPage(void)
 					m_sMenuStatusText1 = "ATTENTION! You need to restart RBR to activate SplitCombinedThrottleBrake for the first time";
 			}
 			else if (i == C_MENUCMD_COCKPIT_CAMERASHAKING)
-				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i].szMenuName, g_NGPCarMenu_DefaultEnableDisableOptions[m_iMenuCockpitCameraShaking]);
+				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s%s", g_NGPCarMenu_PluginMenu[i].szMenuName, g_NGPCarMenu_DefaultEnableDisableOptions[m_iMenuCockpitCameraShaking], (m_iMenuCockpitCameraShaking == 1 ? " (use CAM_BONNET cam)" : ""));
 			else if (i == C_MENUCMD_COCKPIT_STEERINGWHEEL)
 				sprintf_s(szTextBuf, sizeof(szTextBuf), "%s: %s", g_NGPCarMenu_PluginMenu[i].szMenuName, g_NGPCarMenu_HiddenShownOptions[m_iMenuCockpitSteeringWheel]);
 			else if (i == C_MENUCMD_COCKPIT_WIPERS)
@@ -6891,9 +6903,15 @@ float __fastcall CustomRBRControllerAxisData(void* objPointer, DWORD /*ignoreEDX
 		0x04     // idx 11 = clutch bit3
 	};
 
+#if USE_DEBUG == 1
+	float prevValue = -1.0f;
+	float newValue = -1.0f;
+#endif
+
 	switch (axisID)
 	{
 	case 0: // Steering
+/*
 		if (((PRBRControllerAxis)objPointer)[0].controllerAxisData != nullptr)
 		{ 
 			if (g_fControllerAxisDeadzone[0] > 0.0f)
@@ -6904,6 +6922,7 @@ float __fastcall CustomRBRControllerAxisData(void* objPointer, DWORD /*ignoreEDX
 					((PRBRControllerAxis)objPointer)[0].controllerAxisData->axisValue = RBRAXIS_DEADZONE_POSITIVE(((PRBRControllerAxis)objPointer)[0].controllerAxisData->axisValue, g_fControllerAxisDeadzone[0]);
 			}
 		}
+*/
 		return Func_OrigRBRControllerAxisData(objPointer, 0);
 
 	case 3:  // Throttle
@@ -6913,8 +6932,9 @@ float __fastcall CustomRBRControllerAxisData(void* objPointer, DWORD /*ignoreEDX
 			if ( (g_iInvertedPedalsStartupFixFlag & invertedPedalBitFlag[axisID]) && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->dinputStatus != 0 )
 				return 1.0f;// Inverted pedal bugfix at starting line when the pedal is not yet pressed at all.  @0x795e14 max value. Could it be something else than 1.0f?
 
+/*
 #if USE_DEBUG == 1
-			float prevValue = ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue;
+			prevValue = ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue;
 #endif
 
 			if (g_fControllerAxisDeadzone[axisID] > 0.0f)
@@ -6925,12 +6945,26 @@ float __fastcall CustomRBRControllerAxisData(void* objPointer, DWORD /*ignoreEDX
 				else
 					// Normal analog axis with -1..1 range
 					((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue = RBRAXIS_DEADZONE_WIDERANGE(((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue, g_fControllerAxisDeadzone[axisID]);
+
+				//((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisRawValue2 = 0;
+				//((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->dinputStatus = 2;
 			}
 
 #if USE_DEBUG == 1
-			if(prevValue != 0.0f && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue != 0.0f)
-			DebugPrint("Before=%f  After=%f", prevValue, ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue);
+			if (axisID == 5 && prevValue != 0.0f && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue != 0.0f)
+			{
+				DebugPrint("axisID=%d  Before=%f  Value=%f  Raw=%x  DInputStatus=%d  Value2=%f  Raw2=%x",
+					axisID, prevValue,
+					((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue,
+					((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisRawValue,
+					((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->dinputStatus,
+					((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue2,
+					((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisRawValue2
+
+				);
+			}
 #endif
+*/
 		}
 		return Func_OrigRBRControllerAxisData(objPointer, axisID);
 
@@ -6941,8 +6975,10 @@ float __fastcall CustomRBRControllerAxisData(void* objPointer, DWORD /*ignoreEDX
 			if ((g_iInvertedPedalsStartupFixFlag & invertedPedalBitFlag[axisID]) && ((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->dinputStatus != 0)
 				return 1.0f;// Inverted pedal bugfix at starting line when the pedal is not yet pressed at all.  @0x795e14 max value. Could it be something else than 1.0f?
 
+/*
 			if (g_fControllerAxisDeadzone[axisID] > 0.0f)
 				((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue = RBRAXIS_DEADZONE_WIDERANGE(((PRBRControllerAxis)objPointer)[axisID].controllerAxisData->axisValue, g_fControllerAxisDeadzone[axisID]);
+*/
 		}
 		return Func_OrigRBRControllerAxisData(objPointer, axisID);
 
@@ -6951,7 +6987,7 @@ float __fastcall CustomRBRControllerAxisData(void* objPointer, DWORD /*ignoreEDX
 		{ 
 			// Clear combinedThrottleBrake activity and then split throttle and brake values to a dedicated throttle and brake controls
 			((PRBRControllerAxis)objPointer)[4].controllerAxisData->axisValue = 0.0f;
-			//((PRBRControllerAxis)objPointer)[4].controllerAxisData->axisRawValue = 0;
+			((PRBRControllerAxis)objPointer)[4].controllerAxisData->axisRawValue = 0;
 
 			XINPUT_STATE state;
 			ZeroMemory(&state, sizeof(XINPUT_STATE));
