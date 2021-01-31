@@ -128,6 +128,7 @@ typedef int(__thiscall* tRBRSaveReplay)(void* objPointer, const char* szReplayFi
 
 // Overloaded dinput controller axis (digital button/steering analog axis) handler method
 typedef float(__thiscall* tRBRControllerAxisData)(void* objPointer, __int32 axisID);
+typedef int(__thiscall* tRBRControllerAxisDigitalData)(void* objPointer, __int32 axisID);
 
 // Overloaded CallForHelp handler
 typedef void(__thiscall* tRBRCallForHelp)(void* objPointer);

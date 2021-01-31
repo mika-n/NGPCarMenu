@@ -459,6 +459,7 @@ extern int     __fastcall CustomRBRReplay(void* objPointer, DWORD dummyEDX, cons
 extern int     __fastcall CustomRBRSaveReplay(void* objPointer, DWORD dummyEDX, const char* szReplayFileName, __int32 mapID, __int32 carID, __int32 unknown1);
 
 extern float   __fastcall CustomRBRControllerAxisData(void* objPointer, DWORD dummyEDX, __int32 axisID);
+extern int     __fastcall CustomRBRControllerAxisDigitalData(void* objPointer, DWORD dummyEDX, __int32 axisID);
 
 extern void    __fastcall CustomRBRCallForHelp(void* objPointer, DWORD dummyEDX);
 
@@ -671,6 +672,7 @@ protected:
 	DetourXS* gtcRBRReplay;
 	DetourXS* gtcRBRSaveReplay;
 	DetourXS* gtcRBRControllerAxisData;
+	DetourXS* gtcRBRControllerAxisDigitalData;
 	DetourXS* gtcRBRCallForHelp;
 
 	static BOOL CALLBACK MonitorEnumCallback(HMONITOR hMon, HDC hdc, LPRECT lprcMonitor, LPARAM pData);

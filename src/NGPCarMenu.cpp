@@ -59,7 +59,8 @@ tRBRDirectXEndScene   Func_OrigRBRDirectXEndScene = nullptr;
 tRBRReplay            Func_OrigRBRReplay = nullptr;				// Re-routed RBR replay class method
 tRBRSaveReplay        Func_OrigRBRSaveReplay = nullptr;		    // 
 
-tRBRControllerAxisData Func_OrigRBRControllerAxisData = nullptr;// Controller axis data, the custom method is used to fix inverted pedal RBR bug
+tRBRControllerAxisData Func_OrigRBRControllerAxisData = nullptr;		 // Controller axis data, the custom method is used to fix inverted pedal RBR bug
+tRBRControllerAxisDigitalData Func_OrigRBRControllerAxisDigitalData = nullptr; // Controller axis data (digital btns)
 
 tRBRCallForHelp Func_OrigRBRCallForHelp = nullptr; // CallForHelp handler
 
@@ -70,6 +71,10 @@ wchar_t  g_wszCustomLoadReplayStatusText[256] = L"\0"; // Custom LoadReplay text
 
 wchar_t* g_pOrigRallySchoolMenuText = nullptr;			  // The original (localized) "Rally School" menu text (could be that the menu is replacemend with custom menu name)
 wchar_t  g_wszRallySchoolMenuReplacementText[128] = L"Rally School"; // Custom rallySchool menu text
+
+wchar_t* g_pOrigControlLeftText = nullptr;  // Original ptr to controller "Left" and "Right" text
+wchar_t* g_pOrigControlRightText = nullptr;
+
 
 #if USE_DEBUG == 1
 CD3DFont* g_pFontDebug = nullptr;
@@ -97,7 +102,8 @@ WCHAR* g_pOrigCarSpecTitleHorsepower = nullptr;
 std::vector<std::string>* g_pRBRRXTrackNameListAlreadyInitialized = nullptr; // List of RBRRX track folder names with a missing track.ini splashscreen option and already scanned for default JPG/PNG preview image during this RBR process life time
 
 
-int g_iInvertedPedalsStartupFixFlag = 0;               // Bit1=Throttle (0x01), Bit2=Brake (0x02), Bit3=Clutch (0x04), Bit4=Handbrake (0x08). Fix the inverted pedal bug in RBR when the game is started or alt-tabbed to desktop
+int g_iInvertedPedalsStartupFixFlag = 0;  // Bit1=Throttle (0x01), Bit2=Brake (0x02), Bit3=Clutch (0x04), Bit4=Handbrake (0x08). Fix the inverted pedal bug in RBR when the game is started or alt-tabbed to desktop
+int g_iAlternativeGearUpDownSupport = 1;  // 0=Disable support for alternative gear up/down controls, 1=Enable the alternative gear up/down btn support (left/right digital controls used as alternative gear btns)
 
 int g_iXInputSplitThrottleBrakeAxis = -1; // -1=disabled, 0>=Split xinput controller# left and right analog triggers (by default RBR sees xbox xinput triggers as one axis)
 int g_iXInputThrottle = 1;				  // 1=Right trigger
@@ -941,6 +947,7 @@ CNGPCarMenu::CNGPCarMenu(IRBRGame* pGame)
 	gtcRBRReplay = nullptr;
 	gtcRBRSaveReplay = nullptr;
 	gtcRBRControllerAxisData = nullptr;
+	gtcRBRControllerAxisDigitalData = nullptr;
 	gtcRBRCallForHelp = nullptr;
 
 	//RefreshSettingsFromPluginINIFile();
@@ -965,6 +972,7 @@ CNGPCarMenu::~CNGPCarMenu(void)
 		SAFE_DELETE(gtcRBRReplay);
 		SAFE_DELETE(gtcRBRSaveReplay);
 		SAFE_DELETE(gtcRBRControllerAxisData);
+		SAFE_DELETE(gtcRBRControllerAxisDigitalData);
 		SAFE_DELETE(gtcRBRCallForHelp);
 
 #if USE_DEBUG == 1
@@ -1575,6 +1583,8 @@ void CNGPCarMenu::RefreshSettingsFromPluginINIFile(bool fistTimeRefresh)
 			}
 		}
 
+		// Map left/right digital btns as alternative secondary gear up/down if the analog Steering control is set
+		g_iAlternativeGearUpDownSupport = pluginINIFile.GetValueEx(L"Default", L"", L"SecondaryGearUpDownControls", 1);
 
 		// Split combined throttle and brake axis as separate throttle and brake (ie set CombinedThrottleBrake axis in RBR to analog trigger and set separate brake and throttle to some unused keyboard keys)
 		g_iXInputSplitThrottleBrakeAxis = pluginINIFile.GetValueEx(L"Default", L"", L"SplitCombinedThrottleBrakeAxis", 0);
@@ -4540,8 +4550,20 @@ const char* CNGPCarMenu::GetName(void)
 			Func_OrigRBRControllerAxisData = (tRBRControllerAxisData)gtcRBRControllerAxisData->GetTrampoline();
 		}
 
+
+		if (g_iAlternativeGearUpDownSupport == 1)
+		{
+			LogPrint("Secondary gear up/down control support enabled (works when analog Steering control is set)");
+
+			gtcRBRControllerAxisDigitalData = new DetourXS((LPVOID)0x4C25D0, ::CustomRBRControllerAxisDigitalData, TRUE);
+			Func_OrigRBRControllerAxisDigitalData = (tRBRControllerAxisDigitalData)gtcRBRControllerAxisDigitalData->GetTrampoline();
+		}
+
+
+		// Custom callForHelp handler (raceDB counts the num of times callForHelp was called during a race)
 		gtcRBRCallForHelp = new DetourXS((LPVOID)0x56E6D0, ::CustomRBRCallForHelp, TRUE);
 		Func_OrigRBRCallForHelp = (tRBRCallForHelp)gtcRBRCallForHelp->GetTrampoline();
+
 
 		// Override the gray RBRRX "loading track debug msg screen" with a real map preview img. Do this only one time when this plugin was initialized for the first time
 		if (m_iMenuRBRRXOption && m_bShowCustomLoadTrackScreenRBRRX)
@@ -5430,6 +5452,23 @@ inline void CNGPCarMenu::CustomRBRDirectXBeginScene()
 			g_pOrigRallySchoolMenuText = (wchar_t*) ((PRBRPluginMenuItemObj2)g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN]->pItemObj[3])->wszMenuTitleName;
 			if (g_pOrigRallySchoolMenuText != nullptr)
 				((PRBRPluginMenuItemObj2)g_pRBRMenuSystem->menuObj[RBRMENUIDX_MAIN]->pItemObj[3])->wszMenuTitleName = g_wszRallySchoolMenuReplacementText;
+		}
+
+		if (g_iAlternativeGearUpDownSupport == 1)
+		{
+			if (g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[0].controllerAxisData != nullptr)
+			{
+				if (g_pOrigControlLeftText == nullptr) g_pOrigControlLeftText = g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[1].wszAxisName;
+				if (g_pOrigControlRightText == nullptr) g_pOrigControlRightText = g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[2].wszAxisName;
+
+				if (g_pOrigControlLeftText != nullptr) g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[1].wszAxisName = L"Gear Up (Secondary)";
+				if (g_pOrigControlRightText != nullptr) g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[2].wszAxisName = L"Gear Down (Secondary)";
+			}
+			else
+			{
+				if (g_pOrigControlLeftText != nullptr) g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[1].wszAxisName = g_pOrigControlLeftText;
+				if (g_pOrigControlRightText != nullptr) g_pRBRGameConfig->controllerBaseObj->controllerObj->controllerAxis[2].wszAxisName = g_pOrigControlRightText;
+			}
 		}
 
 		if (m_bRenameDriverNameActive)
@@ -7012,6 +7051,43 @@ float __fastcall CustomRBRControllerAxisData(void* objPointer, DWORD /*ignoreEDX
 	default:
 		return Func_OrigRBRControllerAxisData(objPointer, axisID);
 	}
+}
+
+
+//----------------------------------------------------------------------------------------------------------------------------
+// Controller handler for digital btns (axisID 07=GearUp, 08=GearDown)
+//
+int __fastcall CustomRBRControllerAxisDigitalData(void* objPointer, DWORD /*ignoreEDX*/, __int32 axisID)
+{
+	// Check if alternative GearUp/GearDown keys are set and re-map those as "real" gear 
+	// btn events if analog steering is set (0), left/right digital controls are set (1 and 2), its value is non-zero and the real gear up/down control is set (7 and 8)
+	if (g_iAlternativeGearUpDownSupport == 1 && ((PRBRControllerAxis)objPointer)[0].controllerAxisData != nullptr)
+	{
+		switch (axisID)
+		{
+		case 7:
+			// GearUp
+			if (((PRBRControllerAxis)objPointer)[1].controllerAxisData != nullptr
+				&& ((PRBRControllerAxis)objPointer)[1].controllerAxisData->axisRawValue > 0
+				&& ((PRBRControllerAxis)objPointer)[7].controllerAxisData != nullptr)
+			{
+				((PRBRControllerAxis)objPointer)[7].controllerAxisData->axisValue = ((PRBRControllerAxis)objPointer)[1].controllerAxisData->axisValue;
+			}
+			break;
+
+		case 8:
+			// GearDown
+			if (((PRBRControllerAxis)objPointer)[2].controllerAxisData != nullptr
+				&& ((PRBRControllerAxis)objPointer)[2].controllerAxisData->axisRawValue > 0
+				&& ((PRBRControllerAxis)objPointer)[8].controllerAxisData != nullptr)
+			{
+				((PRBRControllerAxis)objPointer)[8].controllerAxisData->axisValue = ((PRBRControllerAxis)objPointer)[2].controllerAxisData->axisValue;
+			}
+			break;
+		}
+	}
+
+	return Func_OrigRBRControllerAxisDigitalData(objPointer, axisID);
 }
 
 
